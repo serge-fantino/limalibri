@@ -12,20 +12,31 @@
   <nav id="versions">
     <button data-v="recit" class="actif">Récit</button>
     <button data-v="essai">Essai</button>
-    <span id="modes-essai">
-      <button data-m="texte" title="Le texte, notes en marge">texte</button>
-      <button data-m="notes" title="Les notes en plein, le texte en marge">notes</button>
-      <button data-m="biblio" title="Les sources citées par le chapitre">bibliographie</button>
-    </span>
     <span class="sep"></span>
-    <button data-v="storyboard">Récit ⇄ Storyboard</button>
+    <button id="b-annotations" title="Tes annotations : la liste, par chapitre">✎ Annotations</button>
+    <button id="b-demandes" title="Le travail confié à Claude : réécritures et recherches">↻ Demandes</button>
   </nav>
 </header>
 <div id="cadre">
-  <aside id="sommaire"></aside>
-  <main id="page"><p class="mut">Choisir un chapitre.</p></main>
-  <aside id="fiche"></aside>
+  <aside id="gauche">
+    <section class="volet" id="volet-livre">
+      <button class="volet-titre" data-volet="livre">Plan du livre</button>
+      <nav id="sommaire"></nav>
+    </section>
+    <section class="volet" id="volet-chapitre" hidden>
+      <button class="volet-titre" data-volet="chapitre">Chapitre</button>
+      <section id="plan-col"></section>
+    </section>
+  </aside>
+  <div id="centre">
+    <nav id="outils" hidden></nav>
+    <div id="defile"><main id="page"><p class="mut">Choisir un chapitre.</p></main></div>
+  </div>
+  <aside id="droite">
+    <div id="fiche"></div>
+  </aside>
 </div>
+<aside id="tiroir" hidden></aside>
 <script type="module" src="atelier.js"></script>
 </body>
 </html>

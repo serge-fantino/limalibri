@@ -3,6 +3,7 @@
 
     poetry run python3 migrer/chapitre.py la-mer
     poetry run python3 migrer/chapitre.py la-mer --sec     vérifie sans écrire
+    poetry run python3 migrer/chapitre.py la-mer --ecraser remplace aussi brief, textes et liens
 
 Produit, à partir du cadre, du storyboard, de l'habillage et des deux chapitres :
 
@@ -70,7 +71,7 @@ def ident(slug, version, rang, pris):
     # Quatre caractères, jamais tout en chiffres (lisible à côté d'une assertion « 1.1 »).
     for sel in range(1000):
         h = hashlib.sha1(("%s:%s:%d:%d" % (slug, version, rang, sel)).encode()).hexdigest()[:4]
-        if h not in pris and not h.isdigit():
+        if h not in pris and not h.isdigit() and not re.fullmatch(r"\d+e\d+", h):   # « 5e56 » serait un nombre en YAML
             pris.add(h)
             return h
     raise Refus("collision d'identifiants")
@@ -400,9 +401,25 @@ def main():
         return
     d = CIBLE / slug
     d.mkdir(parents=True, exist_ok=True)
+    # le texte et le storyboard se travaillent dans l'atelier après migration : une
+    # re-migration ne les écrase pas sans --ecraser (le verrou, lui, fusionne ses champs)
+    proteges = ("brief.yaml", "recit.md", "essai.md", "links.yaml")
+    gardes = [n for n in proteges if (d / n).exists() and "--ecraser" not in sys.argv]
     for nom, contenu in fichiers.items():
+        if nom in gardes:
+            continue
         (d / nom).write_text(contenu, encoding="utf-8")
-    print("écrit : %s/{%s}" % (d.relative_to(AWEN), ",".join(fichiers)))
+    print("écrit : %s/{%s}" % (d.relative_to(AWEN), ",".join(n for n in fichiers if n not in gardes)))
+    if gardes:
+        print("gardés (déjà travaillés dans l'atelier ; --ecraser pour les remplacer) : " + ", ".join(gardes))
+    # chaque intertitre de l'essai reçoit un identifiant stable ({#id}), une fois pour toutes
+    import os
+    os.environ.setdefault("ATELIER_LIVRE", str(CIBLE.parent))
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+    from atelier import essai as _essai
+    n = _essai.pose_identifiants(slug)
+    if n:
+        print("essai : %d intertitre(s) identifié(s)" % n)
 
 
 if __name__ == "__main__":

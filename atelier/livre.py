@@ -12,13 +12,18 @@ livre.yaml, en lecture seule. Un livre sans héritage n'a que ses chapitres migr
 import io
 import os
 import re
+import json
+import secrets
 import hashlib
+import datetime
 import pathlib
 import functools
 import yaml
 import markdown
 from ruamel.yaml import YAML
+from ruamel.yaml.constructor import RoundTripConstructor
 from ruamel.yaml.scalarstring import LiteralScalarString
+from ruamel.yaml.comments import CommentedMap
 
 AWEN = pathlib.Path(__file__).resolve().parents[3]
 LIVRE = pathlib.Path(os.environ.get("ATELIER_LIVRE", AWEN / "UneVie" / "book-atelier")).resolve()
@@ -65,7 +70,10 @@ parts: []
 
 # Les champs que la page du livre peut modifier ; le reste (versions, héritage) se
 # change à la main, dans le fichier.
-EDITABLES = ("titre", "sous_titre", "auteur", "langue", "synopsis", "quatrieme", "couverture")
+EDITABLES = ("titre", "sous_titre", "auteur", "langue", "synopsis", "quatrieme", "couverture",
+             "numerotation_essai", "claude")
+CLAUDE_GENRES = {"verification": ("tours", "recherches", "pages", "modele"), "reecriture": ("tours", "modele")}
+NUMEROTATIONS = ("aucune", "sections", "paragraphes")
 
 
 def initialise():
@@ -80,6 +88,38 @@ def initialise():
             p.write_text(contenu, encoding="utf-8")
             crees.append(nom)
     return crees
+
+
+class _Lecteur(RoundTripConstructor):
+    """Lecture aller-retour où « 07e2 » ou « 5e56 » restent du texte : chez nous, ce sont des
+    identifiants de paragraphe, pas des nombres (YAML 1.2 y verrait 700.0 et 5e+56)."""
+
+
+def _nombre_ou_identifiant(self, node):
+    brut = self.construct_scalar(node)
+    if re.fullmatch(r"[0-9]+[eE][0-9]+", str(brut)):
+        return str(brut)
+    return RoundTripConstructor.construct_yaml_float(self, node)
+
+
+_Lecteur.add_constructor("tag:yaml.org,2002:float", _nombre_ou_identifiant)
+
+
+def yaml_rt():
+    """Un YAML qui garde commentaires et mise en forme. Toute lecture/écriture « aller-retour »
+    passe par ici (voir _Lecteur). À l'écriture, un tel identifiant est mis entre guillemets."""
+    y = YAML()
+    y.Constructor = _Lecteur
+    y.preserve_quotes = True
+    y.width = 100
+    return y
+
+
+def rt_texte(y, doc):
+    """Le document en texte, sans la directive %YAML que la version 1.1 ajoute."""
+    s = io.StringIO()
+    y.dump(doc, s)
+    return re.sub(r"\A%YAML 1\.1\n---\n?", "", s.getvalue())
 
 
 def _version(p):
@@ -109,10 +149,31 @@ def ecrit_meta(champs, version):
     inconnus = set(champs) - set(EDITABLES)
     if inconnus:
         raise KeyError(", ".join(sorted(inconnus)))
-    y = YAML()
-    y.preserve_quotes = True
-    y.width = 100
+    if champs.get("numerotation_essai", "aucune") not in NUMEROTATIONS:
+        raise KeyError("numerotation_essai : %s" % "|".join(NUMEROTATIONS))
+    y = yaml_rt()
     doc = y.load(p.read_text(encoding="utf-8")) or {}
+    if "claude" in champs:                    # les réglages de Claude : fusionnés, commentaires gardés
+        c = champs.pop("claude") or {}
+        cible = doc.get("claude")
+        if cible is None:
+            doc["claude"] = cible = CommentedMap()
+        if "modele" in c:
+            if c["modele"]:
+                cible["modele"] = str(c["modele"])
+            else:
+                cible.pop("modele", None)
+        for g, cles in CLAUDE_GENRES.items():
+            for k, v in (c.get(g) or {}).items():
+                if k not in cles:
+                    raise KeyError("claude.%s.%s" % (g, k))
+                sous = cible.get(g)
+                if sous is None:
+                    cible[g] = sous = CommentedMap()
+                if v in (None, ""):
+                    sous.pop(k, None)
+                else:
+                    sous[k] = str(v) if k == "modele" else max(0, int(v))
     for k, v in champs.items():
         v = v.strip() if isinstance(v, str) else v
         if v == "":
@@ -120,9 +181,7 @@ def ecrit_meta(champs, version):
         elif isinstance(v, str) and "\n" in v:
             v = LiteralScalarString(v + "\n")
         doc[k] = v
-    s = io.StringIO()
-    y.dump(doc, s)
-    p.write_text(s.getvalue(), encoding="utf-8")
+    p.write_text(rt_texte(y, doc), encoding="utf-8")
     return meta()
 
 
@@ -189,17 +248,70 @@ def chapitres():
             out.append(dict(c, numero=n, partie=p["id"], partie_titre=p["title"]))
     for c in out:
         c["atelier"] = dossier(c["slug"]).is_dir()
+        c["annotations"] = sum(1 for a in annotations(c["slug"]) if a.get("etat") == "ouverte") \
+            if c["atelier"] else 0
+        if c["atelier"]:
+            from . import validation
+            try:
+                c["a_revalider"] = validation.etat(c["slug"])["a_revalider"]
+            except Exception:                     # noqa: BLE001 — un état illisible ne bloque pas la liste
+                c["a_revalider"] = None
     return out
 
 
-def rendu(md, numeros):
-    """Markdown -> HTML. Chaque ^id devient data-block sur son <p> ou son <li>."""
+RENVOI_SECTION = re.compile(r"\[sec:([\w-]+)\]")
+
+
+def numerotation(brut, chapitre):
+    """Les numéros de l'essai, calculés depuis la position — jamais stockés.
+    Sections : chapitre.section.sous-section (1.2.3) ; paragraphes : §chapitre.rang (§1.23)."""
+    from .essai import unites
+    compteurs, sections, blocs, k = [0] * 8, {}, {}, 0
+    for u in unites(brut):
+        if u["kind"] == "titre" and u["id"] and u["id"] != "notes":
+            n = u["niveau"]
+            compteurs[n] += 1
+            for j in range(n + 1, 8):
+                compteurs[j] = 0
+            sections[u["id"]] = {"num": ".".join([str(chapitre)] + [str(compteurs[j]) for j in range(2, n + 1)]),
+                                 "titre": u["titre"]}
+        elif u["kind"] == "bloc":
+            k += 1
+            blocs[u["id"]] = "§%s.%d" % (chapitre, k)
+    return sections, blocs
+
+
+def rendu(md, numeros, structure=None):
+    """Markdown -> HTML. Chaque ^id devient data-block sur son <p> ou son <li>.
+
+    `structure` (essai) : (sections, blocs) numérotés — les intertitres reçoivent
+    data-section et data-num, les paragraphes data-num, et [sec:id] devient un renvoi."""
     md = ANCRE.sub(lambda m: " §blk:%s§" % m.group(1), md)
     md = RENVOI.sub(lambda m: str(numeros.get(m.group(1), m.group(0))), md)
-    html = markdown.markdown(md, extensions=["footnotes", "tables"])
+    sections, nums = structure or ({}, {})
+    mode = meta().get("numerotation_essai") or "aucune"
+
+    def renvoi(m):
+        s = sections.get(m.group(1))
+        if not s:
+            return m.group(0)
+        texte = s["num"] if mode != "aucune" else s["titre"]
+        return '<a class="renvoi" href="#sec-%s" data-sec="%s">%s</a>' % (m.group(1), m.group(1), texte)
+    md = RENVOI_SECTION.sub(renvoi, md)
+    ext = ["footnotes", "tables"] + (["attr_list"] if structure else [])
+    html = markdown.markdown(md, extensions=ext)
     html = re.sub(r"<(p|li)>((?:(?!</?\1>).)*?)" + JETON.pattern,
-                  lambda m: '<%s data-block="%s">%s%s' % (m.group(1), m.group(3), m.group(2), m.group(4)),
+                  lambda m: '<%s data-block="%s"%s>%s%s' % (
+                      m.group(1), m.group(3),
+                      ' data-num="%s"' % nums[m.group(3)] if m.group(3) in nums else "",
+                      m.group(2), m.group(4)),
                   html, flags=re.S)
+    if structure:
+        html = re.sub(r'<h([2-6]) id="([\w-]+)">',
+                      lambda m: '<h%s id="sec-%s" data-section="%s"%s>' % (
+                          m.group(1), m.group(2), m.group(2),
+                          ' data-num="%s"' % sections[m.group(2)]["num"] if m.group(2) in sections else ""),
+                      html)
     return CITATION.sub(r'<cite data-cle="\1">\1</cite>', html)
 
 
@@ -212,11 +324,14 @@ def texte(slug, version):
     c = tous[slug]
     numeros = {s: x["numero"] for s, x in tous.items() if x["numero"]}
     p = dossier(slug) / (version + ".md")
+    structure = None
     if p.exists():
         brut = p.read_text(encoding="utf-8")
         tete = "# %s\n\n*%s*\n\n---\n\n" % (c["title"], c.get("periode", "")) if c.get("periode") \
             else "# %s\n\n---\n\n" % c["title"]
         md = tete + brut
+        if version == "essai":
+            structure = numerotation(brut, c["numero"] if c["numero"] is not None else "P")
     else:
         depot, h = heritage()
         dossier_v = (h.get("chapitres") or {}).get(version)
@@ -227,7 +342,8 @@ def texte(slug, version):
             raise KeyError(slug)
         md = ENTETE.sub("", p.read_text(encoding="utf-8"), count=1)
     return {"slug": slug, "version": version, "atelier": c["atelier"],
-            "html": rendu(md, numeros), "origine": affiche(p)}
+            "html": rendu(md, numeros, structure), "origine": affiche(p),
+            "numerotation": meta().get("numerotation_essai") or "aucune"}
 
 
 def atelier(slug):
@@ -252,7 +368,10 @@ def atelier(slug):
             e["appuis"][i] = l["appui"]
     links["essai"] = essai
     return {"brief": lire("brief.yaml"), "verrou": verrou, "assertions": assertions,
-            "links": links, "bibliographie": lire("bibliographie.yaml").get("sources", [])}
+            "links": links, "bibliographie": lire("bibliographie.yaml").get("sources", []),
+            "empreinte_brief": empreinte_brief(slug),
+            "empreinte_verrou": hashlib.sha1((d / "verrou.yaml").read_bytes()).hexdigest()[:12]
+            if (d / "verrou.yaml").exists() else ""}
 
 
 @functools.lru_cache(maxsize=1)
@@ -274,4 +393,199 @@ def sources():
         if lignes and corps:
             html = markdown.markdown(" ".join(corps))
             out[lignes[0]] = re.sub(r"^<p>|</p>$", "", html.strip())
+    return out
+
+
+# ------------------------------------------------------------------ annotations
+
+# chapters/<slug>/annotations.jsonl — un journal en ajout seul. Chaque ligne est un
+# événement sur une annotation (création, modification, suppression) ; l'état courant
+# s'obtient en rejouant le journal, la dernière valeur de chaque champ l'emporte.
+# L'ancre est {version, bloc, citation, avant, apres} : le paragraphe par son ^id, la
+# phrase par son texte et quelques caractères de contexte — jamais par un décalage.
+
+TYPES_ANNOTATION = ("remarque", "question", "a-reecrire")
+ETATS_ANNOTATION = ("ouverte", "resolue")
+MODIFIABLES_ANNOTATION = ("texte", "type", "etat", "regles", "citation", "avant", "apres")   # l'ancre : pour rattacher une orpheline
+
+
+def _journal(slug):
+    d = dossier(slug)
+    if not d.is_dir():
+        raise KeyError(slug)
+    return d / "annotations.jsonl"
+
+
+def _maintenant():
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def annotations(slug):
+    p = _journal(slug)
+    etat = {}
+    if p.exists():
+        for ligne in p.read_text(encoding="utf-8").splitlines():
+            if not ligne.strip():
+                continue
+            e = json.loads(ligne)
+            i = e.get("id")
+            if e.get("supprime"):
+                etat.pop(i, None)
+            elif i in etat:
+                etat[i].update({k: v for k, v in e.items() if k != "id"})
+            else:
+                etat[i] = e
+    return list(etat.values())
+
+
+def _ajoute(slug, evenement):
+    with _journal(slug).open("a", encoding="utf-8") as f:
+        f.write(json.dumps(evenement, ensure_ascii=False) + "\n")
+
+
+def cree_annotation(slug, a):
+    if a.get("version") not in VERSIONS or not a.get("bloc"):
+        raise ValueError("une annotation vise une version (recit|essai) et un bloc")
+    if a.get("type", "remarque") not in TYPES_ANNOTATION:
+        raise ValueError("type inconnu : %s" % a.get("type"))
+    e = {"id": "a-" + secrets.token_hex(3),
+         "version": a["version"], "bloc": a["bloc"],
+         "citation": a.get("citation") or "", "avant": a.get("avant") or "",
+         "apres": a.get("apres") or "",
+         "texte": (a.get("texte") or "").strip(), "type": a.get("type", "remarque"),
+         "regles": [r for r in (a.get("regles") or []) if isinstance(r, str)],
+         "etat": "ouverte", "auteur": a.get("auteur") or meta().get("auteur") or "auteur",
+         "cree": _maintenant()}
+    _ajoute(slug, e)
+    return e
+
+
+def modifie_annotation(slug, ident, champs):
+    if ident not in {a["id"] for a in annotations(slug)}:
+        raise KeyError(ident)
+    inconnus = set(champs) - set(MODIFIABLES_ANNOTATION)
+    if inconnus:
+        raise ValueError("champ non modifiable : %s" % ", ".join(sorted(inconnus)))
+    if champs.get("type", "remarque") not in TYPES_ANNOTATION:
+        raise ValueError("type inconnu : %s" % champs["type"])
+    if champs.get("etat", "ouverte") not in ETATS_ANNOTATION:
+        raise ValueError("état inconnu : %s" % champs["etat"])
+    _ajoute(slug, dict(champs, id=ident, modifie=_maintenant()))
+    return next(a for a in annotations(slug) if a["id"] == ident)
+
+
+def supprime_annotation(slug, ident):
+    if ident not in {a["id"] for a in annotations(slug)}:
+        raise KeyError(ident)
+    _ajoute(slug, {"id": ident, "supprime": True, "modifie": _maintenant()})
+
+
+# ------------------------------------------------------------------ storyboard (brief.yaml)
+
+# Le storyboard vit dans brief.yaml (beats). L'atelier en modifie les plans — lieu, temps,
+# ambiance, attaque, chute, note, séquence, micro-récits — en gardant la mise en forme du
+# fichier, et note chaque changement au journal. La réécriture relit brief.yaml à chaque
+# demande : recadrer le storyboard, c'est recadrer ce que Claude recevra.
+
+CHAMPS_PLAN = ("title", "lieu", "temps", "ambiance", "attaque", "chute", "note", "sequence")
+
+
+def empreinte_brief(slug):
+    return _version(dossier(slug) / "brief.yaml")
+
+
+def modifie_plan(slug, pid, champs, recits, empreinte, motif=""):
+    p = dossier(slug) / "brief.yaml"
+    if _version(p) != empreinte:
+        raise Conflit("brief.yaml a changé depuis son ouverture")
+    inconnus = set(champs) - set(CHAMPS_PLAN)
+    if inconnus:
+        raise ValueError("champ de plan non modifiable : %s" % ", ".join(sorted(inconnus)))
+    y = yaml_rt()
+    doc = y.load(p.read_text(encoding="utf-8"))
+    plan = next((b for b in doc.get("beats", []) if b.get("id") == pid), None)
+    if plan is None:
+        raise KeyError(pid)
+    changes = []
+    for k, v in champs.items():
+        if k == "sequence":
+            v = [s.strip() for s in (v if isinstance(v, list) else str(v).split("/")) if s.strip()]
+        else:
+            v = (v or "").strip() or None
+        avant = plan.get(k)
+        if (list(avant) if isinstance(avant, list) else avant) != v:
+            changes.append({"champ": k, "avant": list(avant) if isinstance(avant, list) else avant, "apres": v})
+            if v is None:
+                plan.pop(k, None)
+            else:
+                plan[k] = v
+    for i, texte in (recits or {}).items():
+        i = int(i)
+        liste = plan.get("recits") or []
+        if not 0 <= i < len(liste):
+            raise ValueError("micro-récit %d hors du plan %s" % (i + 1, pid))
+        texte = " ".join((texte or "").split())
+        if texte and texte != liste[i]:
+            changes.append({"champ": "recits[%d]" % i, "avant": liste[i], "apres": texte})
+            liste[i] = texte
+    if changes:
+        p.write_text(rt_texte(y, doc), encoding="utf-8")
+        quand = _maintenant()
+        with (dossier(slug) / "journal.jsonl").open("a", encoding="utf-8") as f:
+            for c in changes:
+                f.write(json.dumps(dict(c, date=quand, type="storyboard", plan=pid, motif=motif),
+                                   ensure_ascii=False) + "\n")
+    return {"changes": changes, "empreinte": empreinte_brief(slug)}
+
+
+# L'en-tête du storyboard : ce qui est suivi, l'intention, la tenue, les contraintes, les mots
+# interdits, les formules réservées. Mêmes garanties que pour un plan.
+CHAMPS_BRIEF = ("suivi", "constraints", "interdits", "derogations")
+GROUPES_BRIEF = ("intent", "tenue")
+
+
+def modifie_brief(slug, champs, empreinte, motif=""):
+    p = dossier(slug) / "brief.yaml"
+    if _version(p) != empreinte:
+        raise Conflit("brief.yaml a changé depuis son ouverture")
+    y = yaml_rt()
+    doc = y.load(p.read_text(encoding="utf-8"))
+    changes = []
+    for cle, v in champs.items():
+        groupe, _, sous = cle.partition(".")
+        if not ((groupe in CHAMPS_BRIEF and not sous) or (groupe in GROUPES_BRIEF and sous)):
+            raise ValueError("champ du brief non modifiable : %s" % cle)
+        if groupe in ("constraints", "derogations"):
+            v = [x.strip(" -") for x in (v if isinstance(v, list) else str(v).splitlines()) if x.strip(" -")]
+        elif groupe == "interdits":
+            v = [x.strip() for x in (v if isinstance(v, list) else str(v).split(",")) if x.strip()]
+        else:
+            v = (v or "").strip()
+            if "\n" in v:
+                v = LiteralScalarString(v + "\n")
+        cible = doc if not sous else doc.setdefault(groupe, {})
+        k = groupe if not sous else sous
+        avant = cible.get(k)
+        avant_n = list(avant) if isinstance(avant, list) else (str(avant).strip() if avant is not None else None)
+        apres_n = list(v) if isinstance(v, list) else str(v).strip()
+        if avant_n != apres_n:
+            changes.append({"champ": cle, "avant": avant_n, "apres": apres_n})
+            cible[k] = v
+    if changes:
+        p.write_text(rt_texte(y, doc), encoding="utf-8")
+        quand = _maintenant()
+        with (dossier(slug) / "journal.jsonl").open("a", encoding="utf-8") as f:
+            for c in changes:
+                f.write(json.dumps(dict(c, date=quand, type="brief", motif=motif), ensure_ascii=False) + "\n")
+    return {"changes": changes, "empreinte": empreinte_brief(slug)}
+
+
+
+def toutes_annotations():
+    """Les annotations de tous les chapitres de l'atelier, avec leur chapitre."""
+    out = []
+    for c in chapitres():
+        if c.get("atelier"):
+            for a in annotations(c["slug"]):
+                out.append(dict(a, chapitre=c["slug"], chapitre_titre=c["title"], chapitre_numero=c["numero"]))
     return out
