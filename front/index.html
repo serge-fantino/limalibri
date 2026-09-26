@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier</title>
+<link rel="stylesheet" href="atelier.css">
+</head>
+<body>
+<header id="barre">
+  <strong>Atelier</strong> <span class="mut" id="titre-livre"></span>
+  <nav id="versions">
+    <button data-v="recit" class="actif">Récit</button>
+    <button data-v="essai">Essai</button>
+    <span id="modes-essai">
+      <button data-m="texte" title="Le texte, notes en marge">texte</button>
+      <button data-m="notes" title="Les notes en plein, le texte en marge">notes</button>
+      <button data-m="biblio" title="Les sources citées par le chapitre">bibliographie</button>
+    </span>
+    <span class="sep"></span>
+    <button data-v="storyboard">Récit ⇄ Storyboard</button>
+  </nav>
+</header>
+<div id="cadre">
+  <aside id="sommaire"></aside>
+  <main id="page"><p class="mut">Choisir un chapitre.</p></main>
+  <aside id="fiche"></aside>
+</div>
+<script type="module" src="atelier.js"></script>
+</body>
+</html>

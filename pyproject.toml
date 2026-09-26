@@ -1,0 +1,20 @@
+[tool.poetry]
+# Une application, pas une bibliothèque : on ne construit rien à installer.
+package-mode = false
+
+[project]
+name = "atelier"
+version = "0.1.0"
+description = "Atelier d'écriture de livres : serveur + front, sur un dossier de livre (ATELIER_LIVRE)."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi (>=0.115,<1.0)",
+    "uvicorn (>=0.30,<1.0)",
+    "pyyaml (>=6.0,<7.0)",
+    "markdown (>=3.6,<4.0)",
+    "ruamel-yaml (>=0.18,<1.0)",
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"

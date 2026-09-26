@@ -1,0 +1,3 @@
+# Le venv vit dans le projet (.venv/), pas dans un cache global.
+[virtualenvs]
+in-project = true
