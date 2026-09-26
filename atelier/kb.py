@@ -14,8 +14,10 @@ Un lien vers un fichier qui n'est pas une fiche (le cadre poétique de l'ancien 
 résolu dans l'héritage, en lecture seule, s'il y existe.
 """
 import re
+import html as _html
 
 import yaml
+import markdown
 
 from . import livre
 
@@ -125,14 +127,34 @@ def index():
     return fiches
 
 
-def _cible_heritage(nom):
+def _heritage_md():
+    """nom -> chemin (relatif) des fichiers Markdown de l'ancien dépôt, pour résoudre un [[lien]]
+    qui ne vise pas une fiche (le cadre poétique, un passage…)."""
     depot, _ = livre.heritage()
-    if not depot:
-        return None
-    for p in depot.rglob(nom + ".md"):
-        if "_to_delete" not in p.parts:
-            return str(p.relative_to(depot))
-    return None
+    out = {}
+    if depot:
+        for p in depot.rglob("*.md"):
+            if not {"_to_delete", ".obsidian", "node_modules", "build"} & set(p.parts):
+                out.setdefault(p.stem, str(p.relative_to(depot)))
+    return out
+
+
+def _rendu(corps, slugs, heritage):
+    """Le corps de la fiche en HTML : sans son titre (affiché à part), intertitres ancrés
+    (id « fs-<id> »), liens [[…]] vers les fiches ou, hors fiches, marqués comme tels."""
+    corps = re.sub(r"^# [^\n]*\n", "", corps, count=1, flags=re.M)
+
+    def wiki(m):
+        cible, sec, texte = m.group(1).strip(), (m.group(2) or "").strip(), (m.group(3) or "").strip()
+        lib = _html.escape(texte or cible)
+        if cible in slugs:
+            return '<a class="wiki" href="#fiches/%s%s">%s</a>' % (cible, "/" + sec if sec else "", lib)
+        h = heritage.get(cible)
+        return '<span class="wiki-hors" title="%s">%s</span>' % (
+            _html.escape("hors des fiches : %s (ancien dépôt, lecture seule)" % h if h else "lien mort : aucune fiche « %s »" % cible), lib)
+    corps = LIEN.sub(wiki, corps)
+    h = markdown.markdown(corps, extensions=["footnotes", "tables", "attr_list"])
+    return re.sub(r'<h([2-6]) id="([\w-]+)">', r'<h\1 id="fs-\2" data-section="\2">', h)
 
 
 def fiche(slug):
@@ -140,14 +162,17 @@ def fiche(slug):
     meta, corps = _lit(slug)
     titre, sections = _structure(corps)
     slugs = set(_slugs())
+    heritage = _heritage_md()
+    depot, _ = livre.heritage()
     liens, vus = [], set()
     for m in LIEN.finditer(corps):
         cible = m.group(1).strip()
         if cible in vus:
             continue
         vus.add(cible)
-        liens.append({"cible": cible, "fiche": cible in slugs,
-                      "heritage": None if cible in slugs else _cible_heritage(cible)})
+        h = None if cible in slugs else heritage.get(cible)
+        liens.append({"cible": cible, "fiche": cible in slugs, "heritage": h,
+                      "heritage_abs": str(depot / h) if h and depot else None})
     entrants = []
     for s in sorted(slugs - {slug}):
         _, c = _lit(s)
@@ -166,7 +191,8 @@ def fiche(slug):
                 o["chapitres"].append({"slug": c["slug"], "title": c["title"], "notes": e.get("notes") or []})
     centrale = _centrale_par_fiche().get(slug, [])
     return {"slug": slug, "titre": titre or slug, "meta": meta, "confiance": confiance(meta.get("confiance")),
-            "md": corps, "sections": sections, "liens": liens, "entrants": entrants,
+            "md": corps, "html": _rendu(corps, slugs, heritage), "sections": sections,
+            "fichier": str(dossier() / (slug + ".md")), "liens": liens, "entrants": entrants,
             "chapitres": _chapitres_par_fiche().get(slug, []),
             "oeuvres": sorted(oeuvres.values(), key=lambda o: o["cle"]),
             "oeuvres_centrales": {"total": len(centrale),

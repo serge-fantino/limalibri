@@ -94,6 +94,15 @@ insérer ou retirer un intertitre (`atelier/essai.py`). Le titre choisi se synch
 plan et le texte ; un double-clic sur un intertitre du texte le renomme. Aucun identifiant ne
 change ; chaque opération est au journal.
 
+Les **fiches** (bouton « Fiches » de l'en-tête) : la base de connaissance du livre,
+`kb/fiches/`, lue comme un wiki. `#fiches` est l'index (recherche, filtres : utilisées par un
+chapitre, sans lien entrant) ; `#fiches/<slug>[/<section>]` ouvre une fiche : sa confiance en
+pastilles (établi, débattu, récent…, détail au survol ou déplié), son texte avec les
+`[[liens]]` cliquables, son plan à gauche, et à droite ce qui la relie au livre — les
+chapitres qui la listent, les fiches qu'elle cite et qui la citent, les œuvres qu'y exploite
+l'essai avec un lien vers chaque note qui les cite. Un lien hors fiches (le cadre poétique de
+l'ancien dépôt) est marqué, et s'ouvre en lecture seule dans l'éditeur (`atelier/kb.py`).
+
 La **vérification** (🔎 sur une assertion ou une annotation) confie à Claude, avec WebSearch et
 WebFetch en plus de la lecture du livre, la recherche des sources selon les règles du livre
 (`skills/verification.md`) : verdict par assertion avec extraits, passage proposé pour l'essai
