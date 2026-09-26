@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -297,6 +297,21 @@ def modeles():
     return {"modeles": reecriture.MODELES,
             "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture")},
             "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture")}}
+
+
+@app.get("/api/fiches")
+def fiches():
+    """Les fiches de la base de connaissance (kb/fiches/), avec leurs liens."""
+    return kb.index()
+
+
+@app.get("/api/fiches/{slug}")
+def fiche(slug: str):
+    """Une fiche : texte, sections, liens sortants et entrants, chapitres, œuvres."""
+    try:
+        return kb.fiche(slug)
+    except KeyError:
+        raise HTTPException(404, "fiche inconnue : %s" % slug)
 
 
 @app.get("/api/chapitres/{slug}/recherches")

@@ -47,7 +47,8 @@ def empreinte(slug):
 def ident_section(titre, pris):
     s = unicodedata.normalize("NFD", titre.lower())
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-    mots = [m for m in re.split(r"[^a-z0-9]+", s.replace("'", " ").replace("’", " ")) if m and m not in VIDES]
+    mots = [m for m in re.split(r"[^a-z0-9]+", s.replace("'", " ").replace("’", " "))
+            if m and m not in VIDES and (len(m) > 1 or m.isdigit())]      # « c'est » -> ni « c » ni « est »
     base = "-".join(mots[:3])
     if len(base) < 8:                       # « Ce qu'on ne sait pas » -> pas « sait » seul
         tous = [m for m in re.split(r"[^a-z0-9]+", s) if m]

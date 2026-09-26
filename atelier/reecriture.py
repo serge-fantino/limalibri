@@ -468,11 +468,12 @@ def compile_contexte(slug, d):
         depot, h = livre.heritage()
         L.append("\n## Consulter le livre (lecture seule)\n\nTu peux lire et chercher dans les "
                  "fichiers du livre (dossier courant) : chapters/%s/ (recit.md, essai.md, verrou.yaml, "
-                 "bibliographie.yaml, annotations.jsonl), les autres chapitres, regles/.%s Consulte-les "
+                 "bibliographie.yaml, annotations.jsonl), les autres chapitres, regles/, les fiches "
+                 "scientifiques kb/fiches/.%s Consulte-les "
                  "quand une annotation pose une question de fond ou qu'un raccord l'exige ; cite le "
                  "fichier dans ta note. Tu ne modifies rien." % (
-                     slug, " Le dépôt d'origine (%s) contient les fiches scientifiques (science/) et la "
-                     "bibliographie centrale (%s)." % (depot, h.get("bibliographie", "")) if depot else ""))
+                     slug, " Le dépôt d'origine (%s) contient la bibliographie centrale (%s)." % (
+                         depot, h.get("bibliographie", "")) if depot else ""))
     L.append("\n## Demande\n\nmode : %s\n%s" % (d["mode"], d.get("consigne") or
              "(pas de consigne : répondre aux annotations, et sinon améliorer selon les règles)"))
     return systeme, "\n".join(L)

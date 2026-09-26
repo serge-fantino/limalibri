@@ -19,7 +19,7 @@ ajouter ou corriger. Rien n'est appliqué sans l'auteur.
    captcha) : chercher une version PMC, arXiv, ou un dépôt institutionnel — **deux tentatives
    au plus** par œuvre. Sinon, **déclarer le fait non vérifié** plutôt que de l'affirmer.
 4. Commence par le livre lui-même (lecture seule) : l'essai du chapitre, les fiches
-   scientifiques du dépôt d'origine, la bibliographie centrale. Une œuvre déjà dans la
+   scientifiques (kb/fiches/, celles du chapitre d'abord), la bibliographie centrale. Une œuvre déjà dans la
    bibliographie centrale garde **sa** clé.
 5. Un DOI n'est donné que s'il a été lu sur une page consultée. Jamais de mémoire.
 6. **Mesure.** Ta recherche a un budget (donné avec la demande) ; au-delà, l'outil est

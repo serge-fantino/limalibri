@@ -151,6 +151,8 @@ poetry run python3 migrer/structure.py                # ordre.md -> book-atelier
 poetry run python3 migrer/chapitre.py la-mer          # un chapitre -> book-atelier/chapters/la-mer/
 poetry run python3 migrer/liens_essai.py la-mer <analyse.json>   # liens verrou -> essai, écarts
 poetry run python3 migrer/bibliographie.py la-mer <analyse.json>  # bibliographie du chapitre
+poetry run python3 migrer/fiches.py                   # science/*.md -> book-atelier/kb/fiches/
+poetry run python3 migrer/liens_fiches.py             # fiches des chapitres et des œuvres
 poetry run uvicorn atelier.serveur:app --reload --port 8765
 ```
 

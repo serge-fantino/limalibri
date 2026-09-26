@@ -85,6 +85,11 @@ def _plan_texte(slug):
     return "\n".join(L)
 
 
+def _fiches_du_chapitre(slug):
+    f = (livre.atelier(slug).get("brief") or {}).get("fiches") or []
+    return " — celles du chapitre : %s" % ", ".join(str(x) for x in f) if f else ""
+
+
 def compile_contexte(slug, d):
     m = livre.meta()
     at = livre.atelier(slug)
@@ -127,9 +132,10 @@ def compile_contexte(slug, d):
     L.append(reecriture.texte_budget(d["budget"]["limites"]))
     depot, h = livre.heritage()
     L.append("\n## Où chercher dans le livre (lecture seule)\n"
-             "Dossier courant : chapters/%s/ (essai.md, verrou.yaml, bibliographie.yaml)%s." % (
-                 slug, " ; dépôt d'origine : %s — fiches science/, bibliographie centrale %s" % (
-                     depot, h.get("bibliographie", "")) if depot else ""))
+             "Dossier courant : chapters/%s/ (essai.md, verrou.yaml, bibliographie.yaml) ; les fiches "
+             "scientifiques du livre : kb/fiches/<slug>.md%s%s." % (
+                 slug, _fiches_du_chapitre(slug),
+                 " ; dépôt d'origine : %s — bibliographie centrale %s" % (depot, h.get("bibliographie", "")) if depot else ""))
     return systeme, "\n".join(L)
 
 

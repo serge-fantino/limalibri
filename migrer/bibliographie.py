@@ -12,6 +12,7 @@ vérifie contre la source avant d'écrire chapters/<slug>/bibliographie.yaml :
     et sa référence est reprise de là, pas de l'analyse ;
   · chaque note citée existe dans essai.md ;
   · chaque [@cle] de l'essai figure dans la liste (rien d'oublié).
+Une entrée centrale reçoit aussi `fiches:`, les fiches de kb/fiches/ où l'œuvre est exploitée.
 
 Un DOI n'est écrit que s'il est dans la note ou dans la base centrale ; il n'est pas
 vérifié (l'API Crossref est bloquée par le proxy). Le lien doi.org en est dérivé.
@@ -29,7 +30,7 @@ from chapitre import CIBLE, SOURCE, dump, Refus  # noqa: E402
 sys.path.insert(0, str(SOURCE / "livre" / "outils"))
 import appareil  # noqa: E402
 
-CHAMPS = ("cle", "ref", "doi", "centrale", "citation", "notes", "doute")
+CHAMPS = ("cle", "ref", "doi", "centrale", "citation", "notes", "fiches", "doute")
 
 
 def construit(slug, analyse):
@@ -48,6 +49,9 @@ def construit(slug, analyse):
             if cle not in base:
                 raise Refus("%s : dite centrale, absente de livre/bibliographie.md" % cle)
             e["ref"] = base[cle]["ref"]                 # la base fait foi
+            fiches = [f for f in base[cle].get("fiches", []) if f != "—"]
+            if fiches:
+                e["fiches"] = fiches                    # où l'œuvre est exploitée (kb/fiches/)
         elif cle in base:
             raise Refus("%s : dite nouvelle, mais la clé existe déjà dans la base" % cle)
         for n in e.get("notes", []):

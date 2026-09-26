@@ -7,7 +7,8 @@
 
 Produit, à partir du cadre, du storyboard, de l'habillage et des deux chapitres :
 
-    brief.yaml    intention, tenue, budget, interdits, plans (= beats)   <- cadre + storyboard
+    brief.yaml    fiches, intention, tenue, budget, interdits, plans     <- cadre + storyboard
+                  (fiches : l'en-tête « fiches: » du chapitre de l'essai)
     verrou.yaml   les assertions, par section, avec statut et note       <- cadre §1
     recit.md      la prose du récit, un ^id par paragraphe                <- recit/chapitres
     essai.md      la prose de l'essai (ex-« livre »), un ^id par bloc     <- livre/chapitres
@@ -309,11 +310,15 @@ def migre(slug):
         p["assertions"] = developpe(p["assertions"], ordre)
     contraintes = [norm(l[2:]) for l in sb_sec.get("Interdits propres au storyboard", "").splitlines()
                    if l.startswith("- ")]
+    fiches = re.search(r"^fiches:\s*\[(.*)\]", (ENTETE.match(lire("essai")) or re.match("", "")).group(0), re.M)
     brief = {"chapter": slug,
              "intent": etiquettes(trouve("Intention")),
              "tenue": etiquettes(trouve("Tenue")),
              "suivi": sb_sec.get("Ce qui est suivi", "").strip().rstrip("-").strip(),
              "budget": b}
+    if fiches:                               # les fiches de kb/fiches/ (en-tête du chapitre de l'essai)
+        brief = {"chapter": slug, "fiches": [x.strip() for x in fiches.group(1).split(",") if x.strip()],
+                 **{k: v for k, v in brief.items() if k != "chapter"}}
     if derog:
         brief["derogations"] = derog
     brief["interdits"] = interdits
