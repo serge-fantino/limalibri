@@ -61,6 +61,8 @@ LIMITES = {"verification": {"tours": 25, "recherches": 6, "pages": 12},
            "fiche": {"tours": 40, "recherches": 12, "pages": 25},
            "pistes": {"tours": 20, "recherches": 0, "pages": 0},
            "reference": {"tours": 14, "recherches": 3, "pages": 4},
+           "naive": {"tours": 3, "recherches": 0, "pages": 0},
+           "document": {"tours": 12, "recherches": 3, "pages": 5},
            "reecriture": {"tours": 16, "recherches": 0, "pages": 0}}
 # Un message du CLI peut porter un gros résultat d'outil (un PDF lu d'un bloc) : 1 Mo par défaut
 # ne suffit pas. Et un PDF se lit par pages, jamais entier (voir le crochet).
@@ -192,7 +194,7 @@ def liste(slug):
                    | {"blocs": d["cible"].get("blocs") or [], "annotations": d["cible"].get("annotations") or [],
                       "assertions": d["cible"].get("assertions") or [],
                       "chapitres": d["cible"].get("chapitres") or [], "question": d["cible"].get("question"),
-                      "fiche": d["cible"].get("fiche"), "cle": d["cible"].get("cle"),
+                      "fiche": d["cible"].get("fiche"), "cle": d["cible"].get("cle"), "version": d["cible"].get("version"),
                       "plan": d["cible"].get("plan"), "decision": d.get("decision")})
     return sorted(out, key=lambda d: d["cree"], reverse=True)
 
@@ -229,6 +231,12 @@ def relance(slug, ident, consigne=None, modele_choisi=False):
     elif d.get("type") == "reference":
         from . import references
         n = references.cree({"cle": c["cle"], "consigne": consigne, "modele": mc})
+    elif d.get("type") == "document":
+        from . import documents
+        n = documents.cree({"cle": c["cle"], "consigne": consigne, "modele": mc})
+    elif d.get("type") == "naive":
+        from . import naif
+        n = naif.cree(slug, {"version": c["version"], "modele": mc})
     elif d.get("type") == "fiche":
         from . import creation
         n = creation.cree({"question": c["question"], "slug": c.get("slug"), "chapitres": c.get("chapitres"),
@@ -424,6 +432,11 @@ def titre_de(d):
     if d.get("type") == "reference":
         from . import references
         return references.titre_de(d)
+    if d.get("type") == "naive":
+        from . import naif
+        return naif.titre_de(d)
+    if d.get("type") == "document":
+        return "Texte original de %s" % d["cible"].get("cle")
     if d.get("type") == "verification":
         morceaux = []
         for a in d["cible"].get("assertions", []):
@@ -761,6 +774,12 @@ def _genre(d):
     if d.get("type") == "reference":
         from . import references
         return "reference", references.SCHEMA, references.conclut, None
+    if d.get("type") == "naive":
+        from . import naif
+        return "naive", naif.SCHEMA, naif.conclut, None
+    if d.get("type") == "document":
+        from . import documents
+        return "document", documents.SCHEMA, documents.conclut, None
     return "reecriture", SCHEMA, _conclut, None
 
 

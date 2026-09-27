@@ -50,6 +50,9 @@ def lance(ident):
     if d.get("type") == "reference":
         from . import references
         return references.demarre(ident)
+    if d.get("type") == "document":
+        from . import documents
+        return documents.demarre(ident)
     raise ValueError("type de demande sans file : %s" % d.get("type"))
 
 

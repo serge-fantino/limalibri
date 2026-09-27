@@ -775,6 +775,33 @@ cite[data-cle]:hover{color:var(--acc)}
 .badge.statut-neutre{color:var(--mut)}
 .oeuvre-verif{border-left:3px solid #2f6f4f;padding:.3rem .6rem;margin:.5rem 0;background:var(--bar)}
 .oeuvre-actions{flex-wrap:wrap;margin:.6rem 0}
+/* ---- le harnais ---- */
+.porte{border-left:3px solid var(--rule);padding:.2rem .6rem;margin:.35rem 0}
+.porte summary{cursor:pointer;display:flex;gap:.5rem;align-items:baseline}
+.porte-ok{border-left-color:#2f6f4f}
+.porte-ko{border-left-color:#c4525a}
+.porte-avert{border-left-color:#a4561b}
+.porte-icone{font-weight:bold;width:1rem}
+.porte-ok .porte-icone{color:#2f6f4f}
+.porte-ko .porte-icone{color:#c4525a}
+.porte-avert .porte-icone{color:#a4561b}
+.porte-n{font-family:var(--ui);font-size:.75rem;color:var(--mut)}
+.releve{font-size:.8rem;margin:.35rem 0 .35rem 1.4rem}
+.releve-lib{color:var(--mut)}
+.releve-extrait{font-family:var(--pf);font-size:.85rem;margin-top:.1rem}
+.releve-extrait mark{background:var(--hl);color:inherit}
+#outils .b-harnais.a-revalider{color:#c4525a;border-color:#c4525a}
+.choix-naif{margin:.3rem 0}
+/* ---- la page d'une œuvre ---- */
+.oeuvre-ref.grande{font-size:1.05rem}
+h2.oeuvre-section{font-size:1rem;font-family:var(--ui);text-transform:uppercase;letter-spacing:.06em;color:var(--mut);
+ margin:1.8rem 0 .5rem;border-bottom:1px solid var(--rule);padding-bottom:.2rem}
+.doc-ligne{margin:.3rem 0}
+.doc-ajout{flex-wrap:wrap;gap:.5rem;align-items:center;margin:.6rem 0}
+.doc-ajout .dem-motif{flex:1;min-width:14rem}
+.citation-oeuvre{margin:.5rem 0}
+.usage-oeuvre{margin:.5rem 0;border-left:3px solid var(--rule);padding-left:.6rem}
+.historique-oeuvre{padding-left:1rem}
 @media(max-width:1100px){#cadre{grid-template-columns:14rem minmax(0,1fr) 16rem}
  body[data-vue="storyboard"][data-panneau] #cadre{grid-template-columns:minmax(0,1fr) 22rem}
  body[data-vue="storyboard"][data-panneau] #gauche{display:none}}

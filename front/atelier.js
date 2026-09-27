@@ -325,6 +325,17 @@ function barreOutils() {
     bval.onclick = () => panneauValidation(bval);
     o.append(bval);
   }
+  if (etat.atelier && (v === "recit" || v === "storyboard" || v === "essai")) {
+    const bh = el("button", "b-validation b-harnais", "✓ harnais");
+    bh.title = "les portes du chapitre (verrou, budget, garde-fous, répétitions, lecture naïve…) puis la validation";
+    bh.onclick = () => tiroirHarnais(versionVue());
+    o.append(bh);
+    api(`/chapitres/${etat.slug}/harnais/${versionVue()}`).then((R) => {
+      bh.textContent = R.ok ? "✓ harnais" : `✗ harnais · ${R.bloquantes.length}`;
+      bh.classList.toggle("a-revalider", !R.ok);
+      bh.title = R.ok ? "toutes les portes bloquantes passent" : "portes à passer : " + R.bloquantes.join(", ");
+    }).catch(() => {});
+  }
   const bv = el("button", "b-versions", "⎇ versions");
   bv.title = "enregistrer une version du livre (git)";
   bv.onclick = () => panneauVersions(bv);
@@ -2472,7 +2483,7 @@ async function chargeDemandes() {
   b.classList.toggle("a-decider", n > 0);
 }
 
-const LIB_TYPE_KB = { fiche: "◇ fiche", pistes: "◇ creuser", renvois: "⇄ renvois", reference: "🔎 référence" };
+const LIB_TYPE_KB = { fiche: "◇ fiche", pistes: "◇ creuser", renvois: "⇄ renvois", reference: "🔎 référence", document: "⤓ original" };
 const ETIQ_DEM = { en_cours: "en cours", prete: "à décider", erreur: "erreur", remplacee: "remplacée",
   en_attente: "en attente", retiree: "retirée", abandonnee: "abandonnée", a_confirmer: "à confirmer" };
 
@@ -2483,6 +2494,7 @@ function avise(d) {
   setTimeout(() => a.remove(), 15000);
 }
 function etiquetteDemande(d) {
+  if (d.type === "naive" && d.etat === "decidee") return "close";
   return d.etat === "decidee" ? (d.decision?.proposition ? "retenue" + (d.type === "verification" ? "" : " " + d.decision.proposition) : "rejetée")
     : ETIQ_DEM[d.etat] ?? d.etat;
 }
@@ -2573,7 +2585,7 @@ function majCompteAnnotations() {
 let suivi = null;
 // Le « chapitre » d'une demande : les créations de fiche vivent dans kb/demandes (« _kb »).
 function slugDe(ident) {
-  return /^[fplr]-/.test(String(ident ?? "")) ? "_kb" : etat.slug;
+  return /^[fplro]-/.test(String(ident ?? "")) ? "_kb" : etat.slug;
 }
 
 // Le tiroir ouvert est retenu (session du navigateur) : un rafraîchissement le rouvre.
@@ -2591,7 +2603,7 @@ async function tiroir(ident) {
   const t = document.getElementById("tiroir");
   t.hidden = false;
   document.body.dataset.tiroir = "1";
-  if ((!etat.slug || !etat.atelier) && !/^[fplr]-/.test(String(ident ?? ""))) {
+  if ((!etat.slug || !etat.atelier) && !/^[fplro]-/.test(String(ident ?? ""))) {
     if (!ident && etat.wiki) return historiqueFiches(t);
     t.replaceChildren(teteTiroir("Réécritures"), el("p", "mut", "Ouvrir un chapitre de l'atelier."));
     return;
@@ -2603,6 +2615,8 @@ async function tiroir(ident) {
   if (d.type === "pistes") return tiroirPistes(t, d);
   if (d.type === "renvois") return tiroirRenvois(t, d);
   if (d.type === "reference") return tiroirReference(t, d);
+  if (d.type === "naive") return tiroirNaif(t, d);
+  if (d.type === "document") return tiroirDocument(t, d);
   t.replaceChildren(teteTiroir(`Réécriture · ${d.portee}${d.cible.plan ? " " + d.cible.plan : ""} · ${MODES_R[d.mode]}`, () => tiroir(null)));
   if (d.titre) t.append(el("p", "dem-titre", d.titre));
   const cible = el("div", "dem-cible");
@@ -3199,7 +3213,8 @@ async function historique(t) {
       const l = el("button", "dem-ligne " + (OUVERTES.has(d.etat) ? "ouverte" : "close"));
       const haut = el("span", "dem-haut");
       haut.append(el("span", "annot-type", d.type === "verification" ? "🔎 recherche" : d.type === "fiche" ? "◇ fiche"
-        : d.type === "pistes" ? "◇ creuser" : d.type === "renvois" ? "⇄ renvois" : d.type === "reference" ? "🔎 référence" : "↻ réécriture"),
+        : d.type === "pistes" ? "◇ creuser" : d.type === "renvois" ? "⇄ renvois" : d.type === "reference" ? "🔎 référence"
+        : d.type === "naive" ? "👁 lecture naïve" : "↻ réécriture"),
         el("span", "dem-etat " + d.etat, etiquetteDemande(d)), el("span", "annot-date", d.cree.slice(0, 16).replace("T", " ")));
       l.append(haut, el("span", "dem-titre-ligne", d.titre ?? ""));
       if (d.consigne) l.append(el("span", "dem-consigne", "« " + d.consigne + " »"));
@@ -3741,15 +3756,16 @@ function sectionClaude(L) {
   api("/file").then((F) => fileBox.append(reglageFile(F, () => accueil()),
     el("span", "mut petit", `${F.en_attente.length} en attente · désactivé : chaque demande se lance à la main`))).catch(() => {});
   s.append(fileBox);
-  const LIB = { verification: "Vérification", reecriture: "Réécriture", fiche: "Fiche nouvelle", pistes: "Creuser", reference: "Référence" };
+  const LIB = { verification: "Vérification", reecriture: "Réécriture", fiche: "Fiche nouvelle", pistes: "Creuser", reference: "Référence",
+    naive: "Lecture naïve", document: "Texte original" };
   const CH = { tours: "tours", recherches: "recherches web", pages: "pages lues" };
-  for (const g of ["verification", "reecriture", "fiche", "pistes", "reference"]) {
+  for (const g of ["verification", "reecriture", "fiche", "pistes", "reference", "naive", "document"]) {
     const G = C[g] ?? {};
     const lim = etat.modeles?.limites?.[g] ?? {};
     const box = el("div", "claude-genre");
     box.append(el("strong", null, LIB[g]),
       selModele(G.modele, "comme le livre", (v) => apres({ [g]: { modele: v } })));
-    for (const cle of ["verification", "fiche", "reference"].includes(g) ? ["tours", "recherches", "pages"] : ["tours"]) {
+    for (const cle of ["verification", "fiche", "reference", "document"].includes(g) ? ["tours", "recherches", "pages"] : g === "naive" ? [] : ["tours"]) {
       const n = el("input", "claude-nombre");
       n.type = "number";
       n.min = 0;
@@ -4025,7 +4041,7 @@ function depuisAdresse() {
   if (slug.startsWith("fn")) return;
   etat.wiki = slug === "fiches" || slug === "biblio";
   boutons();
-  if (slug === "biblio") { etat.accueil = false; return vueBiblioLivre(vue); }
+  if (slug === "biblio") { etat.accueil = false; return vue ? pageOeuvre(vue) : vueBiblioLivre(); }
   if (etat.wiki) { etat.accueil = false; return vueFiches(vue, mode); }
   if (!slug || slug === "livre") {
     etat.accueil = true;
@@ -4238,7 +4254,7 @@ async function apercuOeuvre(cle) {
     d.replaceChildren(...(etat.apercuRetour ?? []));
     etat.apercuRetour = null;
   };
-  const plein = el("a", "pan-lien", "bibliographie ↗");
+  const plein = el("a", "pan-lien", "page de l'œuvre ↗");
   plein.href = `#biblio/${cle}`;
   tete.append(retour, el("span", "mut petit", "œuvre · " + cle), plein);
   box.append(tete);
@@ -4406,8 +4422,10 @@ async function tiroirReference(t, d) {
   t.replaceChildren(teteTiroir("Vérifier une référence", () => historiqueFiches(t)));
   const cible = el("div", "dem-cible");
   const c = el("p", "annot-corps");
-  const lien = el("button", "pan-lien", d.cible.cle);
-  lien.onclick = () => apercuOeuvre(d.cible.cle);
+  const lien = el("a", "pan-lien", d.cible.cle + " ↗");
+  lien.href = `#biblio/${d.cible.cle}`;
+  lien.title = "la page de l'œuvre : ses documents, ses citations, ses vérifications";
+  lien.onclick = () => { t.hidden = true; delete document.body.dataset.tiroir; };
   c.append(lien, " — ");
   const ref = el("span");
   ref.innerHTML = mdLigne(d.cible.ref ?? "");
@@ -4488,6 +4506,336 @@ async function tiroirReference(t, d) {
   piedTiroir(t, d);
 }
 
+// ------------------------------------------------------------------ la page d'une œuvre
+
+const CONTROLE_CIT = { trouvee: ["trouvée", "statut-ok"], absente: ["absente du document", "hors"],
+  sans_document: ["pas de document", "statut-neutre"], trop_courte: ["trop courte", "statut-neutre"] };
+
+function titreOeuvre(o) {
+  const m = (o.ref ?? "").match(/«\s*(.+?)\s*»/);
+  return m ? m[1] : o.cle;
+}
+
+async function pageOeuvre(cle) {
+  document.body.dataset.vue = "fiches";
+  delete document.body.dataset.panneau;
+  document.getElementById("volet-chapitre").hidden = true;
+  sommaire();
+  const page = document.getElementById("page");
+  let X;
+  try { X = await api(`/oeuvres/${encodeURIComponent(cle)}`); }
+  catch { page.replaceChildren(el("p", "mut", `Pas d'œuvre « ${cle} ».`)); return; }
+  const o = X.oeuvre, B = X.base;
+  const rafraichit = async () => { await chargeOeuvres(true); pageOeuvre(cle); };
+  // la barre : les actions sur l'œuvre
+  const aO = el("span", "actions-barre");
+  aO.append(el("span", "etiq", "cette œuvre"));
+  const zoneForm = el("div", "actions-fiche");
+  const ouvre = (n) => { zoneForm.replaceChildren(n); n.scrollIntoView({ block: "center" }); };
+  if (B) {
+    const ver = el("button", "b-versions", "🔎 vérifier…");
+    ver.onclick = () => ouvre(formVerifReference(cle));
+    const ori = el("button", "b-versions", "⤓ texte original…");
+    ori.title = "Claude cherche une version en accès libre ; tu choisis, le serveur la range dans le livre";
+    ori.onclick = () => ouvre(formOriginal(cle));
+    const mod = el("button", "b-versions", "✎ modifier");
+    mod.onclick = () => ouvre(formOeuvre(Object.assign({}, B, { cle })));
+    aO.append(ver, ori, mod);
+  } else {
+    const aj = el("button", "b-versions", "＋ ajouter à la base");
+    aj.onclick = async () => {
+      const r = await fetch("/api/oeuvres", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cle, ref: o.ref, doi: o.doi, url: o.url, doute: o.doute, fiches: o.fiches, origine: "ajoutée depuis sa page" }) });
+      if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+      rafraichit();
+    };
+    aO.append(aj);
+  }
+  barreFiches("biblio", aO);
+
+  const fil = el("p", "fil");
+  const retour = el("a", null, "Bibliographie");
+  retour.href = "#biblio";
+  fil.append(retour, ` › ${cle}`);
+  const ref = el("p", "oeuvre-ref grande");
+  ref.innerHTML = mdLigne(o.ref || cle);
+  const meta = el("div", "biblio-ou");
+  meta.append(badgeStatut(o));
+  if (o.doublon_de) { const a = el("a", "pan-lien", "même œuvre que " + o.doublon_de); a.href = `#biblio/${o.doublon_de}`; meta.append(a); }
+  if (o.doute) { const x = el("span", "badge doute", "doute"); x.title = o.doute; meta.append(x); }
+  meta.append(liensSource(o.doi, o.ref));
+  if (o.url) { const a = el("a", "lien-ext", "page ↗"); a.href = o.url; a.target = "_blank"; meta.append(a); }
+  page.replaceChildren(fil, el("h1", null, titreOeuvre(o)), ref, meta, zoneForm);
+  if (o.origine) page.append(el("p", "mut petit", "origine : " + o.origine));
+  if (o.doute) page.append(el("p", "mut petit", "doute : " + o.doute));
+  if (o.notes) page.append(el("p", "mut petit", o.notes));
+  if (!B) page.append(el("p", "fiche-alerte petit", "Cette œuvre est citée, mais n'est pas dans la bibliographie du livre (kb/sources) : l'y ajouter pour la vérifier, ranger ses documents et ses citations."));
+  const section = (titre, n) => { const h = el("h2", "oeuvre-section", n != null ? `${titre} · ${n}` : titre); page.append(h); return h; };
+
+  // les documents
+  if (B) {
+    const docs = B.documents ?? [];
+    section("Documents", docs.length);
+    if (!docs.length) page.append(el("p", "mut petit", "Aucun document : le texte original n'est pas encore dans le livre."));
+    for (const x of docs) {
+      const l = el("div", "doc-ligne");
+      const a = el("a", "pan-lien", "📄 " + x.fichier);
+      a.href = `/api/oeuvres/${encodeURIComponent(cle)}/documents/${encodeURIComponent(x.fichier)}`;
+      a.target = "_blank";
+      l.append(a, el("span", "mut petit", ` ${x.pages ? x.pages + " pages · " : ""}${Math.round((x.taille ?? 0) / 1024)} Ko · ${x.date} · ${x.par ?? ""}` +
+        (x.texte ? "" : " · texte non extrait")));
+      if (x.source && /^https?:/.test(x.source)) { const s = el("a", "lien-ext", "source ↗"); s.href = x.source; s.target = "_blank"; l.append(" ", s); }
+      else if (x.source) l.append(el("span", "mut petit", " · " + x.source));
+      const rm = el("button", "pan-lien danger", "retirer");
+      rm.onclick = async () => {
+        if (!confirm(`Retirer ${x.fichier} du livre ?`)) return;
+        await fetch(`/api/oeuvres/${encodeURIComponent(cle)}/documents/${encodeURIComponent(x.fichier)}`, { method: "DELETE" });
+        rafraichit();
+      };
+      l.append(" ", rm);
+      page.append(l);
+    }
+    const ajout = el("div", "annot-actions doc-ajout");
+    const fichier = el("input");
+    fichier.type = "file";
+    fichier.accept = ".pdf,.html,.htm,.txt,.xml,.epub";
+    fichier.hidden = true;
+    const tel = el("button", "bouton", "⇪ téléverser un document…");
+    tel.onclick = () => fichier.click();
+    fichier.onchange = async () => {
+      const f = fichier.files[0];
+      if (!f) return;
+      tel.disabled = true; tel.textContent = "envoi…";
+      const r = await fetch(`/api/oeuvres/${encodeURIComponent(cle)}/documents?nom=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
+      if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); tel.disabled = false; tel.textContent = "⇪ téléverser un document…"; return; }
+      rafraichit();
+    };
+    const url = el("input", "dem-motif");
+    url.placeholder = "ou l'adresse d'un PDF en accès libre…";
+    const dl = el("button", "pan-lien", "⤓ télécharger");
+    dl.onclick = async () => {
+      if (!url.value.trim()) return;
+      dl.disabled = true; dl.textContent = "téléchargement…";
+      const r = await fetch(`/api/oeuvres/${encodeURIComponent(cle)}/documents/url`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.value }) });
+      if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); dl.disabled = false; dl.textContent = "⤓ télécharger"; return; }
+      rafraichit();
+    };
+    ajout.append(tel, fichier, url, dl);
+    page.append(ajout);
+    for (const x of X.demandes.filter((y) => y.type === "document" && y.etat !== "decidee")) {
+      const b = el("button", "pan-lien", `⤓ recherche du texte original : ${etiquetteDemande(x)} →`);
+      b.onclick = () => tiroir(x.id);
+      page.append(b);
+    }
+  }
+
+  // les citations
+  if (B) {
+    const C = B.citations ?? [];
+    section("Citations", C.length);
+    page.append(el("p", "mut petit", "Les passages cités mot pour mot, chacun contrôlé contre les documents de l'œuvre " +
+      "(ponctuation, casse et accents ignorés)."));
+    C.forEach((c, i) => {
+      const b = el("div", "citation-oeuvre");
+      b.append(el("blockquote", "verif-extrait", c.texte));
+      const m = el("div", "biblio-ou");
+      const k = CONTROLE_CIT[c.controle?.etat] ?? [c.controle?.etat ?? "?", "statut-neutre"];
+      m.append(el("span", "badge " + k[1], k[0] + (c.controle?.page ? ` · p. ${c.controle.page}` : "")));
+      if (c.page) m.append(el("span", "mut petit", `page indiquée : ${c.page}`));
+      if (c.usage) m.append(el("span", "mut petit", "· " + c.usage));
+      m.append(el("span", "mut petit", `· ${c.origine ?? ""} · ${c.date ?? ""}`));
+      const rm = el("button", "pan-lien danger", "retirer");
+      rm.onclick = async () => { await fetch(`/api/oeuvres/${encodeURIComponent(cle)}/citations/${i}`, { method: "DELETE" }); rafraichit(); };
+      m.append(rm);
+      b.append(m);
+      page.append(b);
+    });
+    const f = el("div", "form-demande");
+    const tx = el("textarea", "annot-texte petit-texte");
+    tx.placeholder = "le passage, mot pour mot (dans la langue de l'œuvre)";
+    const pgx = el("input", "dem-motif");
+    pgx.placeholder = "page (facultatif)";
+    const us = el("input", "dem-motif");
+    us.placeholder = "où il sert (note, fiche…) — facultatif";
+    const ok = el("button", "bouton", "＋ ajouter la citation");
+    ok.onclick = async () => {
+      const r = await fetch(`/api/oeuvres/${encodeURIComponent(cle)}/citations`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texte: tx.value, page: pgx.value || null, usage: us.value || null }) });
+      if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+      rafraichit();
+    };
+    f.append(tx, pgx, us, ok);
+    page.append(f);
+  }
+
+  // les vérifications : la dernière, l'historique, celles en cours
+  section("Vérifications", (B?.verifications ?? []).length || null);
+  const V = B?.verification;
+  if (V) {
+    const v = el("div", "oeuvre-verif");
+    v.append(el("span", "appui-lieu", `dernière : ${V.date} — ${VERDICT_REF[V.verdict] ?? V.verdict}`), el("p", "petit", V.resume ?? ""));
+    for (const c of V.citations ?? []) {
+      const l = el("p", "petit");
+      l.append(el("span", "badge " + (c.appui === "oui" ? "statut-ok" : c.appui === "non" ? "hors" : "doute"), c.appui), ` ${c.ou} — ${c.commentaire ?? ""}`);
+      v.append(l);
+    }
+    page.append(v);
+  } else page.append(el("p", "mut petit", "Jamais vérifiée."));
+  const H = [...(B?.verifications ?? [])].reverse();
+  for (const h of H) {
+    const b = el("button", "pan-lien", `${h.date} · ${VERDICT_REF[h.verdict] ?? h.verdict} · ${h.demande} →`);
+    b.onclick = () => tiroir(h.demande);
+    page.append(b, el("br"));
+  }
+  for (const x of X.demandes.filter((y) => y.type === "reference" && y.etat !== "decidee")) {
+    const b = el("button", "pan-lien", `🔎 vérification ${etiquetteDemande(x)} →`);
+    b.onclick = () => tiroir(x.id);
+    page.append(b, el("br"));
+  }
+
+  // où elle est citée
+  section("Où elle est citée", X.usages.length + (o.fiches ?? []).length);
+  for (const u of X.usages) {
+    const b = el("div", "usage-oeuvre");
+    const m = u.ou.match(/^note (\S+) \(chapitre (\S+)\)$/), f = u.ou.match(/^fiche (\S+), section \{#(\S*)\}$/);
+    const a = el("a", "pan-lien", u.ou);
+    if (m) { a.href = `#${m[2]}/essai/notes`; a.onclick = () => { etat.noteApres = m[1]; }; }
+    else if (f) a.href = `#fiches/${f[1]}${f[2] ? "/" + f[2] : ""}`;
+    b.append(a, el("p", "petit", u.texte));
+    page.append(b);
+  }
+  if ((o.fiches ?? []).length) {
+    const p = el("div", "pastilles");
+    p.append(el("span", "mut petit", "exploitée dans les fiches : "), ...o.fiches.map((x) => puceFiche(x)));
+    page.append(p);
+  }
+  for (const c of o.chapitres ?? []) {
+    const l = el("p", "petit");
+    const a = el("a", "pan-lien", `${c.numero ?? ""} ${c.title} — bibliographie du chapitre`);
+    a.href = `#${c.slug}/essai/biblio`;
+    a.onclick = () => { etat.sourceChoisie = cle; };
+    l.append(a);
+    page.append(l);
+  }
+
+  // doublons possibles, historique
+  if (X.candidats.length) {
+    section("Doublons possibles", X.candidats.length);
+    for (const c of X.candidats) {
+      const l = el("p", "petit");
+      const a = el("a", "pan-lien", c.cle);
+      a.href = `#biblio/${c.cle}`;
+      const r = el("span");
+      r.innerHTML = " (" + c.pourquoi + ") — " + mdLigne(c.ref ?? "");
+      l.append(a, r);
+      page.append(l);
+    }
+  }
+  if (X.journal.length) {
+    section("Historique", X.journal.length);
+    const ul = el("ul", "petit historique-oeuvre");
+    for (const e of [...X.journal].reverse()) {
+      const li = el("li");
+      li.append(el("span", "mut", (e.date ?? "").slice(0, 16).replace("T", " ") + " "), e.type.replace(/_/g, " "),
+        e.verdict ? ` — ${e.verdict}` : "", e.fichier ? ` — ${e.fichier}` : "", e.motif ? ` — ${e.motif}` : "",
+        e.texte ? ` — « ${e.texte.slice(0, 80)} »` : "");
+      ul.append(li);
+    }
+    page.append(ul);
+  }
+  document.getElementById("fiche").replaceChildren(el("h4", null, "Œuvre"),
+    el("p", "mut petit", "Tout ce qui la concerne : ses documents (le texte original, rangé dans le livre), les passages cités mot pour mot, " +
+      "ses vérifications, et chaque endroit du livre qui la cite."));
+  zone().scrollTo(0, 0);
+}
+
+function formOriginal(cle) {
+  const f = el("div", "form-demande");
+  const z = el("textarea", "annot-texte petit-texte");
+  z.placeholder = "Précision (facultatif) : une édition, une version…";
+  const mod = choixModele("document");
+  const go = el("button", "bouton", "⤓ chercher le texte original");
+  go.onclick = async () => {
+    go.disabled = true;
+    const r = await fetch(`/api/oeuvres/${encodeURIComponent(cle)}/original`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ consigne: z.value, modele: mod.valeur() }) });
+    if (!r.ok) { go.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+    tiroir((await r.json()).id);
+  };
+  const non = el("button", "pan-lien", "annuler");
+  non.onclick = () => f.remove();
+  const act = el("div", "annot-actions");
+  act.append(go, non);
+  f.append(el("span", "appui-lieu", "texte original — une version en accès libre (PMC, arXiv, dépôts, éditeur en libre accès), jamais une bibliothèque pirate"),
+    z, mod.noeud, el("p", "mut petit", "Claude propose des candidats ; tu choisis ; le serveur télécharge et range le document. " +
+      "Si le texte n'est lisible que derrière un mur, téléverse ton exemplaire."), act);
+  return f;
+}
+
+async function tiroirDocument(t, d) {
+  t.replaceChildren(teteTiroir("Texte original", () => historiqueFiches(t)));
+  const cible = el("div", "dem-cible");
+  const a = el("a", "pan-lien", d.cible.cle + " ↗");
+  a.href = `#biblio/${d.cible.cle}`;
+  a.onclick = () => { t.hidden = true; delete document.body.dataset.tiroir; };
+  const r0 = el("span");
+  r0.innerHTML = " — " + mdLigne(d.cible.ref ?? "");
+  cible.append(a, r0);
+  t.append(cible);
+  if (d.etat === "en_attente" || d.etat === "retiree") return t.append(blocAttente(d));
+  if (d.etat === "en_cours") {
+    t.append(enDirect(d));
+    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    return piedTiroir(t, d);
+  }
+  if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
+  const R = d.resultat ?? { candidats: [] };
+  t.append(el("p", "annot-corps", R.resume ?? ""));
+  if (!R.libre) t.append(el("p", "fiche-alerte petit", "Pas de version en accès libre trouvée : téléverser ton exemplaire depuis la page de l'œuvre."));
+  R.candidats.forEach((c, i) => {
+    const b = el("div", "piste piste-nouvelle");
+    const tete = el("div", "annot-tete");
+    tete.append(el("span", "badge", c.type), el("span", "badge", c.version), el("span", "badge " + (c.confiance === "haute" ? "statut-ok" : "doute"), c.confiance));
+    b.append(tete);
+    const u = el("a", "lien-ext", c.url);
+    u.href = c.url; u.target = "_blank";
+    b.append(u, el("p", "petit", `${c.source}${c.licence ? " · " + c.licence : ""}`));
+    if (c.note) b.append(el("p", "mut petit", c.note));
+    if (c.echec) b.append(el("p", "fiche-alerte petit", "échec : " + c.echec));
+    if (d.etat === "prete") {
+      const go = el("button", "bouton", "⤓ télécharger celui-ci");
+      go.onclick = async () => {
+        go.disabled = true; go.textContent = "téléchargement…";
+        const r = await fetch(`/api/chapitres/_kb/demandes/${d.id}/decision`, { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "telecharger", i }) });
+        if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); tiroir(d.id); return; }
+        await chargeOeuvres(true);
+        tiroir(d.id);
+      };
+      b.append(go);
+    }
+    t.append(b);
+  });
+  if (d.decision?.proposition === "telecharge") {
+    const p = el("p", "verif-ok petit", "document rangé dans le livre — ");
+    const l = el("a", "pan-lien", "la page de l'œuvre ↗");
+    l.href = `#biblio/${d.cible.cle}`;
+    l.onclick = () => { t.hidden = true; delete document.body.dataset.tiroir; };
+    p.append(l);
+    t.append(p);
+  }
+  if (d.etat === "prete") {
+    const non = el("button", "pan-lien", "n'en garder aucun");
+    non.onclick = async () => {
+      await fetch(`/api/chapitres/_kb/demandes/${d.id}/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "rejeter" }) });
+      tiroir(d.id);
+    };
+    t.append(non);
+  }
+  piedTiroir(t, d);
+}
+
 // Un clic sur une citation, où qu'elle soit (essai, notes, fiche, aperçu) : l'œuvre à droite.
 document.addEventListener("click", (e) => {
   const c = e.target.closest?.("cite[data-cle]");
@@ -4547,6 +4895,12 @@ async function vueBiblioLivre(cle) {
       if (o.chapitres.length) meta.append(el("span", "puce", "essai : ch. " + o.chapitres.map((c) => c.numero ?? c.slug).join(", ")));
       if (o.fiches.length) meta.append(el("span", "puce", `${o.fiches.length} fiche(s)`));
       meta.append(liensSource(o.doi, o.ref));
+      const pg = el("a", "pan-lien", "page ↗");
+      pg.href = `#biblio/${o.cle}`;
+      pg.title = "la page de l'œuvre : documents, citations, vérifications, où elle est citée";
+      meta.append(pg);
+      if ((o.documents ?? []).length) meta.append(el("span", "puce", `📄 ${o.documents.length}`));
+      if ((o.citations ?? []).length) meta.append(el("span", "puce", `❝ ${o.citations.length}`));
       li.append(ref, meta);
       li.onclick = (e) => {
         if (e.target.closest("a")) return;
@@ -4699,6 +5053,179 @@ async function formSuppression(f) {
   act.append(ok, non);
   b.append(motif, act);
   return b;
+}
+
+// ------------------------------------------------------------------ le harnais
+
+const ICONE_PORTE = (p) => (p.ok ? "✓" : p.niveau === "bloquant" ? "✗" : "⚠");
+
+async function tiroirHarnais(version) {
+  clearTimeout(suivi);
+  retiensTiroir(null);
+  const t = document.getElementById("tiroir");
+  t.hidden = false;
+  document.body.dataset.tiroir = "1";
+  t.replaceChildren(teteTiroir(`Harnais — ${version === "essai" ? "essai" : "récit"}`), el("p", "mut", "calcul des portes…"));
+  const R = await api(`/chapitres/${etat.slug}/harnais/${version}`);
+  const c = etat.chapitres.find((x) => x.slug === etat.slug);
+  t.replaceChildren(teteTiroir(`Harnais — ${version === "essai" ? "essai" : "récit"} · ${c?.title ?? etat.slug}`));
+  const av = R.a_revalider ?? {};
+  t.append(el("p", "mut petit", `Depuis la dernière validation : ${av.modifie ?? 0} modifié(s), ${av.nouveau ?? 0} nouveau(x), ` +
+    `${av.cadre ?? 0} au cadre changé, ${av.valide ?? 0} validé(s). Le harnais compte et désigne ; il ne corrige rien.`));
+  const recalc = el("button", "pan-lien", "↻ recalculer");
+  recalc.onclick = () => tiroirHarnais(version);
+  t.append(recalc);
+  for (const p of R.portes) {
+    const d = el("details", "porte porte-" + (p.ok ? "ok" : p.niveau === "bloquant" ? "ko" : "avert"));
+    const s = el("summary");
+    s.append(el("span", "porte-icone", ICONE_PORTE(p)), el("strong", null, p.titre),
+      el("span", "porte-n", p.n ? String(p.n) : ""), el("span", "mut petit", p.resume ? " — " + p.resume : ""));
+    d.append(s);
+    if (p.id === "naif") d.append(blocNaif(version, p));
+    for (const r of p.releves) {
+      const l = el("div", "releve");
+      if (r.bloc && !String(r.bloc).startsWith("note:")) {
+        const a = el("button", "pan-lien", "^" + r.bloc);
+        a.title = "aller au paragraphe";
+        a.onclick = () => { document.getElementById("tiroir").hidden = true; delete document.body.dataset.tiroir; vaVers(version, r.bloc); };
+        l.append(a, " ");
+      } else if (r.bloc) l.append(el("span", "appui-lieu", r.bloc + " "));
+      if (r.regle) {
+        const g = /^R\d/.test(r.regle) ? el("a", "badge", r.regle) : el("span", "badge", r.regle);
+        if (g.tagName === "A") g.href = `#livre/regles/${version}/${r.regle}`;
+        l.append(g, " ");
+      }
+      l.append(el("span", "releve-lib", r.libelle ?? ""));
+      const x = el("div", "releve-extrait");
+      if (r.trouve && r.extrait?.includes(r.trouve)) {
+        const [a, ...b] = r.extrait.split(r.trouve);
+        x.append(a, el("mark", null, r.trouve), b.join(r.trouve));
+      } else x.append(r.extrait ?? "");
+      l.append(x);
+      d.append(l);
+    }
+    if (!p.ok || p.id === "naif") d.open = p.niveau === "bloquant" && p.n > 0 && p.n <= 12;
+    t.append(d);
+  }
+  // valider
+  const faire = el("div", "que-faire");
+  faire.append(el("h5", null, "Valider"), el("p", "mut petit", R.ok
+    ? "Toutes les portes bloquantes passent. Valider prend l'état présent comme référence : les marques « à revalider » disparaissent."
+    : `Portes à passer : ${R.bloquantes.join(", ")}. On peut valider quand même, en disant pourquoi (le motif va au journal).`));
+  const motif = el("textarea", "annot-texte petit-texte");
+  motif.placeholder = R.ok ? "motif (facultatif)" : "pourquoi valider malgré les écarts (obligatoire)";
+  const ok = el("button", "bouton", R.ok ? `✓ valider le ${version === "essai" ? "l'essai" : "récit"}` : "valider malgré les écarts");
+  ok.onclick = async () => {
+    if (!R.ok && !motif.value.trim()) { motif.focus(); return; }
+    const r = await fetch(`/api/chapitres/${etat.slug}/harnais/${version}/valider`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ motif: motif.value }) });
+    if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+    etat.validation = await api(`/chapitres/${etat.slug}/validation`).catch(() => etat.validation);
+    marquesValidation();
+    barreOutils();
+    tiroirHarnais(version);
+  };
+  const act = el("div", "annot-actions");
+  act.append(ok);
+  faire.append(motif, act);
+  t.append(faire);
+}
+
+// La porte « naïf » : la dernière lecture, ou en lancer une.
+function blocNaif(version, p) {
+  const b = el("div", "releve");
+  const ds = (etat.demandes ?? []).filter((x) => x.type === "naive" && (x.version ?? "recit") === version).sort((a, c) => (a.cree < c.cree ? 1 : -1));
+  const derniere = ds[0];
+  if (derniere) {
+    const a = el("button", "pan-lien", `dernière lecture : ${derniere.cree.slice(0, 16).replace("T", " ")} · ${etiquetteDemande(derniere)} →`);
+    a.onclick = () => tiroir(derniere.id);
+    b.append(a, el("br"));
+  }
+  if (!p.ok || !derniere) {
+    const mod = choixModele("naive");
+    const go = el("button", "bouton", "👁 lancer une lecture naïve");
+    go.title = "Claude lit le chapitre sans rien savoir du livre, et relève chaque endroit où il doit deviner";
+    go.onclick = async () => {
+      go.disabled = true;
+      const r = await fetch(`/api/chapitres/${etat.slug}/harnais/${version}/naif`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modele: mod.valeur() }) });
+      if (!r.ok) { go.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+      await chargeDemandes();
+      tiroir((await r.json()).id);
+    };
+    b.append(el("p", "mut petit", "Claude lit le texte du chapitre, et rien d'autre (ni cadre, ni storyboard, ni le reste du livre). " +
+      "Il relève chaque endroit où il doit deviner. Une lecture : quelques dizaines de centimes."), mod.noeud, go);
+  }
+  return b;
+}
+
+const TYPE_NAIF = { referent: "référent flottant", ellipse: "ellipse non résolue", formule: "formule cassée",
+  chiffre: "chiffre ambigu", contradiction: "contradiction ou redite", relire: "à relire deux fois" };
+
+async function tiroirNaif(t, d) {
+  const version = d.cible.version;
+  t.replaceChildren(teteTiroir(`Lecture naïve — ${version === "essai" ? "essai" : "récit"}`, () => tiroirHarnais(version)));
+  if (d.etat === "en_cours") {
+    t.append(enDirect(d));
+    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    return piedTiroir(t, d);
+  }
+  if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
+  const R = d.resultat ?? { releves: [] };
+  if (R.impression) t.append(el("p", "annot-corps", "« " + R.impression + " »"));
+  const faits = Object.fromEntries((d.decision?.faits ?? []).map((x) => [x.i, x.action]));
+  t.append(el("p", "mut petit", `${R.releves.length} relevé(s). Pour chacun : appliquer la reformulation (le paragraphe est corrigé, ` +
+    "au journal), en faire une annotation, ou l'ignorer. Clore enregistre la lecture sur le texte corrigé : la porte « naïf » passe, " +
+    "et se rouvrira dès qu'un mot change."));
+  const choix = [];
+  R.releves.forEach((r, i) => {
+    const b = el("div", "piste releve-naif");
+    const tete = el("div", "annot-tete");
+    const a = el("button", "pan-lien", "^" + r.bloc);
+    a.onclick = () => { t.hidden = true; delete document.body.dataset.tiroir; vaVers(version, r.bloc); };
+    tete.append(el("span", "badge", TYPE_NAIF[r.type] ?? r.type), a);
+    b.append(tete, el("blockquote", "verif-extrait", r.citation), el("p", "petit", "a dû deviner : " + r.devine));
+    if (d.etat === "prete") {
+      const q = el("textarea", "annot-texte petit-texte");
+      q.value = r.reformulation;
+      const g = el("span", "groupe filtres choix-naif");
+      let action = r.type === "relire" || r.type === "contradiction" ? "annoter" : "appliquer";
+      const boutons = [["appliquer", "appliquer"], ["annoter", "annoter"], ["ignorer", "ignorer"]].map(([k, lib]) => {
+        const x = el("button", k === action ? "actif" : null, lib);
+        x.onclick = () => { action = k; boutons.forEach((y) => y.classList.toggle("actif", y === x)); };
+        g.append(x);
+        return x;
+      });
+      b.append(el("span", "appui-lieu", "reformulation (remplace la citation)"), q, g);
+      choix.push({ i, q, get action() { return action; } });
+    } else {
+      b.append(el("p", "annot-corps", "→ " + r.reformulation));
+      if (faits[i]) b.append(el("p", faits[i] === "ignorer" ? "mut petit" : "verif-ok petit", faits[i] === "appliquer" ? "appliquée" : faits[i] === "annoter" ? "annotation créée" : "ignorée"));
+    }
+    t.append(b);
+  });
+  if (d.etat === "prete") {
+    const faire = el("div", "que-faire");
+    const clore = el("button", "bouton", "clore la lecture");
+    clore.onclick = async () => {
+      clore.disabled = true;
+      const r = await fetch(`/api/chapitres/${etat.slug}/demandes/${d.id}/decision`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actions: choix.map((c) => ({ i: c.i, action: c.action, reformulation: c.q.value })) }) });
+      if (!r.ok) { clore.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+      etat.docs = {};
+      etat.garde = null;
+      await rechargeAnnotations();
+      await ouvre(etat.slug);
+      tiroirHarnais(version);
+    };
+    faire.append(el("h5", null, "Clore"), clore);
+    t.append(faire);
+  } else if (d.decision) {
+    const h = el("button", "bouton", "→ le harnais");
+    h.onclick = () => tiroirHarnais(version);
+    t.append(h);
+  }
+  piedTiroir(t, d);
 }
 
 // ------------------------------------------------------------------ la file d'attente

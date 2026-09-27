@@ -74,7 +74,8 @@ EDITABLES = ("titre", "sous_titre", "auteur", "langue", "synopsis", "quatrieme",
              "numerotation_essai", "claude")
 CLAUDE_GENRES = {"verification": ("tours", "recherches", "pages", "modele"), "reecriture": ("tours", "modele"),
                  "fiche": ("tours", "recherches", "pages", "modele"), "pistes": ("tours", "modele"),
-                 "reference": ("tours", "recherches", "pages", "modele")}
+                 "reference": ("tours", "recherches", "pages", "modele"), "naive": ("modele",),
+                 "document": ("tours", "recherches", "pages", "modele")}
 NUMEROTATIONS = ("aucune", "sections", "paragraphes")
 
 

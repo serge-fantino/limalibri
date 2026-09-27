@@ -39,12 +39,38 @@ def _decoupe(texte):
     return parts[0], [(parts[i].strip(), parts[i + 1].strip("\n")) for i in range(1, len(parts), 2)]
 
 
+CONTROLE = re.compile(r"```controle\n(.*?)```", re.S)
+
+
+def controles(corps):
+    """Les contrôles mécaniques d'une section : ```controle libelle / motif / plafond / niveau```."""
+    out = []
+    for m in CONTROLE.finditer(corps):
+        c = {}
+        for ligne in m.group(1).splitlines():
+            k, sep, v = ligne.partition(": ")
+            if sep:
+                c[k.strip()] = v.strip()
+        if not c.get("motif"):
+            continue
+        pl = c.get("plafond", "0")
+        c["plafond"] = None if pl in ("aucun", "", "none") else int(pl)
+        c["niveau"] = c.get("niveau") or "bloquant"
+        try:
+            re.compile(c["motif"])
+        except re.error as e:
+            c["erreur"] = str(e)
+        out.append(c)
+    return out
+
+
 def _element(titre, corps):
     m = ID_REGLE.match(titre)
     if m:
-        return {"id": m.group(1), "type": "regle", "titre": m.group(2).strip(), "texte": corps.strip()}
+        return {"id": m.group(1), "type": "regle", "titre": m.group(2).strip(), "texte": corps.strip(),
+                "controles": controles(corps)}
     ident = re.sub(r"[^a-z0-9]+", "-", titre.lower()).strip("-")[:40] or "section"
-    return {"id": ident, "type": "section", "titre": titre, "texte": corps.strip()}
+    return {"id": ident, "type": "section", "titre": titre, "texte": corps.strip(), "controles": controles(corps)}
 
 
 def lit(version):
@@ -69,7 +95,8 @@ def texte_pour_claude(version):
     p = _fichier(version)
     if not p.exists():
         return ""
-    return ENTETE.sub("", p.read_text(encoding="utf-8"), count=1).strip()
+    # les contrôles mécaniques (motifs) ne disent rien à Claude : ils sont retirés
+    return CONTROLE.sub("", ENTETE.sub("", p.read_text(encoding="utf-8"), count=1)).strip()
 
 
 def _ecrit(version, empreinte, transforme):

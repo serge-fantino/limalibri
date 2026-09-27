@@ -216,6 +216,37 @@ qu'on lui fait dire ; verdict confirmée, corrigée, introuvable, mal attribuée
 statut, la vérification) et la bibliographie des chapitres qui la citent. La vue bibliographie
 filtre par statut ; « vérifier la sélection » met en file une vérification par œuvre affichée.
 
+Le **harnais** (« ✓ harnais » dans la barre d'un chapitre, `atelier/harnais.py`) : les portes qu'une
+version doit passer avant d'être validée, reprises de l'ancien cycle. Récit : verrou (obligatoires
+portées, retirées absentes, paragraphes hors verrou, quotas d'ajouts), séquence déclarée par plan,
+budget (mots, paragraphes, phrases longues, tics plafonnés du brief), mots interdits, garde-fous,
+filet de relecture (avertissement), répétitions (groupes de quatre mots), formules réservées (R14),
+lecture naïve. Essai : appui du verrou (et les écarts, en avertissement), appareil (notes appelées
+et définies, citations présentes dans kb/sources et non problématiques, renvois, sections),
+garde-fous, répétitions, lecture naïve. Chaque relevé désigne son paragraphe (un clic y mène) et
+sa règle. Les **contrôles** des garde-fous vivent dans `regles/<version>.md`, en fin de règle :
+un bloc ```controle (libelle, motif, plafond, niveau), lisible et modifiable comme la règle
+(`migrer/controles.py` y a reporté les motifs de l'ancien harnais) ; ils sont retirés de ce qu'on
+donne à Claude. La **lecture naïve** (`atelier/naif.py`) : Claude lit le texte du chapitre et rien
+d'autre, et relève chaque endroit où il doit deviner (référent, ellipse, formule cassée, chiffre,
+contradiction, à relire) avec une reformulation minimale ; relevé par relevé, on l'applique (le
+paragraphe est corrigé, au journal), on en fait une annotation, ou on l'ignore ; clore enregistre
+la lecture sur le texte corrigé (`relectures.json`) — la porte se rouvre dès qu'un mot change.
+**Valider** prend l'état présent comme référence ; si une porte bloque, il faut dire pourquoi.
+
+La **page d'une œuvre** (`#biblio/<cle>`, « page ↗ » dans la liste et l'aperçu) rassemble tout :
+sa référence et son statut ; ses **documents** (`kb/documents/<cle>/`, le texte original rangé dans le
+livre, avec son texte extrait par pdftotext) — téléverser un fichier, le télécharger depuis une
+adresse, ou **⤓ texte original** : Claude cherche une version en accès libre (PMC, arXiv, dépôts,
+éditeur en libre accès ; jamais une bibliothèque pirate, refusée aussi par le serveur), propose des
+candidats, et le serveur télécharge celui qu'on choisit (`atelier/documents.py` ; les PDF de PMC,
+gardés contre les robots, sont remplacés par le texte intégral XML d'Europe PMC) ; ses **citations**,
+les passages cités mot pour mot, chacune contrôlée contre les documents (trouvée, page N ; absente ;
+pas de document) — une vérification retenue et une fiche créée y ajoutent leurs extraits ; ses
+**vérifications** (la dernière, l'historique, celles en cours, chacune liée à sa demande) ; où elle
+est citée (notes de l'essai, fiches, bibliographies de chapitre) ; les doublons possibles ; son
+historique (journal). Une vérification de référence lit d'abord le texte rangé dans le livre.
+
 Les **vérifications lisent les fiches d'abord** : la consigne leur donne les fiches du
 chapitre et l'index entier, avec la règle d'y chercher avant le web ; la réponse dit quelles
 fiches ont servi et à quoi (« fiches consultées »).

@@ -335,6 +335,11 @@ def _ecrit_fiche(d, R, slug, titre, etat):
                                  "origine": "source de la fiche %s (demande %s)" % (slug, ident),
                                  "notes": "extrait relevé%s : « %s »" % ("" if s.get("verifie") else " (non vérifié)", s["extrait"])
                                  if s.get("extrait") else None})
+        if s.get("extrait") and len(s["extrait"]) >= 20:
+            try:
+                sources.ajoute_citation(cle, s["extrait"], usage="fiche %s" % slug, origine="fiche %s (demande %s)" % (slug, ident))
+            except (ValueError, KeyError):
+                pass
 
 
 def _relie(slug, chapitres, ident):

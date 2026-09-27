@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -133,7 +133,7 @@ def chapitres():
 
 
 @app.get("/api/sources")
-def sources():
+def sources_html():
     return livre.sources()
 
 
@@ -304,8 +304,8 @@ async def encore(slug: str, ident: str, request: Request):
 def modeles():
     """Les modèles qu'on peut choisir, et ceux que le livre retient par défaut."""
     return {"modeles": reecriture.MODELES,
-            "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference")},
-            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference")}}
+            "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document")},
+            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document")}}
 
 
 @app.get("/api/fiches")
@@ -345,6 +345,97 @@ def oeuvres():
 @app.get("/api/oeuvres/statuts")
 def statuts_oeuvres():
     return {"statuts": sources.STATUTS, "base": sources.existe()}
+
+
+@app.get("/api/oeuvres/{cle}")
+def oeuvre_detail(cle: str):
+    """Tout sur une œuvre : la base, où elle est citée, ses documents, ses citations, ses vérifications,
+    les doublons possibles, les demandes et le journal."""
+    import json as _json
+    O = {o["cle"]: o for o in kb.oeuvres()}
+    if cle not in O:
+        raise HTTPException(404, "œuvre inconnue : %s" % cle)
+    base = sources.toutes().get(cle)
+    ds = [d for d in reecriture.liste("_kb") if d.get("cle") == cle] if (livre.LIVRE / "kb").exists() else []
+    j = livre.LIVRE / "kb" / "journal.jsonl"
+    journal = [e for e in (_json.loads(l) for l in j.read_text(encoding="utf-8").splitlines() if l.strip())
+               if e.get("cle") == cle] if j.exists() else []
+    return {"oeuvre": O[cle], "base": base, "usages": references.usages(cle),
+            "candidats": [{"cle": c, "pourquoi": p, "ref": sources.toutes()[c].get("ref")} for c, p in references.candidats(cle, base)] if base else [],
+            "demandes": ds, "journal": journal[-40:]}
+
+
+@app.post("/api/oeuvres/{cle}/documents")
+async def televerse_document(cle: str, request: Request, nom: str = "document.pdf"):
+    """Téléverser le document d'une œuvre (corps brut ; ?nom=fichier.pdf)."""
+    try:
+        return sources.ajoute_document(cle, nom, await request.body(), "téléversé par l'auteur")
+    except KeyError:
+        raise HTTPException(404, "œuvre absente de kb/sources : %s" % cle)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/oeuvres/{cle}/documents/url")
+async def document_depuis_url(cle: str, request: Request):
+    """Télécharger le document d'une œuvre depuis une adresse : {url}."""
+    c = await request.json()
+    try:
+        return documents.range_url(cle, (c.get("url") or "").strip())
+    except KeyError:
+        raise HTTPException(404, "œuvre absente de kb/sources : %s" % cle)
+    except Exception as e:                       # noqa: BLE001 — réseau, mur, type
+        raise HTTPException(400, "téléchargement impossible : %s" % e)
+
+
+@app.get("/api/oeuvres/{cle}/documents/{fichier}")
+def lit_document(cle: str, fichier: str):
+    try:
+        p = sources.dossier_documents(cle) / fichier
+    except KeyError:
+        raise HTTPException(404, "œuvre inconnue")
+    if "/" in fichier or not p.exists():
+        raise HTTPException(404, "document inconnu")
+    return FileResponse(p, media_type=sources.TYPES_DOC.get(p.suffix.lower(), "application/octet-stream"),
+                        headers={"Content-Disposition": "inline"})
+
+
+@app.delete("/api/oeuvres/{cle}/documents/{fichier}")
+def retire_document(cle: str, fichier: str):
+    try:
+        return sources.supprime_document(cle, fichier)
+    except KeyError:
+        raise HTTPException(404, "inconnu")
+
+
+@app.post("/api/oeuvres/{cle}/original")
+async def cherche_original(cle: str, request: Request):
+    """Chercher le texte original en accès libre : {consigne?, modele?}. Claude propose, l'auteur choisit."""
+    c = await request.json()
+    try:
+        return documents.cree({"cle": cle, "consigne": c.get("consigne"), "modele": c.get("modele")})
+    except KeyError:
+        raise HTTPException(404, "œuvre absente de kb/sources : %s" % cle)
+
+
+@app.post("/api/oeuvres/{cle}/citations")
+async def ajoute_citation(cle: str, request: Request):
+    """Une citation (le passage mot pour mot) : {texte, page?, usage?}."""
+    c = await request.json()
+    try:
+        return sources.ajoute_citation(cle, c.get("texte"), c.get("page"), c.get("usage"))
+    except KeyError:
+        raise HTTPException(404, "œuvre absente de kb/sources : %s" % cle)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/oeuvres/{cle}/citations/{i}")
+def retire_citation(cle: str, i: int):
+    try:
+        return sources.supprime_citation(cle, i)
+    except KeyError:
+        raise HTTPException(404, "inconnue")
 
 
 @app.put("/api/oeuvres/{cle}")
@@ -608,6 +699,10 @@ async def decide(slug: str, ident: str, request: Request):
             return renvois.decide(ident, await request.json())
         if ident.startswith("r-"):
             return references.decide(ident, await request.json())
+        if ident.startswith("n-"):
+            return naif.decide(slug, ident, await request.json())
+        if ident.startswith("o-"):
+            return documents.decide(ident, await request.json())
         return reecriture.decide(slug, ident, await request.json())
     except KeyError as e:
         raise HTTPException(404, "inconnu : %s" % e)
@@ -652,6 +747,39 @@ async def insere_bloc(slug: str, version: str, bloc: str, request: Request):
 async def supprime_bloc(slug: str, version: str, bloc: str, request: Request):
     c = await request.json()
     return _edition(lambda: edition.supprime_bloc(slug, version, bloc, c.get("avant", ""), c.get("motif", "")))
+
+
+@app.get("/api/chapitres/{slug}/harnais/{version}")
+def harnais_rapport(slug: str, version: str):
+    """Les portes d'une version d'un chapitre : ok ou non, et chaque relevé."""
+    try:
+        return harnais.rapport(slug, version)
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+
+
+@app.post("/api/chapitres/{slug}/harnais/{version}/naif")
+async def harnais_naif(slug: str, version: str, request: Request):
+    """Lancer une lecture naïve : {modele?}."""
+    c = await request.json()
+    try:
+        return naif.cree(slug, {"version": version, "modele": c.get("modele")})
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/chapitres/{slug}/harnais/{version}/valider")
+async def harnais_valide(slug: str, version: str, request: Request):
+    """Valider la version : l'état présent devient la référence. {motif} si une porte bloque."""
+    c = await request.json()
+    try:
+        return harnais.valide(slug, version, c.get("motif", ""))
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/chapitres/{slug}/validation")

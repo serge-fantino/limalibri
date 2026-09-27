@@ -296,7 +296,8 @@ def oeuvres():
     if S.existe():                               # la bibliographie du livre : kb/sources/
         for cle, x in S.toutes().items():
             o = oeuvre(cle)
-            o.update({k: x.get(k) for k in ("ref", "doi", "url", "statut", "verification", "doublon_de", "doute", "notes", "origine")})
+            o.update({k: x.get(k) for k in ("ref", "doi", "url", "statut", "verification", "doublon_de", "doute", "notes", "origine",
+                                            "documents", "citations")})
             o["ref"] = o["ref"] or ""
             o["centrale"] = True                 # « dans la base »
             o["fiches"] = list(x.get("fiches") or [])

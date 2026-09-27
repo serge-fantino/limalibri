@@ -148,6 +148,15 @@ def demarre(ident):
         L.append("\n## Œuvres proches déjà dans la base (doublon possible)")
         for c, pourquoi in C:
             L.append("- %s (%s) : %s" % (c, pourquoi, sources.lit(c).get("ref", "")[:300]))
+    T = sources.textes(cle)
+    if T:
+        L.append("\n## Le texte de l'œuvre est dans le livre — le lire d'abord\n" + "\n".join(
+            "kb/documents/%s/%s.texte.txt (%d pages)" % (cle, f, len(p)) for f, p in T) +
+            "\nC'est l'œuvre elle-même : vérifie sur ce texte ce que chaque endroit lui fait dire (cite la page) ; "
+            "le web ne sert qu'à confirmer l'identité (DOI) si elle manque.")
+    if o.get("citations"):
+        L.append("\n## Les passages déjà cités mot pour mot\n" + "\n".join("- « %s »%s" % (c["texte"][:300], " (p. %s)" % c["page"] if c.get("page") else "")
+                                                                     for c in o["citations"]))
     if d.get("consigne"):
         L.append("\n## Précision de l'auteur\n" + d["consigne"])
     d.update(etat="en_cours", lancee=livre._maintenant(),
@@ -215,7 +224,16 @@ def decide(ident, corps):
     o["verification"] = {"date": livre._maintenant()[:10], "demande": ident, "verdict": R["verdict"],
                          "resume": R.get("resume", "")[:600],
                          "citations": [{k: c.get(k) for k in ("ou", "appui", "commentaire")} for c in R.get("citations") or []]}
+    o["verifications"] = list(o.get("verifications") or []) + [
+        {k: o["verification"][k] for k in ("date", "demande", "verdict")}]
     sources.ecrit(cle, o)
+    for c in R.get("citations") or []:              # les extraits lus deviennent des citations de l'œuvre
+        if c.get("extrait") and len(c["extrait"]) >= 20:
+            try:
+                sources.ajoute_citation(cle, c["extrait"], usage=c.get("ou"), origine="vérification %s" % ident)
+            except ValueError:
+                pass
+    o = dict(sources.lit(cle))
     # les chapitres qui la citent : la référence à jour, le doute levé
     y = livre.yaml_rt()
     chapitres = []
