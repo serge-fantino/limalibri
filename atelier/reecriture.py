@@ -703,6 +703,7 @@ async def _lance(slug, d, options, prompt, conclut, reprise=False, apres=None):
     structurée passe par conclut(d, sortie) ; l'échec garde la session, pour la reprendre."""
     t0 = time.time()
     modele, resultat = None, None
+    b0 = {k: (d.get("budget") or {}).get(k, 0) for k in ("recherches", "pages", "refus")}   # ce que cette exécution consomme
     try:
         async for m in query(prompt=prompt, options=options):
             if isinstance(m, AssistantMessage):
@@ -723,6 +724,14 @@ async def _lance(slug, d, options, prompt, conclut, reprise=False, apres=None):
     ex = {"duree_s": round(time.time() - t0, 1), "modele": modele,
           "cout_usd": getattr(resultat, "total_cost_usd", None),
           "tours": getattr(resultat, "num_turns", None), "jetons": jetons(resultat)}
+    from . import consommation
+    b = d.get("budget") or {}
+    consommation.note("demande", d.get("type") or "reecriture", d["id"], chapitre=slug,
+                      phase="reprise" if prompt == REPRISE else "encore" if reprise else "initiale",
+                      debut=consommation.debut_iso(t0), duree_s=ex["duree_s"], modele=modele,
+                      modele_choisi=getattr(options, "model", None), issue="erreur" if d.get("etat") == "erreur" else "ok",
+                      erreur=d.get("erreur"), tours=ex["tours"], jetons=ex["jetons"], cout_usd=ex["cout_usd"],
+                      web={k: max(0, (b.get(k) or 0) - b0[k]) for k in b0}, session=d.get("session_id"))
     avant = d.get("execution") if reprise else None
     if avant:
         ex = {"duree_s": round((avant.get("duree_s") or 0) + ex["duree_s"], 1),

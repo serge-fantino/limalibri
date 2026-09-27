@@ -305,6 +305,7 @@ function barreOutils() {
     }
     o.append(g);
     o.append(el("span", "espace"));
+    o.append(boutonsPdf("essai", "⎙ PDF", "essai.pdf", titrePdfEssai())[0]);
     o.append(el("span", "etiq", "numérotation"));
     const sel = el("select");
     for (const [val, lib] of [["aucune", "aucune"], ["sections", "sections"], ["paragraphes", "sections + §"]]) {
@@ -3679,7 +3680,8 @@ function barreLivre() {
       `livre/regles/${v}`, "les règles d'écriture de cette version, et leurs contrôles");
   }
   b("claude", etat.ongletLivre === "claude", "livre/claude", "le modèle et le budget de chaque demande, la file d'attente");
-  o.append(el("span", "etiq", "livre"), g, el("span", "espace"));
+  b("consommation", etat.ongletLivre === "consommation", "livre/consommation", "ce que Claude a consommé : jetons, cache, coût, par type, modèle, chapitre, jour");
+  o.append(el("span", "etiq", "livre"), g, el("span", "espace"), ...boutonsPdf("essai", "⎙ essai PDF", "essai.pdf", titrePdfEssai()));
   const y = el("a", "lien-ext", "livre.yaml ↗");
   y.href = "vscode://file" + (etat.livre.chemins?.["livre.yaml"] ?? "");
   y.title = "ouvrir livre.yaml dans l'éditeur";
@@ -3700,6 +3702,12 @@ async function accueil() {
   sommaire();
   const L = etat.livre;
   const page = document.getElementById("page");
+  if (etat.ongletLivre === "consommation") {
+    page.replaceChildren(ongletsLivre(), el("h1", null, "Consommation"), await sectionConsommation());
+    colonneLivre();
+    zone().scrollTo(0, 0);
+    return;
+  }
   if (etat.ongletLivre === "claude") {
     page.replaceChildren(ongletsLivre(), el("h1", null, "Claude"),
       el("p", "mut", "Ce que Claude peut faire pour chaque sorte de demande : le modèle, le nombre de tours, de recherches web et de " +
@@ -4154,7 +4162,7 @@ function depuisAdresse() {
   if (etat.wiki) { etat.accueil = false; return vueFiches(vue, mode); }
   if (!slug || slug === "livre") {
     etat.accueil = true;
-    etat.ongletLivre = vue === "regles" ? "regles" : vue === "claude" ? "claude" : "presentation";
+    etat.ongletLivre = ["regles", "claude", "consommation"].includes(vue) ? vue : "presentation";
     if (vue === "regles") { etat.reglesVue = mode ?? etat.reglesVue; etat.regleCible = decodeURIComponent(location.hash).split("/")[3]; }
     return accueil();
   }
@@ -6544,33 +6552,8 @@ function barreFiches(actif, actionsPage = null) {
     (page.querySelector(":scope > h1") ?? page.firstChild)?.after(f);
     f.scrollIntoView({ block: "center" });
   };
-  const pdf = el("button", "b-versions", "⎙ PDF");
-  pdf.title = "toutes les fiches en un PDF : couverture (synopsis, date), sommaire par cluster, liens internes gardés, bibliographie — pour une relecture par un tiers";
-  pdf.onclick = async () => {
-    pdf.disabled = true;
-    pdf.textContent = "⎙ génération…";
-    try {
-      const r = await fetch("/api/kb/pdf");
-      if (!r.ok) {
-        alert(((await r.json().catch(() => ({}))).detail ?? r.status) + "\n\nLa version imprimable va s'ouvrir : ⌘P, puis « Enregistrer au format PDF ».");
-        window.open("/api/kb/imprimable", "_blank");
-        return;
-      }
-      const nom = decodeURIComponent((r.headers.get("Content-Disposition") ?? "").split("UTF-8''")[1] ?? "base-de-connaissance.pdf");
-      const a = el("a");
-      a.href = URL.createObjectURL(await r.blob());
-      a.download = nom;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    } finally {
-      pdf.disabled = false;
-      pdf.textContent = "⎙ PDF";
-    }
-  };
-  const imp = el("a", "lien-ext", "imprimable ↗");
-  imp.href = "/api/kb/imprimable";
-  imp.target = "_blank";
-  imp.title = "le même document, en HTML, dans un onglet";
+  const [pdf, imp] = boutonsPdf("kb", "⎙ PDF", "base-de-connaissance.pdf",
+    "toutes les fiches en un PDF : couverture (synopsis, date), sommaire par cluster, liens internes gardés, bibliographie — pour une relecture par un tiers");
   o.append(el("span", "etiq", "la base"), nouvelle, pdf, imp);
   majCompteFiches();
 }
@@ -7552,3 +7535,145 @@ document.getElementById("b-theme").onclick = () => {
 // le graphe des fiches lit ses couleurs au rendu : il se redessine quand le thème change
 function retheme() { if (/graphe/.test(location.hash)) depuisAdresse(); }
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (document.documentElement.dataset.theme === "auto") retheme(); });
+
+// ------------------------------------------------------------------ la consommation de Claude
+// Le journal consommation.jsonl (une ligne par exécution), résumé sur une période.
+
+const LIB_GENRES = { ...LIB_TYPES, conversation: "✦ conversation", confiance: "◐ confiance" };
+const PERIODES_CONSO = [["tout", "tout"], ["7", "7 jours"], ["30", "30 jours"], ["mois", "ce mois"], ["date", "depuis le…"]];
+
+function bornesConso(P) {
+  const j = (n) => { const d = new Date(); d.setDate(d.getDate() - n + 1); return d.toLocaleDateString("sv"); };
+  if (P.periode === "7" || P.periode === "30") return j(Number(P.periode));
+  if (P.periode === "mois") return new Date().toLocaleDateString("sv").slice(0, 8) + "01";
+  if (P.periode === "date") return P.depuis || "";
+  return "";
+}
+
+async function sectionConsommation() {
+  const P = etat.periodeConso ??= { periode: "tout", depuis: "" };
+  const S = await api("/consommation?depuis=" + bornesConso(P)).catch(() => null);
+  const s = el("section", "livre-bloc conso");
+  const barre = el("div", "dem-filtres");
+  const g = el("span", "groupe filtres");
+  for (const [v, lib] of PERIODES_CONSO) {
+    const b = el("button", P.periode === v ? "actif" : null, lib);
+    b.onclick = () => { P.periode = v; accueil(); };
+    g.append(b);
+  }
+  barre.append(g);
+  if (P.periode === "date") {
+    const d = el("input", "dem-date");
+    d.type = "date";
+    d.value = P.depuis;
+    d.onchange = () => { P.depuis = d.value; accueil(); };
+    barre.append(d);
+  }
+  const tel = el("a", "lien-ext", "consommation.jsonl ↓");
+  tel.href = "/api/consommation/journal";
+  tel.title = "le journal brut : une ligne JSON par exécution de Claude";
+  barre.append(el("span", "espace"), tel);
+  s.append(barre);
+  if (!S || !S.lignes) {
+    s.append(el("p", "mut", "Rien au journal pour cette période. Chaque demande, tour de conversation ou lecture de confiance y ajoute une ligne en finissant ; " +
+      "« migrer/consommation.py » reconstitue le travail d'avant le journal."));
+    return s;
+  }
+  const T = S.total;
+  const usd = (x) => (x == null ? "—" : x < 0.1 ? x.toFixed(3) + " $" : x.toFixed(2) + " $");
+  const duree = (x) => (x >= 3600 ? (x / 3600).toFixed(1) + " h" : x >= 60 ? Math.round(x / 60) + " min" : Math.round(x) + " s");
+  const cartes = el("div", "conso-cartes");
+  const carte = (val, lib, titre) => { const c = el("div", "conso-carte"); c.append(el("strong", null, val), el("span", "mut petit", lib)); if (titre) c.title = titre; cartes.append(c); };
+  carte(usd(T.cout_usd), "au tarif API", "somme des coûts rapportés par Claude Code");
+  carte(String(T.n), `exécutions${T.erreurs ? ` · ${T.erreurs} en erreur` : ""}`);
+  carte(k(T.entree + T.cache_cree + T.cache_lu), "jetons en entrée", `neufs ${k(T.entree)} · cache créé ${k(T.cache_cree)} · cache relu ${k(T.cache_lu)}`);
+  carte(k(T.sortie), "jetons en sortie");
+  carte(T.cache_part == null ? "—" : T.cache_part + " %", "de l'entrée relue du cache", "relu du cache : facturé un dixième");
+  carte(duree(T.duree_s), "de travail de Claude");
+  carte(`${T.recherches} · ${T.pages}`, "recherches web · pages lues");
+  s.append(cartes);
+  s.append(el("p", "mut petit", `${S.lignes} lignes du ${(S.premiere ?? "").slice(0, 10)} au ${(S.derniere ?? "").slice(0, 10)}` +
+    (S.reconstituees ? ` — dont ${S.reconstituees} reconstituées depuis les demandes (les reprises y sont cumulées)` : "")));
+  // par jour : une barre par jour, la hauteur au coût
+  if (S.jour.length > 1) {
+    const max = Math.max(...S.jour.map((x) => x.cout_usd), 0.0001);
+    const h = el("div", "conso-jours");
+    for (const x of S.jour) {
+      const c = el("div", "conso-jour");
+      const b = el("div", "conso-barre");
+      b.style.height = Math.max(2, (x.cout_usd / max) * 100) + "%";
+      c.title = `${x.cle} : ${usd(x.cout_usd)} · ${x.n} exécution(s) · ↑${k(x.entree + x.cache_cree + x.cache_lu)} ↓${k(x.sortie)}`;
+      c.append(b, el("span", "conso-date", x.cle.slice(5)));
+      h.append(c);
+    }
+    s.append(el("h3", null, "Par jour"), h);
+  }
+  const table = (titre, rangs, lib = (c) => c) => {
+    const tb = el("table", "conso-table");
+    const th = el("tr");
+    for (const x of ["", "n", "coût", "moyen", "entrée", "cache relu", "sortie", "durée", "web"]) th.append(el("th", null, x));
+    tb.append(th);
+    const max = Math.max(...rangs.map((x) => x.cout_usd), 0.0001);
+    for (const x of rangs) {
+      const tr = el("tr");
+      const nom = el("td", "conso-nom");
+      const barre = el("span", "conso-part");
+      barre.style.width = (x.cout_usd / max) * 100 + "%";
+      nom.append(barre, el("span", null, lib(x.cle)));
+      tr.append(nom, el("td", null, x.n + (x.erreurs ? ` (${x.erreurs}✗)` : "")), el("td", null, usd(x.cout_usd)), el("td", "mut", usd(x.cout_moyen)),
+        el("td", null, k(x.entree + x.cache_cree + x.cache_lu)), el("td", "mut", x.cache_part == null ? "—" : x.cache_part + " %"),
+        el("td", null, k(x.sortie)), el("td", "mut", duree(x.duree_s)), el("td", "mut", x.recherches || x.pages ? `${x.recherches} · ${x.pages}` : ""));
+      tb.append(tr);
+    }
+    s.append(el("h3", null, titre), tb);
+  };
+  const titreChap = (c) => etat.chapitres.find((x) => x.slug === c)?.title ?? c;
+  const MODS = etat.modeles?.modeles ?? {};
+  table("Par type de requête", S.genre, (c) => LIB_GENRES[c] ?? c);
+  table("Par modèle", S.modele, (c) => MODS[c] ?? c);
+  table("Par chapitre", S.chapitre, titreChap);
+  table("Par phase", S.phase, (c) => ({ initiale: "première exécution", reprise: "reprise (réponse sans recherche)", encore: "chercher encore",
+    tour: "tour de conversation", cumul: "reconstituée, reprises cumulées" }[c] ?? c));
+  s.append(el("p", "mut petit", "Le journal se lit aussi hors de l'atelier : duckdb -c \"select genre, sum(cout_usd) from 'consommation.jsonl' group by 1\", " +
+    "ou pandas.read_json('consommation.jsonl', lines=True)."));
+  return s;
+}
+
+// ------------------------------------------------------------------ les exports PDF
+// Le serveur imprime avec Chrome sans interface ; faute de Chrome, la version imprimable s'ouvre (⌘P).
+
+function titrePdfEssai() {
+  return "tout l'essai en un PDF : page de garde, table des matières (le plan), chaque partie et ses chapitres — " +
+  "le texte avec son statut (brouillon, en relecture, validé, harnais), le squelette, ou le synopsis seul ; bibliographie des œuvres citées";
+}
+
+function boutonsPdf(quoi, lib, nomDefaut, titre) {
+  const pdf = el("button", "b-versions", lib);
+  pdf.title = titre;
+  pdf.onclick = async () => {
+    pdf.disabled = true;
+    pdf.textContent = "⎙ génération…";
+    try {
+      const r = await fetch(`/api/${quoi}/pdf`);
+      if (!r.ok) {
+        alert(((await r.json().catch(() => ({}))).detail ?? r.status) + "\n\nLa version imprimable va s'ouvrir : ⌘P, puis « Enregistrer au format PDF ».");
+        window.open(`/api/${quoi}/imprimable`, "_blank");
+        return;
+      }
+      const nom = decodeURIComponent((r.headers.get("Content-Disposition") ?? "").split("UTF-8''")[1] ?? nomDefaut);
+      const a = el("a");
+      a.href = URL.createObjectURL(await r.blob());
+      a.download = nom;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } finally {
+      pdf.disabled = false;
+      pdf.textContent = lib;
+    }
+  };
+  const imp = el("a", "lien-ext", "imprimable ↗");
+  imp.href = `/api/${quoi}/imprimable`;
+  imp.target = "_blank";
+  imp.title = "le même document, en HTML, dans un onglet";
+  return [pdf, imp];
+}

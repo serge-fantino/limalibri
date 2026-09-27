@@ -870,6 +870,20 @@ h2:hover > .ref-titre,h3:hover > .ref-titre,h4:hover > .ref-titre{opacity:.7}
 .plan-historique{margin:.4rem 0;font-family:var(--ui);font-size:.8rem}
 .plan-historique ul{margin:.3rem 0;padding-left:1.2rem}
 #b-theme{min-width:2rem}
+/* ---- consommation ---- */
+.conso-cartes{display:grid;grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr));gap:.6rem;margin:.8rem 0}
+.conso-carte{border:1px solid var(--rule);border-radius:6px;padding:.5rem .7rem;display:flex;flex-direction:column;font-family:var(--ui)}
+.conso-carte strong{font-size:1.15rem}
+.conso-jours{display:flex;align-items:flex-end;gap:2px;height:8rem;border-bottom:1px solid var(--rule);overflow-x:auto;padding-bottom:1.2rem;position:relative}
+.conso-jour{flex:1 0 1.4rem;max-width:2.4rem;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;position:relative}
+.conso-barre{width:70%;background:var(--acc);border-radius:2px 2px 0 0;opacity:.8}
+.conso-date{position:absolute;bottom:-1.2rem;font-family:var(--ui);font-size:.6rem;color:var(--mut)}
+.conso-table{width:100%;border-collapse:collapse;font-family:var(--ui);font-size:.78rem;margin-bottom:.6rem}
+.conso-table th{text-align:right;font-weight:normal;color:var(--mut);border-bottom:1px solid var(--rule);padding:.2rem .4rem}
+.conso-table td{text-align:right;padding:.25rem .4rem;border-bottom:1px solid var(--rule);white-space:nowrap}
+.conso-table td.conso-nom,.conso-table th:first-child{text-align:left;position:relative;white-space:normal;isolation:isolate}
+.conso-part{position:absolute;left:0;top:15%;bottom:15%;background:var(--hl);z-index:-1;border-radius:2px}
+.conso .espace{flex:1}
 @media(max-width:1100px){#cadre{grid-template-columns:14rem minmax(0,1fr) 16rem}
  body[data-vue="storyboard"][data-panneau] #cadre{grid-template-columns:minmax(0,1fr) 22rem}
  body[data-vue="storyboard"][data-panneau] #gauche{display:none}}

@@ -88,7 +88,7 @@ async def _lit(slug, modele):
         tools=[], allowed_tools=[], max_turns=3, setting_sources=[], cwd=str(livre.LIVRE),
         system_prompt=SYSTEME, output_format={"type": "json_schema", "schema": SCHEMA},
         model=modele or reecriture.modele("fiche"))
-    resultat, nom = None, None
+    resultat, nom, t0, erreur = None, None, time.time(), None
     try:
         async for m in query(prompt=message, options=options):
             if isinstance(m, AssistantMessage):
@@ -107,7 +107,14 @@ async def _lit(slug, modele):
                                   "cout_usd": getattr(resultat, "total_cost_usd", None),
                                   "paragraphes": par})
     except Exception as e:                        # noqa: BLE001 — rendu à l'auteur
+        erreur = "%s: %s" % (type(e).__name__, e)
         ancien = kb.confiance_par(slug) or {}
-        kb.ecrit_confiance(slug, dict(ancien, erreur="%s: %s" % (type(e).__name__, e), date_erreur=livre._maintenant()))
+        kb.ecrit_confiance(slug, dict(ancien, erreur=erreur, date_erreur=livre._maintenant()))
     finally:
         _encours.pop(slug, None)
+        from . import consommation
+        consommation.note("confiance", "confiance", slug, debut=consommation.debut_iso(t0),
+                          duree_s=round(time.time() - t0, 1), modele=nom, modele_choisi=options.model,
+                          issue="erreur" if erreur else "ok", erreur=erreur, tours=getattr(resultat, "num_turns", None),
+                          jetons=reecriture.jetons(resultat), cout_usd=getattr(resultat, "total_cost_usd", None),
+                          session=getattr(resultat, "session_id", None), fiche=slug)

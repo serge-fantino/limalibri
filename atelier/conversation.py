@@ -239,6 +239,13 @@ async def _execute(ident):
     t["execution"] = {"duree_s": round(time.time() - t0, 1), "modele": modele_vu,
                       "cout_usd": getattr(resultat, "total_cost_usd", None),
                       "tours": getattr(resultat, "num_turns", None), "jetons": reecriture.jetons(resultat)}
+    from . import consommation
+    b = t.get("budget") or {}
+    consommation.note("conversation", "conversation", ident, phase="tour", tour=len(c["tours"]),
+                      debut=consommation.debut_iso(t0), duree_s=t["execution"]["duree_s"], modele=modele_vu,
+                      modele_choisi=modele, issue="erreur" if t.get("etat") == "erreur" else "ok", erreur=t.get("erreur"),
+                      tours=t["execution"]["tours"], jetons=t["execution"]["jetons"], cout_usd=t["execution"]["cout_usd"],
+                      web={k: b.get(k, 0) for k in ("recherches", "pages", "refus")}, session=t.get("session_id") or c.get("session_id"))
     for k in ("_vus", "_outils", "_refuses", "session_id"):
         t.pop(k, None)
     if modele_vu and not c.get("modele_session"):

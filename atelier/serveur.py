@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -354,6 +354,22 @@ def refs_resout(texte: str = "", ref: str = ""):
     return [refs.resout(r) for r in ([ref] if ref else refs.trouve(texte))]
 
 
+@app.get("/api/consommation")
+def consommation_stats(depuis: str = "", jusqua: str = ""):
+    """Les statistiques du journal de consommation (consommation.jsonl), sur une période AAAA-MM-JJ."""
+    return consommation.stats(depuis or None, jusqua or None)
+
+
+@app.get("/api/consommation/journal")
+def consommation_journal():
+    """Le journal brut, à télécharger (une ligne JSON par exécution de Claude)."""
+    from fastapi.responses import FileResponse, PlainTextResponse
+    f = consommation.fichier()
+    if not f.exists():
+        return PlainTextResponse("", media_type="application/x-ndjson")
+    return FileResponse(f, media_type="application/x-ndjson", filename=consommation.NOM)
+
+
 @app.get("/api/conversations")
 def conversations():
     return conversation.liste()
@@ -684,6 +700,24 @@ def voisines_sans_renvoi(slug: str):
 def kb_imprimable():
     """La base de connaissance en un document HTML autonome, à imprimer (⌘P) ou à lire."""
     return export.imprimable()
+
+
+@app.get("/api/essai/imprimable", response_class=HTMLResponse)
+def essai_imprimable():
+    """L'essai en un document HTML autonome : page de garde, table des matières, parties et chapitres."""
+    return export.essai_imprimable()
+
+
+@app.get("/api/essai/pdf")
+async def essai_pdf():
+    """L'essai en PDF (Chrome sans interface), liens internes gardés."""
+    from urllib.parse import quote
+    try:
+        donnees, nom = await export.pdf("essai")
+    except RuntimeError as e:
+        raise HTTPException(501, str(e))
+    return Response(donnees, media_type="application/pdf",
+                    headers={"Content-Disposition": "attachment; filename*=UTF-8''%s" % quote(nom)})
 
 
 @app.get("/api/kb/pdf")

@@ -202,6 +202,16 @@ qui la citent, chapitres, œuvres), la bibliographie des œuvres exploitées en 
 est imprimé par Chrome sans interface (`ATELIER_CHROME` pour un autre chemin) ; sans Chrome, la
 version imprimable s'imprime depuis le navigateur. De quoi faire relire la base par un tiers.
 
+L'**essai** s'exporte de même (**⎙ essai PDF** dans la barre du livre, **⎙ PDF** dans celle de l'essai ;
+`/api/essai/pdf`, `/api/essai/imprimable`) : la page de garde du livre (l'idée, le nombre de chapitres
+rédigés, de mots, la date), la table des matières — le plan, partie par partie, le statut de chaque
+chapitre, et ses sections numérotées quand la numérotation de l'essai est active —, puis chaque partie
+(son sens, son arc, sa question, ses chapitres) suivie de ses chapitres. Un chapitre est rendu selon son
+avancement : le **texte**, avec son statut (brief, brouillon, en relecture, validé), l'état du harnais
+(paragraphes validés) et ses notes ; le **squelette** (les sections « à écrire ») ; ou le **synopsis**
+seul, avec sa question. La numérotation (sections, sections + §) suit le réglage du livre. En annexe,
+la bibliographie des œuvres citées.
+
 La **bibliographie du livre** vit dans `kb/sources/<cle>.yaml`, une œuvre par fichier
 (`atelier/sources.py`) : clé stable, référence, DOI (lu, jamais de mémoire), fiches où l'œuvre est
 exploitée, **statut** — importée (venue de la base centrale, jamais vérifiée une à une), à vérifier,
@@ -340,6 +350,16 @@ donne à Claude la référence de ce que l'auteur regarde (le paragraphe choisi,
 Une conversation se poursuit dans la même session : Claude garde ce qu'il a lu. Elles vivent dans
 `kb/conversations/<id>.json` (`atelier/conversation.py`) ; budget et modèle dans les réglages Claude
 du livre (`claude.conversation` : 30 tours, 4 recherches, 6 pages par question).
+
+La **consommation** de Claude est journalisée dans `consommation.jsonl`, à la racine du livre : une
+ligne JSON par exécution (demande, reprise, « chercher encore », tour de conversation, lecture de
+confiance), écrite en fin d'exécution et jamais réécrite, avec ses propres chiffres — date et durée,
+type, phase, demande et chapitre, modèle choisi et modèle réel, issue, tours, recherches et pages web,
+jetons (neufs, cache créé, cache relu, sortie), coût au tarif API, détail par modèle, session
+(`atelier/consommation.py`). L'onglet « consommation » de la page du livre le résume sur une période
+(par jour, type, modèle, chapitre, phase) ; le fichier se lit aussi tel quel (duckdb, pandas).
+`migrer/consommation.py` reconstitue le travail d'avant le journal depuis les demandes (lignes
+« reconstitue », les reprises y sont cumulées) ; le rejouer ne crée pas de doublon.
 
 Le **storyboard** se recadre dans la vue Récit (mode storyboard) : double-clic sur un micro-récit,
 champs du plan dans son détail. Écrit dans `brief.yaml` (mise en forme gardée), noté au
