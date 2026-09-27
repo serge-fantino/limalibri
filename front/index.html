@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Atelier</title>
 <link rel="stylesheet" href="atelier.css">
+<script>try { document.documentElement.dataset.theme = localStorage.getItem("atelier-theme") || "auto"; } catch (e) {}</script>
 </head>
 <body>
 <header id="barre">
@@ -17,6 +18,7 @@
     <span class="sep"></span>
     <button id="b-annotations" title="Tes annotations : la liste, par chapitre">✎ Annotations</button>
     <button id="b-demandes" title="Le travail confié à Claude : réécritures et recherches">↻ Demandes</button>
+    <button id="b-theme" title="Thème">◐</button>
     <button id="b-claude" title="Parler du livre avec Claude : il lit tout, répond, et propose du travail à lancer">✦ Claude</button>
   </nav>
 </header>

@@ -3175,7 +3175,7 @@ const OUVERTES = new Set(["en_cours", "prete", "en_attente", "a_confirmer"]);
 
 const LIB_TYPES = { reecriture: "↻ réécriture", verification: "🔎 vérification", naive: "👁 lecture naïve", fiche: "◇ fiche",
   pistes: "◇ creuser", renvois: "⇄ renvois", reference: "🔎 référence", document: "⤓ original", plan: "✦ plan" };
-const STATUTS_DEM = [["tout", "tous les statuts"], ["ouvertes", "ouvertes"], ["en_cours", "en cours"], ["a_decider", "à décider"],
+const STATUTS_DEM = [["tout", "tous les statuts"], ["ouvertes", "ouvertes"], ["actives", "en cours + en attente"], ["en_cours", "en cours"], ["a_decider", "à décider"],
   ["en_attente", "en attente"], ["erreur", "en erreur"], ["retenues", "retenues"], ["rejetees", "rejetées"], ["closes", "closes"]];
 const PERIODES = [["tout", "toutes dates"], ["1", "aujourd'hui"], ["2", "depuis hier"], ["7", "7 jours"], ["30", "30 jours"], ["date", "depuis le…"]];
 
@@ -3184,6 +3184,7 @@ function statutDe(d, s) {
     case "tout": return true;
     case "ouvertes": return OUVERTES.has(d.etat);
     case "closes": return !OUVERTES.has(d.etat);
+    case "actives": return d.etat === "en_cours" || d.etat === "en_attente";
     case "a_decider": return d.etat === "prete" || d.etat === "a_confirmer";
     case "retenues": return d.etat === "decidee" && !!d.decision?.proposition;
     case "rejetees": return d.etat === "decidee" && !d.decision?.proposition;
@@ -7529,3 +7530,25 @@ document.getElementById("b-claude").onclick = () => {
   dialogue(id);
 };
 
+// ------------------------------------------------------------------ le thème
+// auto (celui du système, qui suit ses bascules) → clair → sombre ; retenu dans le navigateur.
+
+const THEMES = { auto: ["◐", "Thème : celui du système"], clair: ["☀", "Thème : clair"], sombre: ["☾", "Thème : sombre"] };
+
+function poseTheme(th) {
+  document.documentElement.dataset.theme = th;
+  const b = document.getElementById("b-theme");
+  b.textContent = THEMES[th][0];
+  b.title = THEMES[th][1] + " — clic : " + THEMES[{ auto: "clair", clair: "sombre", sombre: "auto" }[th]][1].toLowerCase();
+}
+
+poseTheme(THEMES[document.documentElement.dataset.theme] ? document.documentElement.dataset.theme : "auto");
+document.getElementById("b-theme").onclick = () => {
+  const th = { auto: "clair", clair: "sombre", sombre: "auto" }[document.documentElement.dataset.theme] ?? "auto";
+  try { localStorage.setItem("atelier-theme", th); } catch { /* sans stockage : pour cette page seulement */ }
+  poseTheme(th);
+  retheme();
+};
+// le graphe des fiches lit ses couleurs au rendu : il se redessine quand le thème change
+function retheme() { if (/graphe/.test(location.hash)) depuisAdresse(); }
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (document.documentElement.dataset.theme === "auto") retheme(); });
