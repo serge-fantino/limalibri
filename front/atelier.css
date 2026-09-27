@@ -669,6 +669,107 @@ details.confiance li{margin:.35rem 0}
 #fiche .lien-fiche:hover{text-decoration:underline}
 .oeuvre-fiche{font-size:.8rem;margin:.4rem 0 .7rem;line-height:1.35}
 body[data-vue="fiches"] #page{max-width:52rem}
+/* ---- les fiches dans le texte ---- */
+.puce-fiche{font-family:var(--ui);font-size:.7rem;padding:.05rem .45rem;border-radius:999px;cursor:pointer;
+ color:var(--acc);background:none;border:1px solid var(--acc);opacity:.85;white-space:nowrap}
+.puce-fiche:hover{opacity:1;background:var(--bar)}
+.note-fiches{display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.2rem}
+.bloc-fiches{margin:.3rem 0 .8rem}
+.bloc-fiches h5{margin-bottom:.2rem}
+#cadre:has(#fiche > .apercu-fiche){grid-template-columns:16rem minmax(0,1fr) 30rem}
+body[data-vue="storyboard"] #cadre:has(#fiche > .apercu-fiche){grid-template-columns:16rem minmax(0,1fr) 30rem}
+.apercu-tete{display:flex;align-items:center;gap:.6rem;position:sticky;top:0;background:var(--bg);padding:.3rem 0;z-index:2}
+.apercu-tete .mut{flex:1}
+.apercu-titre{font-weight:normal;font-size:1.15rem;margin:.3rem 0}
+.fiche-corps.apercu{font-size:.9rem;line-height:1.5}
+.fiche-corps.apercu h2{font-size:1.05rem}
+.fiche-corps.apercu h3{font-size:.95rem}
+.fiche-corps.apercu table{font-size:.78rem}
+/* ---- le graphe des fiches ---- */
+.graphe-barre{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem 1rem;font-family:var(--ui);font-size:.76rem;margin:.4rem 0 .6rem}
+.graphe-coche,.graphe-curseur{display:flex;align-items:center;gap:.25rem;color:var(--mut);cursor:pointer}
+.graphe-curseur input{width:5.5rem}
+.graphe-q{font:inherit;padding:.2rem .5rem;border:1px solid var(--rule);border-radius:4px;background:var(--pan);color:var(--fg)}
+.graphe-boite{height:calc(100vh - 20rem);min-height:24rem;border:1px solid var(--rule);border-radius:6px;overflow:hidden;background:var(--bg)}
+.graphe-canvas{display:block;cursor:grab}
+body[data-vue="fiches"] #page:has(.graphe-boite){max-width:none;padding-right:1.5rem}
+.cluster-ligne{border-left:5px solid;padding:.35rem .6rem;margin:.4rem 0;border-radius:3px;cursor:pointer}
+.cluster-ligne:hover,.cluster-ligne.choisi{background:var(--bar)}
+.lien-fiche-inline{color:var(--acc);text-decoration:none}
+.lien-fiche-inline:hover{text-decoration:underline}
+.graphe-detail{margin-top:1rem;border-top:1px solid var(--rule);padding-top:.4rem}
+.graphe-detail .voisin{font-size:.8rem;margin:.15rem 0}
+.espace-fil{display:inline-block;width:1rem}
+/* ---- créer une fiche ---- */
+.form-fiche select{margin:.2rem 0 .5rem}
+.fiches-demandes{margin:.6rem 0}
+.fiches-demandes .dem-ligne{display:block;width:100%;text-align:left}
+.fiche-doublon{border-left:3px solid #a4561b;padding:.4rem .7rem;margin:.6rem 0;background:#a4561b14}
+.fiche-apercu{border:1px solid var(--rule);border-radius:6px;padding:.6rem .9rem;margin:.4rem 0 .8rem}
+.fiche-corps .sans-source{border-left:3px solid #c4525a;padding-left:.5rem;margin-left:-.8rem}
+.fiche-alerte{color:#c4525a}
+/* ---- citations cliquables, œuvres, confiance par paragraphe ---- */
+cite[data-cle]{cursor:pointer;border-bottom:1px dotted var(--acc)}
+cite[data-cle]:hover{color:var(--acc)}
+.oeuvre-ref{font-family:var(--pf);font-size:.95rem;line-height:1.45;margin:.4rem 0}
+.wiki-mort{color:#c4525a;border-bottom:1px dashed #c4525a;cursor:pointer}
+.barre-confiance{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:-.4rem 0 1rem;font-family:var(--ui)}
+.legende-conf{display:flex;gap:.25rem;flex-wrap:wrap}
+.fiche-corps .conf{border-left:3px solid transparent;padding-left:.6rem;margin-left:-.9rem}
+.fiche-corps .conf-etabli{border-left-color:#2f6f4f}
+.fiche-corps .conf-debattu{border-left-color:#a4561b}
+.fiche-corps .conf-recent{border-left-color:#2d5f8a}
+.fiche-corps .conf-hypo{border-left-color:#7a4a8c}
+.fiche-corps .conf-projete{border-left-color:var(--mut);border-left-style:dashed}
+.fiche-corps .conf-raison{border-left-color:var(--rule);border-left-style:dotted}
+.fiche-corps.sans-conf .conf{border-left-color:transparent}
+#page .biblio-liste .source{cursor:pointer}
+/* ---- creuser ---- */
+.actions-fiche{margin:-.6rem 0 1rem;font-family:var(--ui)}
+.piste{border-left:3px solid var(--rule);padding:.35rem .7rem;margin:.5rem 0}
+.piste-nouvelle{border-left-color:var(--acc)}
+.piste-a_completer{border-left-color:#2d5f8a}
+.piste-couverte{border-left-color:var(--rule);opacity:.8}
+.piste .annot-tete{display:flex;gap:.5rem;align-items:center}
+.badge.prio-haute{color:#c4525a;border-color:#c4525a}
+.badge.prio-moyenne{color:#a4561b;border-color:#a4561b}
+.badge.prio-basse{color:var(--mut)}
+/* ---- file d'attente ---- */
+.fiches-demandes-tete{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+.fiches-demandes .dem-ligne{display:flex;flex-direction:row;align-items:center;gap:.5rem;cursor:pointer;text-align:left;width:100%}
+.fiches-demandes .dem-titre-ligne{flex:1}
+.file-actions{display:flex;gap:.4rem;align-items:center}
+.file-actions .bouton{padding:.1rem .5rem;font-size:.75rem}
+.dem-etat.en_attente{color:#2d5f8a}
+.banniere-pistes{display:block;width:100%;text-align:left;font:inherit;font-family:var(--ui);font-size:.85rem;cursor:pointer;
+ color:var(--acc);background:var(--bar);border:1px solid var(--acc);border-radius:5px;padding:.45rem .8rem;margin:0 0 .8rem}
+#b-fiches.a-decider{border-color:var(--acc);color:var(--acc)}
+.file-ligne{display:flex;flex-direction:row;align-items:center;gap:.5rem;cursor:pointer;text-align:left}
+.file-ligne .dem-titre-ligne{flex:1}
+/* ---- en création, renvois ---- */
+.creation-corps h5{margin:1.2rem 0 .1rem}
+.creation-corps .file-ligne{padding:.35rem .5rem;border-bottom:1px solid var(--rule)}
+.creation-corps .file-ligne:hover{background:var(--bar)}
+.bandeau-brouillon{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.bandeau-brouillon .bouton{font-size:.75rem;padding:.15rem .6rem}
+/* ---- déroulé : réflexions et résultats ---- */
+.deroule li.pliable{cursor:pointer}
+.deroule li.pliable .der-detail{white-space:pre-wrap !important;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+.deroule li.pliable.deplie .der-detail{display:block;-webkit-line-clamp:unset}
+.deroule .der-resultat{padding-left:1.2rem;color:var(--mut)}
+.deroule .der-resultat .der-detail{font-size:.7rem;color:var(--mut);font-style:normal}
+.deroule .der-resultat.pliable .der-detail{-webkit-line-clamp:2}
+.deroule .der-pensee .der-detail{color:#7a6ad0}
+.der-derniere{border-left:3px solid #7a6ad0;background:var(--bar);padding:.35rem .6rem;margin:.4rem 0;border-radius:3px}
+.der-derniere p{margin:.2rem 0 0;font-size:.8rem;font-style:italic;white-space:pre-wrap;max-height:9rem;overflow:auto}
+/* ---- créer d'office, supprimer ---- */
+.reglage-file{display:inline-flex;gap:1rem;flex-wrap:wrap}
+.form-suppression{border-left:3px solid #c4525a}
+.bouton.danger{background:#c4525a;border-color:#c4525a;color:#fff}
+#outils .actions-barre{display:inline-flex;align-items:center;gap:.4rem}
+#outils .sep-barre{width:1px;height:1.2rem;background:var(--rule)}
+#outils .b-versions.danger{color:#c4525a;border-color:#c4525a55}
+.actions-fiche:empty{display:none}
 @media(max-width:1100px){#cadre{grid-template-columns:14rem minmax(0,1fr) 16rem}
  body[data-vue="storyboard"][data-panneau] #cadre{grid-template-columns:minmax(0,1fr) 22rem}
  body[data-vue="storyboard"][data-panneau] #gauche{display:none}}
@@ -691,3 +792,4 @@ body[data-vue="fiches"] #page{max-width:52rem}
 #plan-col .pl-titre{white-space:normal}
 .pan-tete .retour + h4{flex:1}
 .verif-precedente{border-left:2px solid var(--rule);padding-left:.6rem;margin:.5rem 0;opacity:.85}
+.fiche-corps.apercu{font-family:var(--pf)}

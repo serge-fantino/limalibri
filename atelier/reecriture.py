@@ -58,7 +58,17 @@ class Conflit(Exception):
 # livre.yaml (section « claude »). Au-delà, l'outil est refusé et Claude doit rendre sa
 # réponse avec ce qu'il a ; « tours » garde trois tours de marge pour cette réponse.
 LIMITES = {"verification": {"tours": 25, "recherches": 6, "pages": 12},
+           "fiche": {"tours": 40, "recherches": 12, "pages": 25},
+           "pistes": {"tours": 20, "recherches": 0, "pages": 0},
            "reecriture": {"tours": 16, "recherches": 0, "pages": 0}}
+# Un message du CLI peut porter un gros résultat d'outil (un PDF lu d'un bloc) : 1 Mo par défaut
+# ne suffit pas. Et un PDF se lit par pages, jamais entier (voir le crochet).
+TAMPON = 32 * 1024 * 1024
+# Les derniers modèles ne renvoient pas le texte de leurs réflexions, sauf à le demander :
+# résumé, il va au déroulé (de quoi suivre où va la demande).
+PENSEE = {"type": "adaptive", "display": "summarized"}
+PDF_PAGES_MAX = 6
+
 ARRETE = (" Ne cherche plus : rends maintenant ta réponse structurée avec ce que tu as. Ce qui n'a pas "
           "pu être vérifié le reste (verdict « introuvable », ou verifie: false).")
 
@@ -99,6 +109,19 @@ def garde(d, lim):
         if nom == "StructuredOutput":
             return {}
         raison = None
+        entree_outil = entree.get("tool_input") or {}
+        if nom == "Read" and str(entree_outil.get("file_path", "")).lower().endswith(".pdf"):
+            pages = str(entree_outil.get("pages") or "")
+            m = re.fullmatch(r"\s*(\d+)\s*(?:-\s*(\d+))?\s*", pages)
+            if not m or int(m.group(2) or m.group(1)) - int(m.group(1)) + 1 > PDF_PAGES_MAX:
+                d.setdefault("_refuses", []).append(tool_use_id)
+                d.setdefault("deroule", []).append({"t": time.strftime("%H:%M:%S"), "type": "limite",
+                                                    "texte": "PDF lu d'un bloc : refusé (par pages, %d au plus)" % PDF_PAGES_MAX})
+                return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                        "permissionDecisionReason": "Un PDF ne se lit pas d'un bloc : utilise Read avec pages (ex. « 1-3 », "
+                        "%d pages au plus à la fois), en commençant par le résumé et les pages qui portent ce que tu "
+                        "cherches. Si la lecture par pages échoue, cherche une version HTML (page de l'article, "
+                        "PMC, arXiv) ou le résumé, plutôt que le PDF." % PDF_PAGES_MAX}}
         if len(d.get("_vus", [])) >= lim["tours"] - 3:
             raison = "Budget de tours atteint (%d)." % lim["tours"]
         elif nom == "WebSearch":
@@ -132,7 +155,9 @@ def texte_budget(lim):
 # ------------------------------------------------------------------ fichiers
 
 def _dossier(slug):
-    d = livre.dossier(slug) / "demandes"
+    # « _kb » : les demandes qui n'appartiennent à aucun chapitre (la création d'une fiche)
+    d = livre.LIVRE / "kb" / "demandes" if slug == "_kb" else livre.dossier(slug) / "demandes"
+    d.parent.mkdir(parents=True, exist_ok=True)
     d.mkdir(exist_ok=True)
     return d
 
@@ -150,7 +175,7 @@ def _ecrit(slug, d):
 
 
 def liste(slug):
-    if not livre.dossier(slug).is_dir():
+    if slug != "_kb" and not livre.dossier(slug).is_dir():
         raise KeyError(slug)
     out = []
     for p in _dossier(slug).glob("*.json"):
@@ -165,6 +190,8 @@ def liste(slug):
                       "cout_usd": (d.get("execution") or {}).get("cout_usd")}
                    | {"blocs": d["cible"].get("blocs") or [], "annotations": d["cible"].get("annotations") or [],
                       "assertions": d["cible"].get("assertions") or [],
+                      "chapitres": d["cible"].get("chapitres") or [], "question": d["cible"].get("question"),
+                      "fiche": d["cible"].get("fiche"),
                       "plan": d["cible"].get("plan"), "decision": d.get("decision")})
     return sorted(out, key=lambda d: d["cree"], reverse=True)
 
@@ -177,6 +204,8 @@ def liste_toutes():
             continue
         for d in liste(c["slug"]):
             out.append(dict(d, chapitre=c["slug"], chapitre_titre=c["title"], chapitre_numero=c["numero"]))
+    for d in liste("_kb"):
+        out.append(dict(d, chapitre="_kb", chapitre_titre="Fiches", chapitre_numero=None))
     return sorted(out, key=lambda d: d["cree"], reverse=True)
 
 
@@ -190,7 +219,18 @@ def relance(slug, ident, consigne=None, modele_choisi=False):
     c = d["cible"]
     consigne = d.get("consigne", "") if consigne is None else consigne
     mc = d.get("modele_choisi") if modele_choisi is False else modele_choisi
-    if d.get("type") == "verification":
+    if d.get("type") == "pistes":
+        from . import pistes
+        n = pistes.cree({"fiche": c["fiche"], "consigne": consigne, "modele": mc})
+    elif d.get("type") == "renvois":
+        from . import renvois
+        n = renvois.cree({"fiche": c["fiche"], "consigne": consigne, "modele": mc})
+    elif d.get("type") == "fiche":
+        from . import creation
+        n = creation.cree({"question": c["question"], "slug": c.get("slug"), "chapitres": c.get("chapitres"),
+                           "depuis": c.get("depuis"), "sources_initiales": c.get("sources_initiales"),
+                           "longueur": d.get("longueur"), "consigne": consigne, "modele": mc})
+    elif d.get("type") == "verification":
         from . import verification
         n = verification.cree(slug, {"assertions": c.get("assertions"), "annotation": c.get("annotation"),
                                      "consigne": consigne, "modele": mc})
@@ -209,10 +249,20 @@ def relance(slug, ident, consigne=None, modele_choisi=False):
     n["relance_de"] = ident
     _ecrit(slug, n)
     d["remplacee_par"] = n["id"]
-    if d["etat"] == "prete":
+    if d["etat"] in ("prete", "erreur"):          # relancée : l'ancienne est close
         d["etat"] = "remplacee"
     _ecrit(slug, d)
     return n
+
+
+def classe(slug, ident):
+    """Clore une demande en erreur sans la relancer (abandonnée)."""
+    d = lit(slug, ident)
+    if d["etat"] != "erreur":
+        raise Conflit("seule une demande en erreur se classe (%s)" % d["etat"])
+    d.update(etat="abandonnee", abandonnee=livre._maintenant())
+    _ecrit(slug, d)
+    return d
 
 
 def _blocs(slug, version):
@@ -271,6 +321,22 @@ def jetons(resultat):
     return total or None
 
 
+def _extrait_resultat(nom, contenu):
+    """Ce qu'un outil a rendu, en quelques lignes : de quoi suivre sans tout recopier."""
+    if not nom or nom == "StructuredOutput":
+        return None
+    if isinstance(contenu, list):
+        contenu = " ".join(x.get("text", "") for x in contenu if isinstance(x, dict) and x.get("type") == "text")
+    texte = " ".join(str(contenu or "").split())
+    if not texte:
+        return None
+    if nom == "Read":                                   # un fichier lu : sa taille, pas son contenu
+        return "%d caractères lus" % len(texte)
+    if nom in ("Grep", "Glob"):
+        return texte[:300] + ("…" if len(texte) > 300 else "")
+    return texte[:700] + ("…" if len(texte) > 700 else "")
+
+
 def trace(d, m):
     """Ajoute au déroulé de la demande ce que Claude vient de faire (outil, texte, réflexion).
     Rend True si quelque chose a été ajouté."""
@@ -300,7 +366,7 @@ def trace(d, m):
             elif isinstance(b, TextBlock) and b.text.strip():
                 d["deroule"].append({"t": quand, "type": "texte", "texte": b.text.strip()[:2000]})
             elif isinstance(b, ThinkingBlock) and b.thinking.strip():
-                d["deroule"].append({"t": quand, "type": "pensee", "texte": b.thinking.strip()[:2000]})
+                d["deroule"].append({"t": quand, "type": "pensee", "texte": b.thinking.strip()[:4000]})
     elif isinstance(m, UserMessage) and isinstance(m.content, list):
         for b in m.content:
             if isinstance(b, ToolResultBlock) and b.is_error:
@@ -315,6 +381,9 @@ def trace(d, m):
                 nom, detail = d.get("_outils", {}).get(b.tool_use_id, [None, None])
                 if nom == "WebFetch" and detail not in d.setdefault("pages", []):
                     d["pages"].append(detail)
+                extrait = _extrait_resultat(nom, b.content)
+                if extrait:
+                    d["deroule"].append({"t": quand, "type": "resultat", "nom": nom, "texte": extrait})
     return len(d["deroule"]) > avant or bool(d.get("jetons_en_cours"))
 
 
@@ -322,7 +391,9 @@ def interrompues():
     """Au démarrage : une demande restée « en cours » a perdu sa tâche (serveur relancé)."""
     n = 0
     base = livre.LIVRE / "chapters"
-    for p in base.glob("*/demandes/*.json") if base.exists() else []:
+    tous = list(base.glob("*/demandes/*.json")) if base.exists() else []
+    tous += list((livre.LIVRE / "kb" / "demandes").glob("*.json"))
+    for p in tous:
         d = json.loads(p.read_text(encoding="utf-8"))
         if d.get("etat") == "en_cours":
             d.update(etat="erreur", erreur="interrompue : le serveur a été relancé pendant le travail — la reprendre ou la relancer")
@@ -337,6 +408,15 @@ def titre_de(d):
         at = livre.atelier(d.get("_slug") or "")
     except KeyError:
         at = None
+    if d.get("type") == "fiche":
+        from . import creation
+        return creation.titre_de(d)
+    if d.get("type") == "pistes":
+        from . import pistes
+        return pistes.titre_de(d)
+    if d.get("type") == "renvois":
+        from . import renvois
+        return renvois.titre_de(d)
     if d.get("type") == "verification":
         morceaux = []
         for a in d["cible"].get("assertions", []):
@@ -540,6 +620,7 @@ async def _execute(slug, ident):
         lim["tours"] = 3
     depot, _ = livre.heritage()
     options = ClaudeAgentOptions(
+        max_buffer_size=TAMPON, thinking=PENSEE,
         tools=lecture, allowed_tools=lecture, max_turns=lim["tours"] + 2, setting_sources=[],
         cwd=str(livre.LIVRE), add_dirs=[str(depot)] if (lecture and depot) else [],
         system_prompt=d["contexte"]["systeme"],
@@ -622,6 +703,12 @@ async def _lance(slug, d, options, prompt, conclut, reprise=False, apres=None):
     if apres:
         apres(slug, d)
     _ecrit(slug, d)
+    if slug == "_kb":                            # la file : la suivante, si l'enchaînement est activé
+        from . import file
+        try:
+            file.suivante()
+        except Exception as e:                   # noqa: BLE001 — la file ne doit pas casser la demande finie
+            print("atelier : file d'attente —", e)
 
 
 REPRISE = ("Tu t'es arrêté avant d'avoir rendu ta réponse. Ne fais plus aucune recherche ni lecture : "
@@ -648,15 +735,29 @@ def reprise(slug, ident):
     return d
 
 
-async def _reprend(slug, ident):
-    d = lit(slug, ident)
+def _genre(d):
+    """(nom du budget, schéma, conclusion, après) selon le type de la demande."""
     if d.get("type") == "verification":
         from . import verification
-        schema, conclut, apres = verification.SCHEMA, verification.conclut, verification.au_carnet
-    else:
-        schema, conclut, apres = SCHEMA, _conclut, None
+        return "verification", verification.SCHEMA, verification.conclut, verification.au_carnet
+    if d.get("type") == "fiche":
+        from . import creation
+        return "fiche", creation.SCHEMA, creation.conclut, None
+    if d.get("type") == "pistes":
+        from . import pistes
+        return "pistes", pistes.SCHEMA, pistes.conclut, None
+    if d.get("type") == "renvois":
+        from . import renvois
+        return "pistes", renvois.SCHEMA, renvois.conclut, None
+    return "reecriture", SCHEMA, _conclut, None
+
+
+async def _reprend(slug, ident):
+    d = lit(slug, ident)
+    _, schema, conclut, apres = _genre(d)
     depot, _ = livre.heritage()
     options = ClaudeAgentOptions(
+        max_buffer_size=TAMPON, thinking=PENSEE,
         tools=[], allowed_tools=[], max_turns=4, setting_sources=[],
         cwd=str(livre.LIVRE), add_dirs=[str(depot)] if depot else [],
         system_prompt=d["contexte"]["systeme"],
@@ -668,7 +769,7 @@ async def _reprend(slug, ident):
 def _modele_de(d):
     """Une session se poursuit avec le modèle qui l'a commencée."""
     return (d.get("execution") or {}).get("modele") or d.get("modele_en_cours") or \
-        modele("verification" if d.get("type") == "verification" else "reecriture", d)
+        modele(_genre(d)[0], d)
 
 
 ENCORE = ("Poursuis ta recherche là où tu en es : tout ce que tu as cherché, lu et conclu plus haut dans cette "
@@ -681,8 +782,8 @@ def encore(slug, ident, consigne=""):
     """Chercher encore : rouvrir la session d'une vérification (arrêtée, ou dont la réponse ne suffit
     pas) avec un budget neuf. Claude garde tout ce qu'il a lu ; la nouvelle réponse remplace l'ancienne."""
     d = lit(slug, ident)
-    if d.get("type") != "verification":
-        raise ValueError("« chercher encore » ne vaut que pour une vérification")
+    if d.get("type") not in ("verification", "fiche"):
+        raise ValueError("« poursuivre la recherche » ne vaut que pour une vérification ou une fiche")
     if d["etat"] not in ("erreur", "prete"):
         raise Conflit("seule une vérification en erreur ou à décider peut chercher encore")
     if not d.get("session_id"):
@@ -695,6 +796,7 @@ def encore(slug, ident, consigne=""):
     b["encore"] = b.get("encore", 0) + 1
     if d.get("resultat"):                       # la réponse d'avant reste lisible, pour comparer
         d.setdefault("resultats_precedents", []).append({"date": livre._maintenant(), "resultat": d["resultat"]})
+    d.pop("apercu", None)
     consigne = " ".join((consigne or "").split())
     d["etat"] = "en_cours"
     if d.get("erreur"):
@@ -709,19 +811,20 @@ def encore(slug, ident, consigne=""):
 
 
 async def _encore(slug, ident, consigne):
-    from . import verification
     d = lit(slug, ident)
-    lim = limites("verification")
+    genre, schema, conclut, apres = _genre(d)
+    lim = limites(genre)
     depot, _ = livre.heritage()
     outils = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"]
     options = ClaudeAgentOptions(
+        max_buffer_size=TAMPON, thinking=PENSEE,
         tools=outils, allowed_tools=outils, max_turns=lim["tours"] + 2, setting_sources=[],
         cwd=str(livre.LIVRE), add_dirs=[str(depot)] if depot else [],
         system_prompt=d["contexte"]["systeme"],
-        output_format={"type": "json_schema", "schema": verification.SCHEMA},
+        output_format={"type": "json_schema", "schema": schema},
         hooks=garde(d, lim), resume=d["session_id"], model=_modele_de(d))
     prompt = ENCORE % (lim["recherches"], lim["pages"], (" Précision de l'auteur : " + consigne) if consigne else "")
-    await _lance(slug, d, options, prompt, verification.conclut, reprise=True, apres=verification.au_carnet)
+    await _lance(slug, d, options, prompt, conclut, reprise=True, apres=apres)
 
 
 def _reecrit(slug, version, nouveaux):

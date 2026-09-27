@@ -72,7 +72,8 @@ parts: []
 # change à la main, dans le fichier.
 EDITABLES = ("titre", "sous_titre", "auteur", "langue", "synopsis", "quatrieme", "couverture",
              "numerotation_essai", "claude")
-CLAUDE_GENRES = {"verification": ("tours", "recherches", "pages", "modele"), "reecriture": ("tours", "modele")}
+CLAUDE_GENRES = {"verification": ("tours", "recherches", "pages", "modele"), "reecriture": ("tours", "modele"),
+                 "fiche": ("tours", "recherches", "pages", "modele"), "pistes": ("tours", "modele")}
 NUMEROTATIONS = ("aucune", "sections", "paragraphes")
 
 
@@ -163,6 +164,17 @@ def ecrit_meta(champs, version):
                 cible["modele"] = str(c["modele"])
             else:
                 cible.pop("modele", None)
+        if "file" in c:                          # la file d'attente : {auto, simultanees}
+            fi = cible.get("file")
+            if fi is None:
+                cible["file"] = fi = CommentedMap()
+            for k, v in (c.get("file") or {}).items():
+                if k in ("auto", "creer_d_office"):
+                    fi[k] = bool(v)
+                elif k == "simultanees":
+                    fi["simultanees"] = max(1, int(v))
+                else:
+                    raise KeyError("claude.file.%s" % k)
         for g, cles in CLAUDE_GENRES.items():
             for k, v in (c.get(g) or {}).items():
                 if k not in cles:
@@ -540,7 +552,7 @@ def modifie_plan(slug, pid, champs, recits, empreinte, motif=""):
 
 # L'en-tête du storyboard : ce qui est suivi, l'intention, la tenue, les contraintes, les mots
 # interdits, les formules réservées. Mêmes garanties que pour un plan.
-CHAMPS_BRIEF = ("suivi", "constraints", "interdits", "derogations")
+CHAMPS_BRIEF = ("suivi", "constraints", "interdits", "derogations", "fiches")
 GROUPES_BRIEF = ("intent", "tenue")
 
 
@@ -559,6 +571,11 @@ def modifie_brief(slug, champs, empreinte, motif=""):
             v = [x.strip(" -") for x in (v if isinstance(v, list) else str(v).splitlines()) if x.strip(" -")]
         elif groupe == "interdits":
             v = [x.strip() for x in (v if isinstance(v, list) else str(v).split(",")) if x.strip()]
+        elif groupe == "fiches":                 # des slugs de kb/fiches/, qui doivent exister
+            v = [x.strip() for x in (v if isinstance(v, list) else re.split(r"[,\n]", str(v))) if x.strip()]
+            inconnues = [x for x in v if not (LIVRE / "kb" / "fiches" / (x + ".md")).exists()]
+            if inconnues:
+                raise ValueError("fiche(s) inconnue(s) : %s" % ", ".join(inconnues))
         else:
             v = (v or "").strip()
             if "\n" in v:

@@ -61,6 +61,8 @@ SCHEMA = {
             "action": {"type": "string", "enum": ["lier", "nuancer", "corriger", "rien"]},
             "texte": {"type": "string"}, "motif": {"type": "string"}},
             "required": ["assertion", "action"]}},
+        "fiches_consultees": {"type": "array", "items": {"type": "object", "properties": {
+            "fiche": {"type": "string"}, "apport": {"type": "string"}}, "required": ["fiche", "apport"]}},
         "recit": {"type": "object", "properties": {
             "a_reecrire": {"type": "boolean"}, "raison": {"type": "string"}},
             "required": ["a_reecrire"]}},
@@ -82,6 +84,19 @@ def _plan_texte(slug):
         for e in s["enfants"]:
             f(e, ind + 1)
     f(P["arbre"], 0)
+    return "\n".join(L)
+
+
+def texte_fiches(slug):
+    """Les fiches, à lire avant toute recherche web : celles du chapitre, puis l'index entier."""
+    from . import kb, creation
+    titres = {f["slug"]: f for f in kb.index()}
+    fs = [str(x) for x in (livre.atelier(slug).get("brief") or {}).get("fiches") or [] if str(x) in titres]
+    L = ["\n## Les fiches — à lire AVANT toute recherche web (kb/fiches/<slug>.md)"]
+    if fs:
+        L.append("Les fiches de ce chapitre :")
+        L += ["- %s — %s" % (s, titres[s]["titre"]) for s in fs]
+    L.append("L'index de toutes les fiches (d'autres peuvent couvrir l'assertion) :\n" + creation.index_texte())
     return "\n".join(L)
 
 
@@ -128,6 +143,7 @@ def compile_contexte(slug, d):
     if biblio:
         L.append("\n## Bibliographie du chapitre (clés déjà disponibles)\n" +
                  "\n".join("- %s : %s" % (b["cle"], b["ref"][:160]) for b in biblio))
+    L.append(texte_fiches(slug))
     L.append(texte_carnet(slug, d["cible"]["assertions"]))
     L.append(reecriture.texte_budget(d["budget"]["limites"]))
     depot, h = livre.heritage()
@@ -211,6 +227,7 @@ async def _execute(slug, ident):
     lim = d.get("budget", {}).get("limites") or reecriture.limites("verification")
     depot, _ = livre.heritage()
     options = ClaudeAgentOptions(
+        max_buffer_size=reecriture.TAMPON, thinking=reecriture.PENSEE,
         tools=outils, allowed_tools=outils, max_turns=lim["tours"] + 2, setting_sources=[],
         cwd=str(livre.LIVRE), add_dirs=[str(depot)] if depot else [],
         system_prompt=d["contexte"]["systeme"],

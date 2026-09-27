@@ -103,6 +103,117 @@ chapitres qui la listent, les fiches qu'elle cite et qui la citent, les œuvres 
 l'essai avec un lien vers chaque note qui les cite. Un lien hors fiches (le cadre poétique de
 l'ancien dépôt) est marqué, et s'ouvre en lecture seule dans l'éditeur (`atelier/kb.py`).
 
+Le **graphe** (`#fiches/graphe`, onglet de l'index) : les fiches en cercles, les chapitres
+en carrés reliés à leurs fiches, trois sortes de liens — `[[lien]]`, œuvres partagées (la
+bibliographie centrale), même chapitre — à afficher ou non. Les couleurs sont des **clusters
+thématiques** : communautés de Louvain (networkx) sur ces liens pondérés, calculées par le
+serveur (`/api/fiches-graphe`), nommées par leurs mots propres (titres et sujets) et leurs
+fiches les plus liées. Curseurs : résolution (nombre de clusters), poids des œuvres et des
+chapitres. Glisser, zoomer, survoler (les voisins), cliquer (le détail), double-cliquer
+(ouvrir) ; un clic dans la légende isole un cluster. La disposition est gardée d'une visite
+à l'autre.
+
+**Créer une fiche** est une demande à Claude, comme une vérification (`atelier/creation.py`,
+`skills/fiche.md`) : une question, les chapitres qu'elle sert, une longueur, un modèle. Elle
+part de l'index des fiches (« ◇ nouvelle fiche… »), des fiches d'un chapitre (« il manque une
+fiche… »), ou d'une vérification (« en faire une fiche… », avec ses sources). Claude lit
+d'abord les fiches voisines — s'il en trouve une qui couvre déjà la question, il le dit
+(doublon) —, cherche dans son budget (`claude.fiche` de livre.yaml : 40 tours, 12 recherches,
+25 pages par défaut), et rend une fiche : question, confiance par degré, sections sourcées
+`[@cle]`, ce que le livre peut en tirer, sources avec extraits, voisines, chapitres. Le tiroir
+la montre comme dans le wiki, paragraphes sans source signalés en marge, liens morts et clés
+inconnues relevés. « Créer » l'écrit dans `kb/fiches/<slug>.md` (en-tête `origine: claude`,
+`etat: brouillon`, sections identifiées) et l'ajoute aux fiches des chapitres cochés ; les
+liens inverses sont proposés, pas écrits. Ces demandes vivent dans `kb/demandes/`. Reprendre,
+poursuivre la recherche et relancer fonctionnent comme pour une vérification.
+
+La **confiance par paragraphe** d'une fiche : « ◐ lire la confiance par paragraphe » demande à
+Claude (sans outils ni recherche, modèle de `claude.fiche`) un degré pour chaque paragraphe —
+établi, débattu, récent, hypothèse, projeté, ou raisonnement — et une raison brève, d'après son
+texte et la ligne de confiance de la fiche (`atelier/confiance.py`). Le résultat va dans
+`kb/fiches/<slug>.confiance.json`, jamais dans la fiche : chaque paragraphe y est désigné par
+l'empreinte de son texte, et perd sa marque s'il change. Affiché en marge (couleur, raison au
+survol), avec une légende et un interrupteur. Une fiche créée par Claude reçoit d'office le
+degré qu'il a donné à chaque section.
+
+La **bibliographie** (`#biblio`, troisième onglet des fiches) rassemble toutes les œuvres : la
+base centrale (ancien dépôt), les bibliographies des chapitres, les sources des fiches écrites
+ici (`/api/oeuvres`). Recherche et filtres : citées par l'essai, sources des fiches, hors base,
+sans DOI, douteuses. Partout — essai, notes, fiches, aperçus —, **un clic sur une citation
+ouvre son œuvre** dans la colonne de droite : référence, DOI ou recherche, les notes de l'essai
+et les fiches qui la citent, les extraits relevés. Un `[[lien]]` vers une fiche qui n'existe
+pas (en rouge) propose de la créer.
+
+**Creuser une fiche** (« ◇ creuser… » sous sa confiance) : Claude lit la fiche, cherche ce
+qu'elle effleure sans le traiter, et, pour chaque piste, vérifie dans la base (Grep, index,
+voisines, cluster du graphe) si elle est déjà couverte, avant de la classer : **nouvelle**,
+**à compléter** (telle fiche, telle section) ou **déjà couverte** (`atelier/pistes.py`,
+`skills/pistes.md`). Pas de web : c'est une lecture (budget `claude.pistes`, 20 tours). Le
+tiroir montre les pistes par statut, avec la section qui les appelle, la priorité et les
+chapitres servis ; on coche, on retouche la question, et chaque piste cochée lance une
+création de fiche — qui revérifie le doublon avant d'écrire. Les demandes de pistes d'une
+fiche sont listées dans sa colonne de droite.
+
+La **file d'attente** (`atelier/file.py`) : les fiches retenues depuis « creuser » ne partent
+pas toutes seules, elles sont **en attente**. On les lance à la main (▶, dans Fiches › En création
+ou dans leur tiroir), ou on les retire. L'**enchaînement automatique** est une option
+à activer explicitement (case « enchaîner automatiquement », ou `claude.file.auto` dans
+livre.yaml ; `simultanees`, 1 par défaut) : les demandes en attente partent alors l'une après
+l'autre, la suivante quand la précédente a fini, et la file reprend après un redémarrage. Le
+contexte d'une demande est compilé à son lancement : elle voit les fiches créées entre-temps.
+
+L'onglet **En création** (`#fiches/creation`) sépare le travail en cours du stock (onglet
+Liste) : demandes de la base en cours, en attente, à décider, en erreur, puis les dernières
+closes ; la page et les compteurs (bouton Fiches, onglet) se mettent à jour d'eux-mêmes. Une
+demande en erreur se clôt en la relançant (elle passe à « remplacée ») ou en la **classant**
+(« abandonnée »). La Liste marque les fiches écrites par Claude (brouillon, relue) et les filtre.
+
+Une fiche écrite par Claude se **marque comme relue** (« ✓ », son en-tête passe de `etat:
+brouillon` à `etat: relue`). Les **renvois** (`atelier/renvois.py`) : pour une fiche, les
+voisines qu'elle cite et qui ne la citent pas encore ; « ⇄ renvois… » (sur la fiche, ou après
+sa création) demande à Claude, sans web, où poser dans chacune une phrase qui renvoie vers
+elle — la section, le paragraphe (par ses premiers mots), phrase en fin de paragraphe ou
+paragraphe après — et comment la dire. Le tiroir montre le paragraphe visé ; on retouche, on
+coche, on insère : le reste de la fiche est intact, et l'insertion va à `kb/journal.jsonl`.
+
+Une création qui part voit aussi les **fiches proposées mais pas encore créées** (rendues, en
+attente de décision) : elle ne les double pas, et peut les signaler comme doublon.
+
+**Créer d'office** (option de la file, à cocher explicitement, `claude.file.creer_d_office`) : une
+création lancée depuis la file écrit sa fiche dès la réponse de Claude, à l'état `a_confirmer`,
+sans toucher aux briefs — elle est visible, citable par les suivantes, et signalée aux autres
+demandes comme non relue. On la **confirme** (elle passe en brouillon et rejoint les chapitres
+cochés) ou on ne la garde pas (corbeille), depuis sa demande (onglet En création, groupe « À
+confirmer ») ou depuis la fiche.
+
+**Supprimer une fiche** (le ménage, « supprimer… » sur la fiche) : l'atelier montre d'abord ce
+qui en dépend — les fiches qui la citent, les chapitres qui la listent, les œuvres rattachées.
+La fiche va à `kb/corbeille/` (récupérable, avec sa confiance), sort des briefs et des
+bibliographies ; les liens qui la visaient restent (morts, en rouge, qui proposent de la
+recréer) ou sont défaits, le texte gardé, au choix. Tout va à `kb/journal.jsonl`.
+
+Les vues des fiches ont la **barre de vue** du récit et de l'essai : liste · en création · graphe ·
+bibliographie, puis, sur une fiche, ses actions (creuser, renvois, supprimer), et les actions sur la
+base : nouvelle fiche, **⎙ PDF** et version **imprimable** (`atelier/export.py`, `/api/kb/pdf`,
+`/api/kb/imprimable`). Le document : une couverture (titre, « base de connaissance », synopsis,
+date, nombre de fiches), un sommaire par cluster thématique, chaque fiche (confiance, texte, fiches
+qui la citent, chapitres, œuvres), la bibliographie des œuvres exploitées en annexe ; tous les liens
+(fiche à fiche, vers une section, citation vers son œuvre, sommaire) tiennent dans le document. Le PDF
+est imprimé par Chrome sans interface (`ATELIER_CHROME` pour un autre chemin) ; sans Chrome, la
+version imprimable s'imprime depuis le navigateur. De quoi faire relire la base par un tiers.
+
+Les **vérifications lisent les fiches d'abord** : la consigne leur donne les fiches du
+chapitre et l'index entier, avec la règle d'y chercher avant le web ; la réponse dit quelles
+fiches ont servi et à quoi (« fiches consultées »).
+
+Depuis le texte, une pastille « ◇ fiche » ouvre la fiche **en aperçu** dans la colonne de
+droite, sans quitter le chapitre (← revient, les `[[liens]]` s'y suivent, « pleine page » va au
+wiki). Les pastilles sont posées : sur chaque œuvre de la bibliographie (ses fiches), sur
+chaque note (les fiches des œuvres qu'elle cite), dans le détail d'un paragraphe de l'essai
+(les fiches de ses notes), et dans le brief (« Fiches du chapitre », modifiables dans
+l'en-tête du storyboard ; une fiche inconnue est refusée). Claude reçoit les fiches du
+chapitre en premier lieu où chercher.
+
 La **vérification** (🔎 sur une assertion ou une annotation) confie à Claude, avec WebSearch et
 WebFetch en plus de la lecture du livre, la recherche des sources selon les règles du livre
 (`skills/verification.md`) : verdict par assertion avec extraits, passage proposé pour l'essai
@@ -138,7 +249,11 @@ modèle), avec un compteur en direct pendant le travail ; la liste donne les tot
 
 Chaque **demande** (réécriture ou vérification) enregistre son **déroulé** pendant le travail
 (recherches, pages lues, fichiers ouverts, ce que Claude écrit en chemin) : le tiroir le montre
-en direct, puis en entier. Le travail continue côté serveur si l'on change de vue ; une demande
+en direct, puis en entier. Les **réflexions** de Claude y sont, résumées (les derniers modèles les
+omettent si on ne les demande pas : `thinking={"type": "adaptive", "display": "summarized"}`),
+et un extrait de chaque **résultat** d'outil (ce qu'une recherche a trouvé, ce qu'une page
+disait ; pour un fichier lu, sa taille). En direct, la dernière réflexion est affichée en tête ;
+le déroulé complet se filtre (actions, réflexions, résultats), et chaque ligne se déplie. Le travail continue côté serveur si l'on change de vue ; une demande
 qui aboutit est signalée. Un redémarrage du serveur (dont le rechargement automatique quand le
 code change) interrompt les demandes en cours : elles sont marquées « interrompues ».
 
@@ -156,6 +271,7 @@ l'import d'Une Vie depuis son ancien dépôt.
 
 ```bash
 poetry install                                        # une fois
+brew install poppler                                  # une fois, hors Poetry : pdftoppm, pour que Claude lise les PDF par pages
 poetry run python3 migrer/structure.py                # ordre.md -> book-atelier/structure.yaml
 poetry run python3 migrer/chapitre.py la-mer          # un chapitre -> book-atelier/chapters/la-mer/
 poetry run python3 migrer/liens_essai.py la-mer <analyse.json>   # liens verrou -> essai, écarts

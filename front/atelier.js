@@ -202,6 +202,12 @@ function vueNotes(page) {
     enrichit(corps);
     li.append(corps);
     li.append(el("span", "note-cle", n.cle + (n.appels.length ? "" : " · non appelée")));
+    const fs = fichesDeNote(n.cle);
+    if (fs.length) {
+      const d = el("span", "note-fiches");
+      d.append(...fs.map((x) => puceFiche(x)));
+      li.append(d);
+    }
     liste.append(li);
   }
   page.replaceChildren(el("h1", null, c?.title ?? etat.slug),
@@ -613,6 +619,7 @@ function vueBiblio(page) {
     if (s.doute) { const d = el("span", "badge doute", "doute"); d.title = s.doute; meta.append(d); }
     meta.append(liensSource(s.doi, s.ref ?? html));
     for (const k of s.notes ?? []) if (parNote[k]) meta.append(el("span", "puce", "note " + parNote[k].num));
+    for (const fs of s.fiches ?? []) meta.append(puceFiche(fs));
     li.append(ref, meta);
     ul.append(li);
   }
@@ -1120,6 +1127,11 @@ function panneauBrief() {
   f.append(champBrief("interdits", "séparés par des virgules", (br.interdits ?? []).join(", ")));
   groupe("Formules réservées");
   f.append(champBrief("derogations", "une par ligne ; Claude ne les reformule pas", (br.derogations ?? []).join("\n")));
+  groupe("Fiches du chapitre");
+  const puces = el("div", "pastilles");
+  puces.append(...(br.fiches ?? []).map((x) => puceFiche(x)));
+  f.append(puces, champBrief("fiches", "slugs de kb/fiches/, séparés par des virgules ; données à Claude en premier",
+    (br.fiches ?? []).join(", ")));
 }
 
 function champBrief(cle, nom, valeur) {
@@ -1770,6 +1782,11 @@ function ficheBase(id) {
     f.append(el("h4", null, "Brief"));
     for (const [k, v] of Object.entries(br.intent ?? {})) champ(f, k.replace(/_/g, " "), v);
     for (const [k, v] of Object.entries(br.tenue ?? {})) champ(f, k.replace(/_/g, " "), v);
+    const fc = blocFiches("Fiches du chapitre", br.fiches ?? [], "Aucune fiche listée dans le brief.");
+    const nf = el("button", "pan-lien", "◇ il manque une fiche…");
+    nf.onclick = () => nf.replaceWith(formFiche({ chapitres: [etat.slug] }));
+    fc.append(nf);
+    f.append(fc);
     f.append(el("p", "mut petit",
       `${Object.keys(a.assertions).length} assertions · ${br.beats?.length ?? 0} plans · ` +
       (etat.version === "storyboard" ? "cliquer un micro-récit" : "cliquer un paragraphe") +
@@ -1779,6 +1796,11 @@ function ficheBase(id) {
   const version = etat.version === "storyboard" ? "recit" : etat.version;
   const l = a.links?.[version]?.[id];
   f.append(el("h4", null, "Bloc ^" + id));
+  if (version === "essai") {
+    // les fiches de ce passage : celles des œuvres citées par ses notes
+    const fs = fichesDuBloc(id);
+    if (fs.length) f.append(blocFiches("Fiches de ce passage", fs, null, "par les œuvres que citent ses notes"));
+  }
   if (!l) {
     f.append(el("p", "mut", version === "essai"
       ? "Aucune assertion du verrou n'est rapprochée de ce passage."
@@ -2450,7 +2472,9 @@ async function chargeDemandes() {
   b.classList.toggle("a-decider", n > 0);
 }
 
-const ETIQ_DEM = { en_cours: "en cours", prete: "à décider", erreur: "erreur", remplacee: "remplacée" };
+const LIB_TYPE_KB = { fiche: "◇ fiche", pistes: "◇ creuser", renvois: "⇄ renvois" };
+const ETIQ_DEM = { en_cours: "en cours", prete: "à décider", erreur: "erreur", remplacee: "remplacée",
+  en_attente: "en attente", retiree: "retirée", abandonnee: "abandonnée", a_confirmer: "à confirmer" };
 
 function avise(d) {
   const a = el("button", "avis", `${d.type === "verification" ? "🔎 Vérification" : "↻ Réécriture"} ${d.etat === "prete" ? "prête" : d.etat} — ${(d.titre ?? "").slice(0, 60)} · ouvrir`);
@@ -2547,18 +2571,37 @@ function majCompteAnnotations() {
 
 // Le tiroir : une demande (suivie jusqu'à la décision), ou l'historique du chapitre.
 let suivi = null;
+// Le « chapitre » d'une demande : les créations de fiche vivent dans kb/demandes (« _kb »).
+function slugDe(ident) {
+  return /^[fpl]-/.test(String(ident ?? "")) ? "_kb" : etat.slug;
+}
+
+// Le tiroir ouvert est retenu (session du navigateur) : un rafraîchissement le rouvre.
+function retiensTiroir(ident) {
+  try {
+    if (ident) sessionStorage.setItem("atelier-tiroir", JSON.stringify({ id: ident, slug: slugDe(ident) }));
+    else sessionStorage.removeItem("atelier-tiroir");
+  } catch { /* navigation privée */ }
+}
+
 async function tiroir(ident) {
   clearTimeout(suivi);
+  retiensTiroir(ident);
+  majCompteFiches();
   const t = document.getElementById("tiroir");
   t.hidden = false;
   document.body.dataset.tiroir = "1";
-  if (!etat.slug || !etat.atelier) {
+  if ((!etat.slug || !etat.atelier) && !/^[fpl]-/.test(String(ident ?? ""))) {
+    if (!ident && etat.wiki) return historiqueFiches(t);
     t.replaceChildren(teteTiroir("Réécritures"), el("p", "mut", "Ouvrir un chapitre de l'atelier."));
     return;
   }
   if (!ident) return historique(t);
-  const d = await api(`/chapitres/${etat.slug}/demandes/${ident}`);
+  const d = await api(`/chapitres/${slugDe(ident)}/demandes/${ident}`);
   if (d.type === "verification") return tiroirVerif(t, d);
+  if (d.type === "fiche") return tiroirFiche(t, d);
+  if (d.type === "pistes") return tiroirPistes(t, d);
+  if (d.type === "renvois") return tiroirRenvois(t, d);
   t.replaceChildren(teteTiroir(`Réécriture · ${d.portee}${d.cible.plan ? " " + d.cible.plan : ""} · ${MODES_R[d.mode]}`, () => tiroir(null)));
   if (d.titre) t.append(el("p", "dem-titre", d.titre));
   const cible = el("div", "dem-cible");
@@ -2665,6 +2708,24 @@ async function tiroirVerif(t, d) {
       c.append(so);
     }
     t.append(c);
+  }
+
+  if ((R.fiches_consultees ?? []).length) {
+    t.append(el("h5", null, "Fiches consultées"));
+    for (const f of R.fiches_consultees) {
+      const p = el("p", "petit");
+      p.append(puceFiche(f.fiche), " " + f.apport);
+      t.append(p);
+    }
+  }
+  if (d.etat !== "en_cours") {
+    const ff = el("button", "pan-lien", "◇ en faire une fiche…");
+    ff.title = "Une fiche nouvelle sur ce sujet, qui part des sources trouvées ici";
+    ff.onclick = () => ff.replaceWith(formFiche({
+      question: d.cible.assertions.map((a) => etat.atelier.assertions[a]?.texte ?? a).join(" ; "),
+      chapitres: [etat.slug], depuis: d.id,
+      sources_initiales: (R.hypotheses ?? []).flatMap((h) => h.sources ?? []) }));
+    t.append(ff);
   }
 
   // l'essai : le passage proposé, et où
@@ -2807,15 +2868,23 @@ function enDirect(d) {
 
 function remplitDirect(z, d) {
   const depuis = Math.round((Date.now() - new Date(d.cree).getTime()) / 1000);
-  const verbe = d.type === "verification" ? "Claude cherche" : "Claude travaille";
+  const verbe = d.type === "verification" || d.type === "fiche" ? "Claude cherche" : "Claude travaille";
   const je = d.jetons_en_cours;
   z.replaceChildren(el("p", "dem-attente", `${verbe}… ${Math.floor(depuis / 60)} min ${String(depuis % 60).padStart(2, "0")} s`
     + ` · ${(d.deroule ?? []).filter((x) => x.type === "outil").length} étapes`
-    + ` · ${nomModele(d.modele_en_cours ?? d.modele_choisi ?? etat.modeles?.defaut?.[d.type === "verification" ? "verification" : "reecriture"])}`
+    + ` · ${nomModele(d.modele_en_cours ?? d.modele_choisi ?? etat.modeles?.defaut?.[d.type === "verification" || d.type === "fiche" ? d.type : "reecriture"])}`
     + (je ? ` · ↑ ${k((je.entree ?? 0) + (je.cache_cree ?? 0) + (je.cache_lu ?? 0))} (${partCache(je)} % du cache) ↓ ${k(je.sortie ?? 0)} jetons` : "")
     + (d.budget?.limites?.recherches ? ` · ${d.budget.recherches}/${d.budget.limites.recherches} recherches, ${d.budget.pages}/${d.budget.limites.pages} pages` : "")));
   const ol = el("ol", "deroule");
-  for (const e of (d.deroule ?? []).slice(-10)) ol.append(ligneDeroule(e));
+  // la dernière réflexion (ou le dernier commentaire), en tête : où Claude en est
+  const derniere = [...(d.deroule ?? [])].reverse().find((e) => e.type === "pensee" || e.type === "texte");
+  if (derniere) {
+    const b = el("div", "der-derniere");
+    b.append(el("span", "mut petit", (derniere.type === "pensee" ? "💭 réflexion" : "✎ Claude") + ` · ${derniere.t}`),
+      el("p", null, derniere.texte));
+    z.append(b);
+  }
+  for (const e of (d.deroule ?? []).slice(-14)) ol.append(ligneDeroule(e));
   z.append(ol, el("p", "mut petit", "Tu peux fermer ce tiroir ou changer de vue : le travail continue sur le serveur. " +
     "« ↻ Demandes » s'allume quand c'est prêt."));
 }
@@ -2830,8 +2899,16 @@ function ligneDeroule(e) {
     if (/^https?:/.test(e.detail)) { const a = el("a", "lien-ext", e.detail); a.href = e.detail; a.target = "_blank"; x.replaceChildren(a); }
     li.append(x);
   } else {
-    li.append(el("span", "der-icone", { echec: "⚠", pensee: "💭", limite: "⛔", reprise: "⏵" }[e.type] ?? "✎"),
-      el("span", "der-detail", e.texte));
+    li.append(el("span", "der-icone", { echec: "⚠", pensee: "💭", limite: "⛔", reprise: "⏵", resultat: "↳" }[e.type] ?? "✎"));
+    const x = el("span", "der-detail", e.texte);
+    if (e.type === "resultat" && e.nom) x.prepend(el("span", "der-nom", e.nom + " → "));
+    // réflexions et résultats : repliés à quelques lignes, un clic les déplie
+    if (["pensee", "texte", "resultat"].includes(e.type)) {
+      li.classList.add("pliable");
+      li.onclick = () => li.classList.toggle("deplie");
+      li.title = "clic : déplier / replier";
+    }
+    li.append(x);
   }
   return li;
 }
@@ -2839,7 +2916,7 @@ function ligneDeroule(e) {
 async function rafraichitDirect(ident) {
   const t = document.getElementById("tiroir");
   if (t.hidden) return;
-  const d = await api(`/chapitres/${etat.slug}/demandes/${ident}`).catch(() => null);
+  const d = await api(`/chapitres/${slugDe(ident)}/demandes/${ident}`).catch(() => null);
   const z = document.getElementById("dem-direct");
   if (!d || d.etat !== "en_cours" || !z) return tiroir(ident);      // fini (ou autre tiroir) : tout redessiner
   remplitDirect(z, d);
@@ -2853,10 +2930,29 @@ function derouleComplet(d) {
   const n = d.deroule.length;
   if (!n) return null;
   const det = el("details", "replie");
-  det.append(el("summary", null, `le déroulé de Claude (${n} étapes : recherches, lectures, réflexions)`));
+  const compte = (f) => d.deroule.filter(f).length;
+  const SORTES = [["tout", "tout", () => true], ["actions", "actions", (e) => e.type === "outil" || e.type === "echec" || e.type === "limite"],
+    ["pensees", "réflexions", (e) => e.type === "pensee" || e.type === "texte"], ["resultats", "résultats", (e) => e.type === "resultat"]];
+  det.append(el("summary", null, `le déroulé de Claude (${n} étapes : ${compte(SORTES[1][2])} actions, ` +
+    `${compte(SORTES[2][2])} réflexions, ${compte(SORTES[3][2])} résultats)`));
+  const barre = el("div", "dem-filtres");
+  const g = el("span", "groupe filtres");
   const ol = el("ol", "deroule complet");
-  for (const e of d.deroule) ol.append(ligneDeroule(e));
-  det.append(ol);
+  const montre = (cle) => {
+    etat.filtreDeroule = cle;
+    const fn = SORTES.find((s) => s[0] === cle)[2];
+    ol.replaceChildren(...d.deroule.filter(fn).map(ligneDeroule));
+    g.querySelectorAll("button").forEach((b) => b.classList.toggle("actif", b.dataset.k === cle));
+  };
+  for (const [k, lib, fn] of SORTES) {
+    const b = el("button", null, `${lib} · ${compte(fn)}`);
+    b.dataset.k = k;
+    b.onclick = () => montre(k);
+    g.append(b);
+  }
+  barre.append(g);
+  det.append(barre, ol);
+  montre(etat.filtreDeroule ?? "tout");
   return det;
 }
 
@@ -2904,16 +3000,16 @@ function piedTiroir(t, d) {
   if (dc) t.append(dc);
   // reprendre : la session est gardée ; Claude y retrouve ce qu'il a lu et rend sa réponse
   const finir = d.etat === "erreur";
-  const chercher = d.type === "verification" && (d.etat === "erreur" || d.etat === "prete");
+  const chercher = (d.type === "verification" || d.type === "fiche") && (d.etat === "erreur" || d.etat === "prete");
   if (d.session_id && !d.remplacee_par && (finir || chercher)) {
     const bloc = el("div", "relance reprise");
     const act = el("div", "annot-actions");
     const envoie = async (b, quoi, corps) => {
       b.disabled = true;
-      const r = await fetch(`/api/chapitres/${etat.slug}/demandes/${d.id}/${quoi}`, {
+      const r = await fetch(`/api/chapitres/${slugDe(d.id)}/demandes/${d.id}/${quoi}`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps ?? {}) });
       if (!r.ok) { b.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
-      await chargeDemandes();
+      if (etat.atelier) await chargeDemandes();
       tiroir(d.id);
     };
     if (finir) {
@@ -2945,6 +3041,15 @@ function piedTiroir(t, d) {
       (chercher ? "« Poursuivre la recherche » : la même session continue, avec une rallonge de tours et de recherches — une nouvelle demande, elle, repartirait de zéro." : "")));
     t.append(bloc);
   }
+  if (d.etat === "erreur" && !d.remplacee_par) {
+    const c = el("button", "pan-lien", "classer (clore sans relancer)");
+    c.onclick = async () => {
+      const r = await fetch(`/api/chapitres/${slugDe(d.id)}/demandes/${d.id}/classer`, { method: "POST" });
+      if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+      tiroir(d.id);
+    };
+    t.append(c);
+  }
   // relancer : même cible, consigne revue si besoin, sur l'état présent du livre
   if (d.relance_de) {
     const r = el("button", "pan-lien", `↩ relance de la demande du ${d.relance_de.slice(2, 10).replace(/(\d{4})(\d{2})(\d{2})/, "$3/$2")}`);
@@ -2962,11 +3067,11 @@ function piedTiroir(t, d) {
       const z = el("textarea", "annot-texte");
       z.value = d.consigne ?? "";
       z.placeholder = "consigne (facultatif)";
-      const mod = choixModele(d.type === "verification" ? "verification" : "reecriture", d.modele_choisi ?? "");
+      const mod = choixModele(d.type === "verification" || d.type === "fiche" ? d.type : "reecriture", d.modele_choisi ?? "");
       const go = el("button", "bouton", "↻ relancer");
       go.onclick = async () => {
         go.disabled = true;
-        const r = await fetch(`/api/chapitres/${etat.slug}/demandes/${d.id}/relance`, {
+        const r = await fetch(`/api/chapitres/${slugDe(d.id)}/demandes/${d.id}/relance`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ consigne: z.value, modele: mod.valeur() }) });
         if (!r.ok) { go.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
         const n = await r.json();
@@ -3029,12 +3134,12 @@ function teteTiroir(titre, retour = null) {
     h.append(r);
   }
   const x = el("button", "fermer", "×");
-  x.onclick = () => { clearTimeout(suivi); document.getElementById("tiroir").hidden = true; delete document.body.dataset.tiroir; };
+  x.onclick = () => { clearTimeout(suivi); retiensTiroir(null); document.getElementById("tiroir").hidden = true; delete document.body.dataset.tiroir; };
   h.append(el("h4", null, titre), x);
   return h;
 }
 
-const OUVERTES = new Set(["en_cours", "prete"]);
+const OUVERTES = new Set(["en_cours", "prete", "en_attente", "a_confirmer"]);
 
 async function historique(t) {
   const F = etat.filtresDem ??= { portee: "chapitre", type: "tout", statut: "tout" };
@@ -3052,10 +3157,10 @@ async function historique(t) {
   };
   const barre = el("div", "dem-filtres");
   barre.append(filtre("portee", [["chapitre", "ce chapitre"], ["livre", "tout le livre"]]),
-    filtre("type", [["tout", "tout"], ["reecriture", "réécritures"], ["verification", "recherches"]]),
+    filtre("type", [["tout", "tout"], ["reecriture", "réécritures"], ["verification", "recherches"], ["fiche", "fiches"]]),
     filtre("statut", [["tout", "tout"], ["ouvertes", "ouvertes"], ["closes", "closes"]]));
   t.append(barre);
-  const garde = ds.filter((d) => (F.type === "tout" || (d.type ?? "reecriture") === F.type)
+  const garde = ds.filter((d) => (F.type === "tout" || (d.type ?? "reecriture") === F.type || (F.type === "fiche" && d.type === "pistes"))
     && (F.statut === "tout" || (F.statut === "ouvertes") === OUVERTES.has(d.etat)));
   if (!garde.length) {
     t.append(el("p", "mut", ds.length ? "Aucune demande pour ces filtres." :
@@ -3085,14 +3190,15 @@ async function historique(t) {
   }
   const ordre = etat.chapitres.map((c) => c.slug);
   for (const slug of [...parChap.keys()].sort((a, b) => ordre.indexOf(a) - ordre.indexOf(b))) {
-    const c = etat.chapitres.find((x) => x.slug === slug);
+    const c = slug === "_kb" ? { numero: "◇", title: "Fiches" } : etat.chapitres.find((x) => x.slug === slug);
     const liste = parChap.get(slug);
     const ouvertes = liste.filter((d) => OUVERTES.has(d.etat)).length;
     t.append(el("h5", "dem-chapitre", `${c?.numero ?? ""} · ${c?.title ?? slug} — ${liste.length} demande(s)${ouvertes ? `, ${ouvertes} ouverte(s)` : ""}`));
     for (const d of liste) {
       const l = el("button", "dem-ligne " + (OUVERTES.has(d.etat) ? "ouverte" : "close"));
       const haut = el("span", "dem-haut");
-      haut.append(el("span", "annot-type", d.type === "verification" ? "🔎 recherche" : "↻ réécriture"),
+      haut.append(el("span", "annot-type", d.type === "verification" ? "🔎 recherche" : d.type === "fiche" ? "◇ fiche"
+        : d.type === "pistes" ? "◇ creuser" : d.type === "renvois" ? "⇄ renvois" : "↻ réécriture"),
         el("span", "dem-etat " + d.etat, etiquetteDemande(d)), el("span", "annot-date", d.cree.slice(0, 16).replace("T", " ")));
       l.append(haut, el("span", "dem-titre-ligne", d.titre ?? ""));
       if (d.consigne) l.append(el("span", "dem-consigne", "« " + d.consigne + " »"));
@@ -3108,7 +3214,7 @@ async function historique(t) {
 
 // Ouvrir une demande, y compris d'un autre chapitre : on y va d'abord.
 function ouvreDemande(slug, id) {
-  if (slug === etat.slug) return tiroir(id);
+  if (slug === etat.slug || slug === "_kb") return tiroir(id);
   etat.tiroirApres = id;
   location.hash = `${slug}/recit`;
 }
@@ -3629,15 +3735,20 @@ function sectionClaude(L) {
   const apres = async (champs) => { await enregistre({ claude: champs }); await chargeModeles(); };
   const ligne = (nom, noeud) => { const l = el("label", "champ-edit ed-court"); l.append(el("span", "nom", nom), noeud); return l; };
   s.append(ligne("Modèle du livre", selModele(C.modele, "défaut de Claude Code", (v) => apres({ modele: v }))));
-  const LIB = { verification: "Vérification", reecriture: "Réécriture" };
+  const fileBox = el("div", "claude-genre");
+  fileBox.append(el("strong", null, "File d'attente"));
+  api("/file").then((F) => fileBox.append(reglageFile(F, () => accueil()),
+    el("span", "mut petit", `${F.en_attente.length} en attente · désactivé : chaque demande se lance à la main`))).catch(() => {});
+  s.append(fileBox);
+  const LIB = { verification: "Vérification", reecriture: "Réécriture", fiche: "Fiche nouvelle", pistes: "Creuser" };
   const CH = { tours: "tours", recherches: "recherches web", pages: "pages lues" };
-  for (const g of ["verification", "reecriture"]) {
+  for (const g of ["verification", "reecriture", "fiche", "pistes"]) {
     const G = C[g] ?? {};
     const lim = etat.modeles?.limites?.[g] ?? {};
     const box = el("div", "claude-genre");
     box.append(el("strong", null, LIB[g]),
       selModele(G.modele, "comme le livre", (v) => apres({ [g]: { modele: v } })));
-    for (const cle of g === "verification" ? ["tours", "recherches", "pages"] : ["tours"]) {
+    for (const cle of ["verification", "fiche"].includes(g) ? ["tours", "recherches", "pages"] : ["tours"]) {
       const n = el("input", "claude-nombre");
       n.type = "number";
       n.min = 0;
@@ -3911,8 +4022,9 @@ function depuisAdresse() {
   quitte();
   const [slug, vue, mode] = decodeURIComponent(location.hash.slice(1)).split("/");
   if (slug.startsWith("fn")) return;
-  etat.wiki = slug === "fiches";
+  etat.wiki = slug === "fiches" || slug === "biblio";
   boutons();
+  if (slug === "biblio") { etat.accueil = false; return vueBiblioLivre(vue); }
   if (etat.wiki) { etat.accueil = false; return vueFiches(vue, mode); }
   if (!slug || slug === "livre") {
     etat.accueil = true;
@@ -3933,6 +4045,954 @@ function depuisAdresse() {
   if (vue === "essai" && mode === "plan") { etat.essaiMode = "texte"; etat.planOn = true; }   // ancienne adresse
   boutons();
   ouvre(slug);
+}
+
+// ------------------------------------------------------------------ les fiches dans le texte
+//
+// Une pastille « fiche » ouvre la fiche en aperçu dans la colonne de droite, sans quitter le
+// chapitre : son texte, sa confiance, ses liens (qui s'ouvrent dans l'aperçu). « ← » revient
+// à ce que la colonne montrait ; « pleine page » va au wiki.
+
+function titreFiche(slug) {
+  return (etat.fichesIndex ?? []).find((x) => x.slug === slug)?.titre ?? slug;
+}
+
+function puceFiche(slug, section = null) {
+  const b = el("button", "puce-fiche", "◇ " + slug);
+  b.title = titreFiche(slug) + " — ouvrir la fiche ici";
+  b.onclick = (e) => { e.stopPropagation(); apercuFiche(slug, section); };
+  return b;
+}
+
+function blocFiches(titre, slugs, vide = null, comment = null) {
+  const d = el("div", "bloc-fiches");
+  d.append(el("h5", null, titre));
+  if (comment) d.append(el("p", "mut petit", comment));
+  if (!slugs.length && vide) d.append(el("p", "mut petit", vide));
+  const p = el("div", "pastilles");
+  p.append(...slugs.map((x) => puceFiche(x)));
+  d.append(p);
+  return d;
+}
+
+// Les fiches d'une note : celles des œuvres de la bibliographie du chapitre qui la citent.
+function fichesDeNote(cle) {
+  const out = new Set();
+  for (const s of etat.atelier?.bibliographie ?? []) {
+    if ((s.notes ?? []).includes(cle)) for (const f of s.fiches ?? []) out.add(f);
+  }
+  return [...out];
+}
+
+// Les fiches d'un paragraphe de l'essai : celles des notes qu'il appelle.
+function fichesDuBloc(id) {
+  const p = blocEl(id);
+  if (!p) return [];
+  const out = new Set();
+  for (const a of p.querySelectorAll('a[href^="#fn:"]')) {
+    for (const f of fichesDeNote(decodeURIComponent(a.getAttribute("href").slice(4)))) out.add(f);
+  }
+  return [...out];
+}
+
+async function apercuFiche(slug, section = null) {
+  const d = document.getElementById("fiche");
+  const dejaApercu = d.querySelector(":scope > .apercu-fiche");
+  if (!dejaApercu) { etat.apercuRetour = [...d.childNodes]; etat.apercuPile = []; }
+  else etat.apercuPile.push(dejaApercu.dataset.slug);
+  let f;
+  try { f = await api(`/fiches/${encodeURIComponent(slug)}`); }
+  catch { alert("Fiche introuvable : " + slug); return; }
+  indexFiches();
+  const box = el("div", "apercu-fiche");
+  box.dataset.slug = slug;
+  const tete = el("div", "apercu-tete");
+  const retour = el("button", "pan-lien", "←");
+  retour.title = etat.apercuPile.length ? "fiche précédente" : "revenir à ce que montrait la colonne";
+  retour.onclick = () => {
+    const prec = etat.apercuPile.pop();
+    if (prec) return rouvreApercu(prec);
+    d.replaceChildren(...(etat.apercuRetour ?? []));
+    etat.apercuRetour = null;
+  };
+  const plein = el("a", "pan-lien", "pleine page ↗");
+  plein.href = `#fiches/${slug}${section ? "/" + section : ""}`;
+  tete.append(retour, el("span", "mut petit", "fiche · " + slug), plein);
+  const corps = el("div", "fiche-corps apercu");
+  corps.innerHTML = f.html;
+  corps.querySelectorAll("a.wiki").forEach((a) => {
+    const [, cible, sec] = a.getAttribute("href").split("/");
+    a.title = titreFiche(cible);
+    a.onclick = (e) => { e.preventDefault(); apercuFiche(cible, sec ?? null); };
+  });
+  enrichit(corps);
+  marqueConfiance(corps, f.confiance_par);
+  const ch = el("p", "mut petit");
+  ch.append(f.chapitres.length ? "Chapitres : " + f.chapitres.map((c) => `${c.numero ?? ""} ${c.title}`).join(" · ") : "Aucun chapitre ne la liste.");
+  box.append(tete, el("h3", "apercu-titre", f.titre), pastilles(f.confiance, true), ch, corps);
+  d.replaceChildren(box);
+  if (section) document.getElementById("fs-" + section)?.scrollIntoView({ block: "start" });
+  else document.getElementById("droite").scrollTop = 0;
+}
+
+// ------------------------------------------------------------------ la confiance par paragraphe
+
+const CLASSE_DEGRE = { "établi": "etabli", "débattu": "debattu", "récent": "recent", "hypothèse": "hypo",
+  "projeté": "projete", "raisonnement": "raison" };
+
+function marqueConfiance(corps, C) {
+  const par = C?.paragraphes ?? {};
+  corps.querySelectorAll("[data-empreinte]").forEach((b) => {
+    const x = par[b.dataset.empreinte];
+    if (!x) return;
+    b.classList.add("conf", "conf-" + (CLASSE_DEGRE[x.degre] ?? "raison"));
+    b.dataset.degre = x.degre;
+    b.title = `${x.degre} — ${x.raison}`;
+  });
+}
+
+// Sous la confiance de la fiche : l'état de la lecture par paragraphe, et de quoi la (re)lancer.
+function barreConfiance(f, corps) {
+  const b = el("div", "barre-confiance");
+  const C = f.confiance_par;
+  const n = corps.querySelectorAll("[data-empreinte]").length;
+  const marques = corps.querySelectorAll(".conf").length;
+  const bouton = el("button", "pan-lien", C?.paragraphes ? "↻ relire" : "◐ lire la confiance par paragraphe…");
+  bouton.title = "Claude lit chaque paragraphe et lui donne un degré (sans recherche) — quelques centimes";
+  bouton.onclick = async () => {
+    bouton.disabled = true;
+    const r = await fetch(`/api/fiches/${f.slug}/confiance`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    if (!r.ok) { bouton.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+    const attend = async () => {
+      const e = await api(`/fiches/${f.slug}/confiance`).catch(() => null);
+      if (!b.isConnected) return;
+      if (e?.en_cours) { bouton.textContent = `lecture en cours… ${e.depuis_s} s`; return setTimeout(attend, 2000); }
+      pageFiche(f.slug, null, etat.fichesIndex ?? []);
+    };
+    attend();
+  };
+  if (C?.paragraphes) {
+    const leg = el("span", "legende-conf");
+    for (const [deg, cl] of Object.entries(CLASSE_DEGRE)) {
+      const k = corps.querySelectorAll(".conf-" + cl).length;
+      if (k) leg.append(el("span", "pastille degre-" + (cl === "raison" ? "autre" : cl), `${deg} ${k}`));
+    }
+    const voir = el("label", "graphe-coche");
+    const c = el("input");
+    c.type = "checkbox"; c.checked = etat.voirConfiance ?? true;
+    c.onchange = () => { etat.voirConfiance = c.checked; corps.classList.toggle("sans-conf", !c.checked); };
+    corps.classList.toggle("sans-conf", !(etat.voirConfiance ?? true));
+    voir.append(c, " en marge");
+    b.append(el("span", "mut petit", `par paragraphe : ${marques}/${n} marqués · ${C.par === "creation" ? "à la création" : "lu par " + nomModele(C.modele)}` +
+      ` le ${(C.date ?? "").slice(0, 10)}` + (marques < n ? " (les autres ont changé depuis, ou sont trop courts)" : "")), leg, voir);
+  } else b.append(el("span", "mut petit", "Pas encore de confiance par paragraphe."));
+  if (C?.erreur) b.append(el("span", "fiche-alerte petit", " dernière lecture en échec : " + C.erreur));
+  b.append(bouton);
+  return b;
+}
+
+// ------------------------------------------------------------------ les œuvres
+
+async function chargeOeuvres(force = false) {
+  if (!etat.oeuvres || force) {
+    const O = await api("/oeuvres").catch(() => []);
+    etat.oeuvres = Object.fromEntries(O.map((o) => [o.cle, o]));
+  }
+  return etat.oeuvres;
+}
+
+// Une œuvre dans la colonne de droite : sa référence, ses liens, et tout ce qui la cite.
+async function apercuOeuvre(cle) {
+  const d = document.getElementById("fiche");
+  const dejaApercu = d.querySelector(":scope > .apercu-fiche");
+  if (!dejaApercu) { etat.apercuRetour = [...d.childNodes]; etat.apercuPile = []; }
+  else etat.apercuPile.push(dejaApercu.dataset.slug);
+  const O = await chargeOeuvres();
+  const o = O[cle];
+  const box = el("div", "apercu-fiche apercu-oeuvre");
+  box.dataset.slug = "œ:" + cle;
+  const tete = el("div", "apercu-tete");
+  const retour = el("button", "pan-lien", "←");
+  retour.onclick = () => {
+    const prec = etat.apercuPile.pop();
+    if (prec) return rouvreApercu(prec);
+    d.replaceChildren(...(etat.apercuRetour ?? []));
+    etat.apercuRetour = null;
+  };
+  const plein = el("a", "pan-lien", "bibliographie ↗");
+  plein.href = `#biblio/${cle}`;
+  tete.append(retour, el("span", "mut petit", "œuvre · " + cle), plein);
+  box.append(tete);
+  if (!o) {
+    box.append(el("p", "fiche-alerte", `Clé « ${cle} » introuvable : ni dans la base centrale, ni dans une bibliographie de chapitre, ni dans les sources d'une fiche.`));
+    d.replaceChildren(box);
+    return;
+  }
+  const ref = el("p", "oeuvre-ref");
+  ref.innerHTML = mdLigne(o.ref || cle);
+  box.append(ref);
+  const meta = el("div", "biblio-ou");
+  if (o.centrale) meta.append(el("span", "badge", "base centrale")); else meta.append(el("span", "badge hors", "hors base"));
+  if (o.doute) { const x = el("span", "badge doute", "doute"); x.title = o.doute; meta.append(x); }
+  meta.append(liensSource(o.doi, o.ref));
+  if (o.url) { const a = el("a", "lien-ext", "page ↗"); a.href = o.url; a.target = "_blank"; meta.append(a); }
+  box.append(meta);
+  box.append(el("h5", null, `Dans l'essai · ${o.chapitres.length} chapitre(s)`));
+  if (!o.chapitres.length) box.append(el("p", "mut petit", "Aucune note d'un chapitre de l'atelier ne la cite."));
+  for (const c of o.chapitres) {
+    const l = el("div", "petit");
+    l.append(`${c.numero ?? ""} ${c.title} : `);
+    (c.notes.length ? c.notes : [null]).forEach((n, i) => {
+      const a = el("a", "lien-fiche-inline", n ? "note " + n.replace(c.slug + "-", "") : "bibliographie");
+      a.href = `#${c.slug}/essai/${n ? "notes" : "biblio"}`;
+      a.onclick = () => { etat.noteApres = n; etat.sourceChoisie = n ? null : cle; };
+      l.append(i ? " · " : "", a);
+    });
+    if (c.citation === "clair") l.append(el("span", "mut", " (citée en clair)"));
+    box.append(l);
+  }
+  box.append(el("h5", null, `Dans les fiches · ${o.fiches.length}`));
+  const p = el("div", "pastilles");
+  p.append(...o.fiches.map((f) => puceFiche(f)));
+  box.append(p);
+  if (o.extraits.length) {
+    box.append(el("h5", null, "Extraits relevés"));
+    for (const x of o.extraits) {
+      const q = el("blockquote", "verif-extrait", x.extrait ?? "");
+      const s = el("p", "petit");
+      s.append(puceFiche(x.fiche), el("span", x.verifie ? "verif-ok" : "verif-non", x.verifie ? " lu" : " non vérifié"));
+      box.append(s, q);
+    }
+  }
+  d.replaceChildren(box);
+  document.getElementById("droite").scrollTop = 0;
+}
+
+// Un clic sur une citation, où qu'elle soit (essai, notes, fiche, aperçu) : l'œuvre à droite.
+document.addEventListener("click", (e) => {
+  const c = e.target.closest?.("cite[data-cle]");
+  if (!c || e.target.closest(".editeur")) return;
+  e.preventDefault();
+  e.stopPropagation();
+  apercuOeuvre(c.dataset.cle);
+}, true);
+
+// La bibliographie du livre : toutes les œuvres, d'où qu'elles viennent.
+async function vueBiblioLivre(cle) {
+  document.body.dataset.vue = "fiches";
+  delete document.body.dataset.panneau;
+  document.getElementById("outils").hidden = true;
+  document.getElementById("volet-chapitre").hidden = true;
+  sommaire();
+  const O = Object.values(await chargeOeuvres(true));
+  const page = document.getElementById("page");
+  const F = etat.filtreBiblio ??= { q: "", sorte: "essai" };
+  const q = el("input", "fiches-recherche");
+  q.type = "search";
+  q.placeholder = "chercher (auteur, titre, revue, année, clé)…";
+  q.value = F.q;
+  const sortes = [["toutes", "toutes", () => true], ["essai", "citées par l'essai", (o) => o.chapitres.length],
+    ["fiches", "sources des fiches écrites ici", (o) => o.extraits.length], ["hors", "hors base centrale", (o) => !o.centrale],
+    ["sansdoi", "sans DOI", (o) => !o.doi], ["doute", "douteuses", (o) => o.doute || o.extraits.some((x) => !x.verifie)]];
+  const barre = el("div", "dem-filtres");
+  const g = el("span", "groupe filtres");
+  for (const [v, lib, fn] of sortes) {
+    const b = el("button", F.sorte === v ? "actif" : null, `${lib} · ${O.filter(fn).length}`);
+    b.onclick = () => { F.sorte = v; vueBiblioLivre(); };
+    g.append(b);
+  }
+  barre.append(g);
+  const liste = el("ul", "biblio-liste");
+  const plat = (s) => (s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const remplit = () => {
+    const mots = plat(F.q).split(/\s+/).filter(Boolean);
+    const fn = sortes.find((s) => s[0] === F.sorte)[2];
+    const garde = O.filter(fn).filter((o) => mots.every((m) => plat(o.cle + " " + o.ref).includes(m)));
+    liste.replaceChildren(el("p", "mut petit", `${garde.length} œuvre(s)`));
+    for (const o of garde.slice(0, 400)) {
+      const li = el("li", "source");
+      li.dataset.source = o.cle;
+      const ref = el("div", "biblio-ref");
+      ref.innerHTML = mdLigne(o.ref || o.cle);
+      const meta = el("div", "biblio-ou");
+      meta.append(el("span", "appui-lieu", o.cle));
+      if (!o.centrale) meta.append(el("span", "badge hors", "hors base"));
+      if (o.doute) meta.append(el("span", "badge doute", "doute"));
+      if (o.extraits.some((x) => !x.verifie)) meta.append(el("span", "badge doute", "non vérifiée"));
+      if (o.chapitres.length) meta.append(el("span", "puce", "essai : ch. " + o.chapitres.map((c) => c.numero ?? c.slug).join(", ")));
+      if (o.fiches.length) meta.append(el("span", "puce", `${o.fiches.length} fiche(s)`));
+      meta.append(liensSource(o.doi, o.ref));
+      li.append(ref, meta);
+      li.onclick = (e) => {
+        if (e.target.closest("a")) return;
+        liste.querySelectorAll(".source").forEach((x) => x.classList.toggle("choisi", x === li));
+        history.replaceState(null, "", `#biblio/${o.cle}`);
+        apercuOeuvre(o.cle);
+      };
+      liste.append(li);
+    }
+    if (garde.length > 400) liste.append(el("p", "mut petit", `… et ${garde.length - 400} autres : préciser la recherche.`));
+  };
+  q.oninput = () => { F.q = q.value; remplit(); };
+  remplit();
+  page.replaceChildren(ongletsFiches("biblio"), el("h1", null, "Bibliographie"),
+    el("p", "mut", "Toutes les œuvres du livre : la base centrale (ancien dépôt), les bibliographies des chapitres " +
+      "(avec les notes de l'essai qui les citent), les sources des fiches écrites ici. Un clic : l'œuvre, et tout ce qui la cite."),
+    q, barre, liste);
+  document.getElementById("fiche").replaceChildren(el("h4", null, "Bibliographie"),
+    el("p", "mut petit", `${O.length} œuvres · ${O.filter((o) => o.centrale).length} dans la base centrale · ` +
+      `${O.filter((o) => o.chapitres.length).length} citées par l'essai · ${O.filter((o) => o.extraits.length).length} dans les fiches écrites ici.`),
+    el("p", "mut petit", "Partout dans l'atelier, un clic sur une citation ouvre son œuvre ici, à droite."));
+  if (cle) {
+    if (!O.some((o) => o.cle === cle)) { F.sorte = "toutes"; }
+    setTimeout(() => {
+      const li = liste.querySelector(`.source[data-source="${CSS.escape(cle)}"]`);
+      li?.scrollIntoView({ block: "center" });
+      li?.classList.add("choisi");
+      apercuOeuvre(cle);
+    }, 0);
+  } else zone().scrollTo(0, 0);
+  setTimeout(() => q.focus(), 0);
+}
+
+// Revenir, dans l'aperçu, à une fiche précédente (sans l'empiler de nouveau).
+async function rouvreApercu(slug) {
+  const pile = etat.apercuPile;
+  const d = document.getElementById("fiche");
+  d.querySelector(":scope > .apercu-fiche")?.remove();
+  const garde = etat.apercuRetour;
+  if (slug.startsWith("œ:")) await apercuOeuvre(slug.slice(2));
+  else await apercuFiche(slug);
+  etat.apercuRetour = garde;
+  etat.apercuPile = pile;
+}
+
+// Une fiche créée d'office : la confirmer (brouillon, reliée aux chapitres cochés) ou ne pas la garder.
+function blocConfirmation(d, R) {
+  const faire = el("div", "que-faire");
+  const slug = d.decision.fiche;
+  const lien = el("a", "pan-lien", `kb/fiches/${slug}.md → l'ouvrir`);
+  lien.href = `#fiches/${slug}`;
+  faire.append(el("h5", null, "Créée d'office — à confirmer"), el("p", "mut petit",
+    "La file l'a écrite dans la base dès la réponse de Claude : elle est visible, citable, et signalée aux autres " +
+    "demandes comme non relue. Confirmer la passe en brouillon et l'ajoute aux fiches des chapitres cochés ; " +
+    "ne pas la garder la met à la corbeille (kb/corbeille/)."), lien);
+  const chs = el("div", "choix-assertions");
+  const proposes = new Set([...(d.cible.chapitres ?? []), ...(R.chapitres ?? []).map((c) => c.slug)]);
+  const cases = etat.chapitres.filter((c) => c.atelier).map((c) => {
+    const l = el("label", "dem-consulter");
+    const x = el("input");
+    x.type = "checkbox"; x.value = c.slug; x.checked = proposes.has(c.slug);
+    l.append(x, ` ${c.numero ?? ""} · ${c.title}`);
+    chs.append(l);
+    return x;
+  });
+  const envoie = async (corps) => {
+    const r = await fetch(`/api/chapitres/_kb/demandes/${d.id}/decision`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+    if (!r.ok) { alert("échec : " + ((await r.json().catch(() => ({}))).detail ?? r.status)); return; }
+    await indexFiches(true);
+    tiroir(d.id);
+  };
+  const oui = el("button", "bouton", "✓ confirmer la fiche");
+  oui.onclick = () => envoie({ action: "confirmer", chapitres: cases.filter((x) => x.checked).map((x) => x.value) });
+  const non = el("button", "pan-lien danger", "✗ ne pas la garder…");
+  non.onclick = async () => {
+    const C = await api(`/fiches/${slug}/consequences`).catch(() => ({ citee_par: [] }));
+    const n = C.citee_par.reduce((s, x) => s + x.liens, 0);
+    if (!confirm(`Mettre « ${slug} » à la corbeille ?` + (n ? ` ${n} lien(s) la citent déjà (${C.citee_par.map((x) => x.fiche).join(", ")}) : ils seront défaits, le texte gardé.` : ""))) return;
+    envoie({ action: "rejeter", liens: "retirer" });
+  };
+  const act = el("div", "annot-actions");
+  act.append(oui, non);
+  faire.append(el("span", "appui-lieu", "ajouter aux fiches des chapitres"), chs, act);
+  return faire;
+}
+
+// Supprimer une fiche : ce qui en dépend d'abord, puis le choix pour les liens qui la visent.
+async function formSuppression(f) {
+  const C = await api(`/fiches/${f.slug}/consequences`);
+  const b = el("div", "form-demande form-suppression");
+  const n = C.citee_par.reduce((s, x) => s + x.liens, 0);
+  b.append(el("span", "appui-lieu", `supprimer « ${f.slug} » — elle va à kb/corbeille/ (récupérable)`));
+  const ul = el("ul", "petit");
+  const li = (texte, ...noeuds) => { const x = el("li", null, texte); x.append(...noeuds); ul.append(x); };
+  if (C.citee_par.length) li(`${n} lien(s) depuis ${C.citee_par.length} fiche(s) : `, ...C.citee_par.flatMap((x, i) => [i ? " " : "", puceFiche(x.fiche)]));
+  else li("aucune fiche ne la cite");
+  li(C.chapitres.length ? `listée par ${C.chapitres.map((c) => c.title).join(", ")} : elle en sera retirée` : "aucun chapitre ne la liste");
+  li(C.oeuvres.length ? `${C.oeuvres.length} œuvre(s) des bibliographies de chapitre y sont rattachées : le rattachement sera retiré` : "aucune œuvre rattachée");
+  b.append(ul);
+  const choix = el("div", "choix-assertions");
+  const radio = (v, lib, coche) => {
+    const l = el("label", "dem-consulter");
+    const r = el("input");
+    r.type = "radio"; r.name = "liens-" + f.slug; r.value = v; r.checked = coche;
+    l.append(r, " " + lib);
+    choix.append(l);
+    return r;
+  };
+  const r1 = radio("laisser", "laisser les liens (ils deviennent des liens morts, en rouge, qui proposent de recréer la fiche)", true);
+  radio("retirer", "défaire les liens (le texte du lien est gardé)", false);
+  if (n) b.append(el("span", "appui-lieu", "les liens qui la visent"), choix);
+  const motif = el("input", "dem-motif");
+  motif.placeholder = "motif (va au journal)";
+  const ok = el("button", "bouton danger", "supprimer la fiche");
+  const non = el("button", "pan-lien", "annuler");
+  non.onclick = () => b.remove();
+  ok.onclick = async () => {
+    ok.disabled = true;
+    const r = await fetch(`/api/fiches/${f.slug}/supprimer`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ liens: r1.checked ? "laisser" : "retirer", motif: motif.value }) });
+    if (!r.ok) { ok.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+    await indexFiches(true);
+    location.hash = "fiches";
+  };
+  const act = el("div", "annot-actions");
+  act.append(ok, non);
+  b.append(motif, act);
+  return b;
+}
+
+// ------------------------------------------------------------------ la file d'attente
+
+// Une demande en attente : la lancer maintenant, ou la retirer.
+function blocAttente(d) {
+  const b = el("div", "que-faire");
+  if (d.etat === "retiree") {
+    b.append(el("p", "mut", `Retirée de la file le ${(d.retiree ?? "").slice(0, 16).replace("T", " ")}. Elle n'a pas été lancée.`));
+    return b;
+  }
+  const lim = etat.modeles?.limites?.fiche;
+  b.append(el("h5", null, "En attente"), el("p", "mut petit",
+    "Pas encore lancée. Son contexte (les fiches existantes, le carnet) sera compilé au lancement : elle verra les fiches " +
+    "créées d'ici là. " + (lim ? `Budget : ${lim.tours} tours, ${lim.recherches} recherches, ${lim.pages} pages.` : "")));
+  const act = el("div", "annot-actions");
+  act.append(boutonLancer(d.id, () => tiroir(d.id)), boutonRetirer(d.id, () => tiroir(d.id)));
+  b.append(act);
+  api("/file").then((F) => {
+    const rang = F.en_attente.findIndex((x) => x.id === d.id) + 1;
+    b.append(el("p", "mut petit", `Position dans la file : ${rang} sur ${F.en_attente.length}. ` +
+      (F.reglage.auto ? `Enchaînement automatique activé (${F.reglage.simultanees} à la fois) : elle partira d'elle-même.`
+        : "Enchaînement automatique désactivé : elle attend que tu la lances (réglage dans Fiches › En création).")));
+  }).catch(() => {});
+  return b;
+}
+
+function boutonLancer(id, apres) {
+  const b = el("button", "bouton", "▶ lancer");
+  b.title = "lancer cette demande maintenant";
+  b.onclick = async (e) => {
+    e.stopPropagation();
+    b.disabled = true;
+    const r = await fetch(`/api/file/${id}/lance`, { method: "POST" });
+    if (!r.ok) { b.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+    apres?.();
+  };
+  return b;
+}
+
+function boutonRetirer(id, apres) {
+  const b = el("button", "pan-lien danger", "retirer");
+  b.title = "retirer de la file (elle ne sera pas lancée)";
+  b.onclick = async (e) => {
+    e.stopPropagation();
+    if (!confirm("Retirer cette demande de la file ?")) return;
+    const r = await fetch(`/api/file/${id}/retire`, { method: "POST" });
+    if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+    apres?.();
+  };
+  return b;
+}
+
+// Le réglage de la file : l'enchaînement automatique, à activer explicitement.
+function reglageFile(F, apres) {
+  const l = el("label", "graphe-coche file-auto");
+  const c = el("input");
+  c.type = "checkbox";
+  c.checked = F.reglage.auto;
+  c.onchange = async () => {
+    if (c.checked && !confirm(`Activer l'enchaînement : les ${F.en_attente.length} demande(s) en attente partiront l'une après ` +
+      "l'autre, sans autre clic (chacune avec son budget). Continuer ?")) { c.checked = false; return; }
+    await fetch("/api/file", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auto: c.checked }) });
+    apres?.();
+  };
+  l.append(c, ` enchaîner automatiquement, ${F.reglage.simultanees} à la fois`);
+  l.title = "désactivé : chaque demande en attente se lance à la main (▶)";
+  const l2 = el("label", "graphe-coche file-auto");
+  const c2 = el("input");
+  c2.type = "checkbox";
+  c2.checked = F.reglage.creer_d_office;
+  c2.onchange = async () => {
+    if (c2.checked && !confirm("Créer d'office : chaque fiche lancée depuis la file sera écrite dans la base dès que Claude " +
+      "aura fini, à l'état « à confirmer » (visible, citable, signalée aux autres demandes comme non relue). " +
+      "Tu la confirmes ensuite, ou elle part à la corbeille. Continuer ?")) { c2.checked = false; return; }
+    await fetch("/api/file", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ creer_d_office: c2.checked }) });
+    apres?.();
+  };
+  l2.append(c2, " créer d'office (à confirmer)");
+  l2.title = "désactivé : une fiche rendue attend ta décision avant d'être écrite";
+  const g = el("span", "reglage-file");
+  g.append(l, l2);
+  return g;
+}
+
+// ------------------------------------------------------------------ creuser une fiche
+
+function formPistes(slug) {
+  const f = el("div", "form-demande");
+  const consigne = el("textarea", "annot-texte petit-texte");
+  consigne.placeholder = "Précision (facultatif) : plutôt les mécanismes, ce qui manque au chapitre 3…";
+  const mod = choixModele("pistes");
+  const go = el("button", "bouton", "◇ chercher des pistes");
+  const non = el("button", "pan-lien", "annuler");
+  non.onclick = () => f.remove();
+  go.onclick = async () => {
+    go.disabled = true;
+    const r = await fetch(`/api/fiches/${slug}/pistes`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ consigne: consigne.value, modele: mod.valeur() }) });
+    if (!r.ok) { go.disabled = false; alert("échec : " + ((await r.json().catch(() => ({}))).detail ?? r.status)); return; }
+    const d = await r.json();
+    tiroir(d.id);
+  };
+  const act = el("div", "annot-actions");
+  act.append(go, non);
+  f.append(el("span", "appui-lieu", "creuser — Claude lit la fiche, cherche ce qu'elle effleure, et vérifie dans la base que chaque piste n'est pas déjà couverte"),
+    consigne, mod.noeud, el("p", "mut petit", "Une lecture de la base, sans recherche web : quelques minutes, quelques dizaines de centimes. " +
+      "Rien n'est créé sans toi."), act);
+  setTimeout(() => consigne.focus(), 0);
+  return f;
+}
+
+const STATUT_PISTE = { nouvelle: "nouvelle", a_completer: "à compléter", couverte: "déjà couverte" };
+
+async function tiroirPistes(t, d) {
+  t.replaceChildren(teteTiroir("Creuser une fiche", () => historiqueFiches(t)));
+  const cible = el("div", "dem-cible");
+  const c = el("p", "annot-corps");
+  c.append("Fiche lue : ", puceFiche(d.cible.fiche));
+  cible.append(c);
+  if (d.consigne) cible.append(el("p", "annot-corps", "« " + d.consigne + " »"));
+  t.append(cible);
+  if (d.etat === "en_cours") {
+    t.append(enDirect(d));
+    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    return piedTiroir(t, d);
+  }
+  if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
+  const R = d.resultat ?? { pistes: [] };
+  if (R.note) t.append(el("p", "annot-corps", R.note));
+  const lancees = Object.fromEntries((d.decision?.lancees ?? []).map((x) => [x.i, x.demande]));
+  if (d.decision && !d.decision.lancees) t.append(el("div", "dem-decision", "Aucune piste retenue" + (d.decision.motif ? " — " + d.decision.motif : "")));
+  const choix = [];
+  for (const statut of ["nouvelle", "a_completer", "couverte"]) {
+    const P = R.pistes.map((p, i) => ({ p, i })).filter(({ p }) => p.statut === statut);
+    if (!P.length) continue;
+    t.append(el("h5", null, `${statut === "nouvelle" ? "Pistes nouvelles" : statut === "a_completer" ? "À compléter dans une fiche existante" : "Déjà couvertes"} · ${P.length}`));
+    for (const { p, i } of P) {
+      const b = el("div", "piste piste-" + statut);
+      const tete = el("div", "annot-tete");
+      tete.append(el("span", "badge prio-" + p.priorite, p.priorite), el("span", "appui-lieu", p.slug));
+      if (p.appel) {
+        const a = el("a", "pan-lien", "§ " + p.appel);
+        a.href = `#fiches/${d.cible.fiche}/${p.appel}`;
+        a.title = "la section de la fiche qui appelle cette piste";
+        tete.append(a);
+      }
+      b.append(tete);
+      if (statut === "nouvelle" && d.etat === "prete") {
+        const l = el("label", "dem-consulter");
+        const x = el("input");
+        x.type = "checkbox";
+        x.checked = p.priorite !== "basse";
+        const q = el("textarea", "annot-texte petit-texte");
+        q.value = p.question;
+        l.append(x, " créer une fiche sur :");
+        b.append(l, q);
+        choix.push({ i, x, q, p });
+      } else b.append(el("p", "annot-corps", p.question));
+      b.append(el("p", "mut petit", p.pourquoi));
+      if (p.fiche_existante) {
+        const e = el("p", "petit");
+        e.append(statut === "couverte" ? "Traitée par " : "À compléter dans ", puceFiche(p.fiche_existante, p.section_existante ?? null),
+          p.section_existante ? ` § ${p.section_existante}` : "");
+        b.append(e);
+      }
+      if (p.chapitres?.length) b.append(el("p", "mut petit", "chapitres : " + p.chapitres.join(", ")));
+      if (lancees[i]) {
+        const a = el("button", "pan-lien", "◇ fiche demandée (en attente, puis lancée) → ouvrir");
+        a.onclick = () => tiroir(lancees[i]);
+        b.append(a);
+      }
+      t.append(b);
+    }
+  }
+  if (!R.pistes.length) t.append(el("p", "mut", "Aucune piste proposée."));
+  if (d.etat === "prete") {
+    const faire = el("div", "que-faire");
+    const lim = etat.modeles?.limites?.fiche;
+    faire.append(el("h5", null, "Que faire ?"), el("p", "mut petit",
+      "Cocher les pistes à creuser, en retoucher la question au besoin. Chacune devient une création de fiche " +
+      "en attente : rien ne part tout seul. Tu les lances une à une (▶, dans Fiches › En création ou dans leur " +
+      "tiroir), ou tu actives l'enchaînement automatique. Chacune " +
+      (lim ? `(budget : ${lim.tours} tours, ${lim.recherches} recherches, ${lim.pages} pages) ` : "") +
+      "revérifie, au lancement, qu'aucune fiche ne couvre déjà le sujet. Les pistes « à compléter » attendent " +
+      "la complétion d'une fiche (à venir)."));
+    const oui = el("button", "bouton", "◇ mettre en attente");
+    const maj = () => { const n = choix.filter((c) => c.x.checked).length; oui.textContent = `◇ mettre ${n} fiche(s) en attente`; oui.disabled = !n; };
+    choix.forEach((c) => c.x.addEventListener("change", maj));
+    maj();
+    const motif = el("input", "dem-motif");
+    motif.placeholder = "motif (pour n'en retenir aucune)";
+    const non = el("button", "pan-lien", "n'en retenir aucune");
+    const envoie = async (corps) => {
+      const r = await fetch(`/api/chapitres/_kb/demandes/${d.id}/decision`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+      if (!r.ok) { alert("échec : " + ((await r.json().catch(() => ({}))).detail ?? r.status)); return; }
+      tiroir(d.id);
+    };
+    const enchaine = el("label", "graphe-coche");
+    const ce = el("input");
+    ce.type = "checkbox";
+    enchaine.append(ce, " et les lancer à la suite, automatiquement, une à la fois");
+    enchaine.title = "active l'enchaînement de la file d'attente (réglage du livre, désactivable ensuite)";
+    oui.onclick = async () => {
+      const n = choix.filter((c) => c.x.checked).length;
+      if (ce.checked && !confirm(`Les ${n} fiche(s) partiront l'une après l'autre, sans autre clic, chacune avec son budget. ` +
+        "L'enchaînement restera activé pour la file (désactivable dans Fiches › En création). Continuer ?")) return;
+      oui.disabled = true;
+      if (ce.checked) await fetch("/api/file", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auto: true }) });
+      envoie({ action: "creer", pistes: choix.filter((c) => c.x.checked).map((c) => ({ i: c.i, question: c.q.value })) });
+    };
+    non.onclick = () => envoie({ action: "rejeter", motif: motif.value });
+    const act = el("div", "annot-actions");
+    act.append(oui, non);
+    faire.append(enchaine, act, motif);
+    t.append(faire);
+  }
+  // après la décision : la file de ces fiches, lançable d'ici
+  if (d.decision?.lancees?.length) {
+    const bloc = el("div", "que-faire");
+    bloc.append(el("h5", null, "File d'attente"));
+    t.append(bloc);
+    const remplit = () => Promise.all([api("/file"), api("/fiches/demandes")]).then(([F, ds]) => {
+      bloc.replaceChildren(el("h5", null, "File d'attente"), reglageFile(F, remplit));
+      for (const x of d.decision.lancees) {
+        const dm = ds.find((y) => y.id === x.demande);
+        const l = el("div", "dem-ligne ouverte file-ligne");
+        l.append(el("span", "dem-etat " + (dm?.etat ?? ""), dm ? etiquetteDemande(dm) : "?"), " ",
+          el("span", "dem-titre-ligne", dm?.question ?? x.demande));
+        if (dm?.etat === "en_attente") {
+          const a = el("span", "file-actions");
+          a.append(boutonLancer(x.demande, remplit), boutonRetirer(x.demande, remplit));
+          l.append(a);
+        }
+        l.onclick = (e) => { if (!e.target.closest("button")) tiroir(x.demande); };
+        bloc.append(l);
+      }
+    }).catch(() => {});
+    remplit();
+  }
+  piedTiroir(t, d);
+}
+
+// ------------------------------------------------------------------ les renvois
+
+// Proposer les renvois vers une fiche dans les voisines qu'elle cite (qui ne la citent pas encore).
+function boutonRenvois(slug, voisines = null) {
+  const b = el("button", "bouton", voisines ? `⇄ renvois (${voisines.length} voisine${voisines.length > 1 ? "s" : ""})…` : "⇄ proposer les renvois dans les voisines…");
+  b.title = "Claude propose, dans chaque fiche qu'elle cite, une phrase qui renvoie vers elle, à l'endroit juste — rien n'est écrit sans toi" +
+    (voisines ? " : " + voisines.join(", ") : "");
+  b.onclick = async (e) => {
+    e.stopPropagation();
+    b.disabled = true;
+    const r = await fetch(`/api/fiches/${slug}/renvois`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    if (!r.ok) { b.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+    tiroir((await r.json()).id);
+  };
+  return b;
+}
+
+async function tiroirRenvois(t, d) {
+  t.replaceChildren(teteTiroir("Renvois", () => historiqueFiches(t)));
+  const cible = el("div", "dem-cible");
+  const c = el("p", "annot-corps");
+  c.append("Vers ", puceFiche(d.cible.fiche), `, depuis ${d.cible.voisines.length} voisine(s) : `, ...d.cible.voisines.flatMap((v, i) => [i ? " " : "", puceFiche(v)]));
+  cible.append(c);
+  t.append(cible);
+  if (d.etat === "en_cours") {
+    t.append(enDirect(d));
+    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    return piedTiroir(t, d);
+  }
+  if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
+  const R = d.resultat ?? { renvois: [] };
+  const faits = Object.fromEntries((d.decision?.faits ?? []).map((x) => [x.i, x]));
+  const choix = [];
+  R.renvois.forEach((r, i) => {
+    const b = el("div", "piste piste-nouvelle");
+    const tete = el("div", "annot-tete");
+    const lien = el("a", "pan-lien", `${r.fiche} § ${r.section}`);
+    lien.href = `#fiches/${r.fiche}/${r.section}`;
+    tete.append(puceFiche(r.fiche, r.section), el("span", "appui-lieu", `§ ${r.section} · ${r.mode === "phrase" ? "phrase en fin de paragraphe" : "paragraphe après"}`));
+    if (!r.section_trouvee) tete.append(el("span", "badge doute", "section introuvable : fin de fiche"));
+    else if (!r.paragraphe_trouve) tete.append(el("span", "badge doute", "paragraphe introuvable : fin de section"));
+    b.append(tete);
+    if (r.paragraphe) b.append(el("blockquote", "verif-extrait", r.paragraphe));
+    if (d.etat === "prete") {
+      const l = el("label", "dem-consulter");
+      const x = el("input");
+      x.type = "checkbox"; x.checked = true;
+      const q = el("textarea", "annot-texte petit-texte");
+      q.value = r.texte;
+      l.append(x, " insérer :");
+      b.append(l, q);
+      choix.push({ i, x, q });
+    } else {
+      const p = el("p", "annot-corps");
+      p.innerHTML = mdLigne(r.texte);
+      b.append(p);
+    }
+    b.append(el("p", "mut petit", r.raison));
+    if (faits[i]) b.append(el("p", "verif-ok petit", `inséré — ${faits[i].ou}`), lien);
+    t.append(b);
+  });
+  if ((R.ignorees ?? []).length) {
+    t.append(el("h5", null, "Voisines laissées"));
+    for (const x of R.ignorees) { const p = el("p", "petit"); p.append(puceFiche(x.fiche), " " + x.raison); t.append(p); }
+  }
+  if (d.etat === "prete" && choix.length) {
+    const faire = el("div", "que-faire");
+    faire.append(el("h5", null, "Que faire ?"), el("p", "mut petit",
+      "Relire chaque renvoi, le retoucher au besoin. « Insérer » l'écrit dans la fiche voisine, à l'endroit montré " +
+      "(le paragraphe cité en gris) ; le reste de la fiche est intact, et l'insertion va au journal de la base."));
+    const oui = el("button", "bouton", "⇄ insérer les renvois cochés");
+    const non = el("button", "pan-lien", "n'en insérer aucun");
+    const envoie = async (corps) => {
+      const r = await fetch(`/api/chapitres/_kb/demandes/${d.id}/decision`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+      if (!r.ok) { alert("échec : " + ((await r.json().catch(() => ({}))).detail ?? r.status)); return; }
+      await indexFiches(true);
+      tiroir(d.id);
+    };
+    oui.onclick = () => { oui.disabled = true; envoie({ action: "inserer", renvois: choix.filter((c) => c.x.checked).map((c) => ({ i: c.i, texte: c.q.value })) }); };
+    non.onclick = () => envoie({ action: "rejeter" });
+    const act = el("div", "annot-actions");
+    act.append(oui, non);
+    faire.append(act);
+    t.append(faire);
+  }
+  piedTiroir(t, d);
+}
+
+// ------------------------------------------------------------------ créer une fiche
+
+// Le formulaire : une question, les chapitres qu'elle sert, une longueur, un modèle.
+function formFiche(base = {}) {
+  const f = el("div", "form-demande form-fiche");
+  const q = el("textarea", "annot-texte");
+  q.placeholder = "La question à laquelle la fiche répond (ex. : quand le premier océan s'est-il condensé, et qu'en sait-on ?)";
+  q.value = base.question ?? "";
+  const slug = el("input", "dem-motif");
+  slug.placeholder = "slug souhaité (facultatif) : origine-des-oceans";
+  slug.value = base.slug ?? "";
+  const chs = el("div", "choix-assertions");
+  const cases = etat.chapitres.filter((c) => c.atelier).map((c) => {
+    const l = el("label", "dem-consulter");
+    const x = el("input");
+    x.type = "checkbox"; x.value = c.slug;
+    x.checked = (base.chapitres ?? []).includes(c.slug);
+    l.append(x, ` ${c.numero ?? ""} · ${c.title}`);
+    chs.append(l);
+    return x;
+  });
+  const longueur = el("select", "livre-select");
+  for (const [v, lib] of [["courte", "courte (600–900 mots)"], ["moyenne", "moyenne (1 200–1 800 mots)"], ["longue", "longue (2 500–3 500 mots)"]]) {
+    const o = el("option", null, lib); o.value = v; if (v === "moyenne") o.selected = true; longueur.append(o);
+  }
+  const consigne = el("textarea", "annot-texte petit-texte");
+  consigne.placeholder = "Précision (facultatif) : ce qu'il faut couvrir, les sources à privilégier…";
+  const mod = choixModele("fiche");
+  const lim = etat.modeles?.limites?.fiche;
+  const go = el("button", "bouton", "◇ lancer la recherche");
+  const non = el("button", "pan-lien", "annuler");
+  non.onclick = () => f.remove();
+  go.onclick = async () => {
+    go.disabled = true;
+    const r = await fetch("/api/fiches/demandes", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q.value, slug: slug.value, chapitres: cases.filter((x) => x.checked).map((x) => x.value),
+        longueur: longueur.value, consigne: consigne.value, modele: mod.valeur(), depuis: base.depuis,
+        sources_initiales: base.sources_initiales }) });
+    if (!r.ok) { go.disabled = false; alert("échec : " + ((await r.json().catch(() => ({}))).detail ?? r.status)); return; }
+    const d = await r.json();
+    f.remove();
+    tiroir(d.id);
+  };
+  const act = el("div", "annot-actions");
+  act.append(go, non);
+  f.append(el("span", "appui-lieu", "nouvelle fiche — Claude lit d'abord les fiches voisines, puis cherche ; rien n'est écrit sans toi"),
+    q, slug, el("span", "appui-lieu", "chapitres servis"), chs, el("span", "appui-lieu", "longueur"), longueur, consigne, mod.noeud,
+    el("p", "mut petit", `Budget : ${lim ? `${lim.recherches} recherches, ${lim.pages} pages, ${lim.tours} tours` : "livre.yaml"} ` +
+      "(réglable sur la page du livre). Si une fiche couvre déjà la question, Claude le dira."), act);
+  if (base.sources_initiales?.length) f.insertBefore(el("p", "mut petit", `${base.sources_initiales.length} source(s) de la vérification ${base.depuis} lui seront données.`), act);
+  setTimeout(() => q.focus(), 0);
+  return f;
+}
+
+// La liste des demandes de fiche (tiroir ouvert depuis le wiki).
+async function historiqueFiches(t) {
+  const ds = (await api("/fiches/demandes").catch(() => [])).sort((a, b) => (a.cree < b.cree ? 1 : -1));
+  t.replaceChildren(teteTiroir("Demandes de fiches"));
+  if (!ds.length) t.append(el("p", "mut", "Aucune. « ◇ nouvelle fiche… » sur l'index des fiches."));
+  for (const x of ds) {
+    const l = el("button", "dem-ligne " + (OUVERTES.has(x.etat) ? "ouverte" : "close"));
+    const haut = el("span", "dem-haut");
+    haut.append(el("span", "annot-type", LIB_TYPE_KB[x.type] ?? x.type),
+      el("span", "dem-etat " + x.etat, etiquetteDemande(x)), el("span", "annot-date", x.cree.slice(0, 16).replace("T", " ")));
+    l.append(haut, el("span", "dem-titre-ligne", x.question ?? x.titre));
+    l.onclick = () => tiroir(x.id);
+    t.append(l);
+  }
+}
+
+async function tiroirFiche(t, d) {
+  t.replaceChildren(teteTiroir("Fiche nouvelle", () => historiqueFiches(t)));
+  const cible = el("div", "dem-cible");
+  cible.append(el("p", "annot-corps", d.cible.question));
+  if (d.cible.chapitres?.length) cible.append(el("p", "mut petit", "chapitres : " + d.cible.chapitres.join(", ")));
+  if (d.consigne) cible.append(el("p", "annot-corps", "« " + d.consigne + " »"));
+  if (d.cible.depuis) cible.append(el("p", "mut petit", `depuis ${d.cible.depuis} · ${(d.cible.sources_initiales ?? []).length} source(s) données`));
+  t.append(cible);
+  if (d.etat === "en_attente" || d.etat === "retiree") return t.append(blocAttente(d));
+  if (d.etat === "en_cours") {
+    t.append(enDirect(d));
+    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    return piedTiroir(t, d);
+  }
+  if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
+  const R = d.resultat ?? {};
+  if (d.decision) {
+    const dec = el("div", "dem-decision");
+    if (d.decision.fiche) {
+      const a = el("a", "pan-lien", `fiche créée : ${d.decision.fiche} →`);
+      a.href = `#fiches/${d.decision.fiche}`;
+      dec.append(a, document.createTextNode(d.decision.chapitres?.length ? ` · ajoutée à ${d.decision.chapitres.join(", ")}` : ""));
+      dec.append(el("br"), boutonRenvois(d.decision.fiche));
+    } else dec.append(el("strong", null, "Non créée"), document.createTextNode(d.decision.motif ? " — " + d.decision.motif : ""));
+    t.append(dec);
+  }
+  if (R.doublon) {
+    const b = el("div", "fiche-doublon");
+    if (R.doublon.proposee) {
+      const a = el("button", "pan-lien", `« ${R.doublon.fiche} », proposée par une autre recherche (pas encore créée) → l'ouvrir`);
+      a.onclick = () => tiroir(R.doublon.proposee);
+      b.append(el("strong", null, "Une fiche proposée couvre déjà la question : "), a, el("p", "petit", R.doublon.raison));
+    } else b.append(el("strong", null, "Une fiche couvre déjà la question : "), puceFiche(R.doublon.fiche),
+      el("p", "petit", R.doublon.raison));
+    if (R.doublon.a_ajouter) b.append(el("p", "petit", "À y ajouter : " + R.doublon.a_ajouter));
+    t.append(b);
+  }
+  // l'aperçu, rendu comme dans le wiki ; les paragraphes sans [@source] sont signalés
+  if (R.sections?.length) {
+    const prec = reponsesPrecedentes(d);
+    if (prec) t.append(prec);
+    t.append(el("h5", null, "La fiche proposée"));
+    const ap = el("div", "fiche-apercu");
+    ap.append(el("h3", "apercu-titre", R.titre), el("p", "mut petit", R.sujet), pastilles(R.confiance, true));
+    const corps = el("div", "fiche-corps apercu");
+    corps.innerHTML = d.apercu?.html ?? "";
+    let sans = 0;
+    const retenir = [...corps.querySelectorAll("h2")].find((h) => /en tirer|Voisines|Sources/.test(h.textContent));
+    for (const p of corps.querySelectorAll("p")) {
+      const apres = retenir && (retenir.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING);
+      if (!p.querySelector("cite") && !apres && p.textContent.trim().length > 80 && !p.closest("li") && !/^Écrite pour/.test(p.textContent)) {
+        p.classList.add("sans-source");
+        p.title = "aucune source [@…] dans ce paragraphe";
+        sans++;
+      }
+    }
+    corps.querySelectorAll("a.wiki").forEach((a) => {
+      const [, cible] = a.getAttribute("href").split("/");
+      a.onclick = (e) => { e.preventDefault(); apercuFiche(cible); };
+    });
+    const nv = (R.sources ?? []).filter((s) => !s.verifie).length;
+    ap.append(el("p", sans || nv ? "fiche-alerte petit" : "mut petit",
+      `${(R.sources ?? []).length} source(s), dont ${nv} non vérifiée(s) · ${sans} paragraphe(s) sans source signalé(s) en marge`));
+    const morts = d.apercu?.liens_morts ?? [], inconnues = d.apercu?.cles_inconnues ?? [];
+    if (morts.length) ap.append(el("p", "fiche-alerte petit", "liens vers des fiches inexistantes : " + morts.map((x) => `[[${x}]]`).join(", ")));
+    if (inconnues.length) ap.append(el("p", "fiche-alerte petit", "clés citées absentes des sources : " + inconnues.join(", ")));
+    ap.append(corps);
+    t.append(ap);
+  }
+  if (d.etat === "a_confirmer") t.append(blocConfirmation(d, R));
+  if (d.etat === "prete" && R.sections?.length) {
+    const faire = el("div", "que-faire");
+    faire.append(el("h5", null, "Que faire ?"), el("p", "mut petit",
+      "Relire la fiche. « Créer » l'écrit dans kb/fiches/ (origine claude, état brouillon) et l'ajoute aux fiches des " +
+      "chapitres cochés. Les liens depuis les fiches voisines sont proposés ci-dessous, pas écrits."));
+    const slug = el("input", "dem-motif");
+    slug.value = R.slug;
+    if (R.slug_propose_par) faire.append(el("p", "fiche-alerte petit",
+      `Le slug « ${R.slug} » est aussi celui d'une fiche proposée par ${R.slug_propose_par} : en choisir un autre si les deux sont créées.`));
+    const titre = el("input", "dem-motif");
+    titre.value = R.titre;
+    const chs = el("div", "choix-assertions");
+    const proposes = new Set([...(d.cible.chapitres ?? []), ...(R.chapitres ?? []).map((c) => c.slug)]);
+    const cases = etat.chapitres.filter((c) => c.atelier).map((c) => {
+      const l = el("label", "dem-consulter");
+      const x = el("input");
+      x.type = "checkbox"; x.value = c.slug; x.checked = proposes.has(c.slug);
+      const raison = (R.chapitres ?? []).find((y) => y.slug === c.slug)?.raison;
+      l.append(x, ` ${c.numero ?? ""} · ${c.title}` + (raison ? ` — ${raison}` : ""));
+      chs.append(l);
+      return x;
+    });
+    const motif = el("input", "dem-motif");
+    motif.placeholder = "motif (pour ne pas créer)";
+    const oui = el("button", "bouton", "◇ Créer la fiche");
+    const non = el("button", "pan-lien", "ne pas créer");
+    const envoie = async (corps) => {
+      const r = await fetch(`/api/chapitres/_kb/demandes/${d.id}/decision`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+      if (!r.ok) { alert("échec : " + ((await r.json().catch(() => ({}))).detail ?? r.status)); return; }
+      etat.fichesIndex = null;
+      await indexFiches(true);
+      if (etat.atelier) etat.atelier = await api(`/chapitres/${etat.slug}/atelier`).catch(() => etat.atelier);
+      tiroir(d.id);
+    };
+    oui.onclick = () => envoie({ action: "creer", slug: slug.value, titre: titre.value, chapitres: cases.filter((x) => x.checked).map((x) => x.value) });
+    non.onclick = () => envoie({ action: "rejeter", motif: motif.value });
+    const act = el("div", "annot-actions");
+    act.append(oui, non);
+    faire.append(el("span", "appui-lieu", "slug"), slug, el("span", "appui-lieu", "titre"), titre,
+      el("span", "appui-lieu", "ajouter aux fiches des chapitres"), chs, motif, act);
+    t.append(faire);
+  }
+  if ((R.liens ?? []).length) {
+    t.append(el("h5", null, "Liens proposés (depuis les fiches voisines — à écrire à la main)"));
+    for (const l of R.liens) {
+      const p = el("p", "petit");
+      p.append(puceFiche(l.fiche), " " + l.raison);
+      t.append(p);
+    }
+  }
+  if ((R.sources ?? []).length) {
+    const det = el("details", "replie");
+    det.append(el("summary", null, `les sources (${R.sources.length})`));
+    for (const s of R.sources) {
+      const so = el("div", "verif-source");
+      const ref = el("span", "verif-ref");
+      ref.innerHTML = mdLigne(`${s.cle} — ${s.ref}`);
+      so.append(ref);
+      if (s.doi) { const l = el("a", "lien-ext", "doi ↗"); l.href = "https://doi.org/" + s.doi; l.target = "_blank"; so.append(" ", l); }
+      if (s.url) { const l = el("a", "lien-ext", "page ↗"); l.href = s.url; l.target = "_blank"; so.append(" ", l); }
+      so.append(el("span", s.verifie ? "verif-ok" : "verif-non", s.verifie ? " lu" : " non vérifié"));
+      if (s.extrait) so.append(el("blockquote", "verif-extrait", s.extrait));
+      det.append(so);
+    }
+    t.append(det);
+  }
+  piedTiroir(t, d);
 }
 
 // ------------------------------------------------------------------ les fiches (wiki)
@@ -3963,6 +5023,8 @@ async function vueFiches(slug, section) {
   document.getElementById("outils").hidden = true;
   sommaire();
   const I = await indexFiches();
+  if (slug === "graphe") return pageGraphe();
+  if (slug === "creation") return pageCreation();
   if (!slug) return indexPage(I);
   return pageFiche(slug, section, I);
 }
@@ -4004,7 +5066,9 @@ function indexPage(I) {
   q.placeholder = "chercher une fiche (titre, sujet, slug)…";
   q.value = F.q;
   const groupe = el("span", "groupe filtres");
-  for (const [v, lib] of [["toutes", "toutes"], ["chapitres", "utilisées par un chapitre de l'atelier"], ["orphelines", "sans lien entrant"]]) {
+  for (const [v, lib] of [["toutes", "toutes"], ["chapitres", "utilisées par un chapitre de l'atelier"], ["orphelines", "sans lien entrant"],
+    ["brouillons", `brouillons · ${I.filter((f) => f.etat === "brouillon").length}`],
+    ["a_confirmer", `à confirmer · ${I.filter((f) => f.etat === "a_confirmer").length}`]]) {
     const b = el("button", F.usage === v ? "actif" : null, lib);
     b.onclick = () => { F.usage = v; indexPage(I); };
     groupe.append(b);
@@ -4014,13 +5078,17 @@ function indexPage(I) {
     const mots = F.q.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").split(/\s+/).filter(Boolean);
     const plat = (s) => (s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
     const garde = I.filter((f) => mots.every((m) => plat(f.titre + " " + f.sujet + " " + f.slug).includes(m)))
-      .filter((f) => F.usage === "toutes" || (F.usage === "chapitres" ? f.chapitres.length : !f.entrants.length))
+      .filter((f) => F.usage === "toutes" || (F.usage === "chapitres" ? f.chapitres.length
+        : F.usage === "brouillons" ? f.etat === "brouillon" : F.usage === "a_confirmer" ? f.etat === "a_confirmer" : !f.entrants.length))
       .sort((a, b) => a.titre.localeCompare(b.titre, "fr"));
     liste.replaceChildren(el("p", "mut petit", `${garde.length} fiche(s) sur ${I.length}`));
     for (const f of garde) {
       const c = el("a", "fiche-carte");
       c.href = `#fiches/${f.slug}`;
-      c.append(el("span", "fiche-titre", f.titre));
+      const ti = el("span", "fiche-titre", f.titre);
+      if (f.origine === "claude") ti.append(" ", el("span", "badge " + (["brouillon", "a_confirmer"].includes(f.etat) ? "doute" : ""),
+        f.etat === "a_confirmer" ? "à confirmer · Claude" : f.etat === "brouillon" ? "brouillon · Claude" : `${f.etat ?? ""} · Claude`));
+      c.append(ti);
       if (f.sujet && f.sujet !== f.titre) c.append(el("span", "fiche-sujet", f.sujet));
       c.append(pastilles(f.confiance));
       const meta = el("span", "fiche-meta",
@@ -4034,7 +5102,7 @@ function indexPage(I) {
   remplit();
   const barre = el("div", "dem-filtres");
   barre.append(groupe);
-  page.replaceChildren(el("h1", null, "Fiches"),
+  page.replaceChildren(ongletsFiches("liste"), el("h1", null, "Fiches"),
     el("p", "mut", "La base de connaissance du livre : ce qu'on sait, à quel point on y croit, qui le dit. " +
       "Une fiche sert plusieurs chapitres."), q, barre, liste);
   document.getElementById("fiche").replaceChildren(el("h4", null, "Fiches"),
@@ -4045,6 +5113,510 @@ function indexPage(I) {
   setTimeout(() => q.focus(), 0);
 }
 
+// La barre de vue des fiches, comme celle du récit et de l'essai : la vue (liste, en création,
+// graphe, bibliographie), puis les actions sur la base (nouvelle fiche, PDF, version imprimable).
+function barreFiches(actif, actionsPage = null) {
+  const o = document.getElementById("outils");
+  o.replaceChildren();
+  o.hidden = false;
+  const g = el("span", "groupe");
+  for (const [k, lib, h] of [["liste", "liste", "fiches"], ["creation", "en création", "fiches/creation"],
+    ["graphe", "graphe", "fiches/graphe"], ["biblio", "bibliographie", "biblio"]]) {
+    const b = el("button", k === actif ? "actif" : null, lib);
+    b.onclick = () => { location.hash = h; };
+    if (k === "creation") b.id = "onglet-creation";
+    g.append(b);
+  }
+  o.append(el("span", "etiq", "fiches"), g, el("span", "espace"));
+  if (actionsPage) o.append(actionsPage, el("span", "sep-barre"));
+  const nouvelle = el("button", "b-versions", "◇ nouvelle…");
+  nouvelle.title = "nouvelle fiche : une question ; Claude lit les fiches voisines, cherche, et propose une fiche";
+  nouvelle.onclick = () => {
+    const page = document.getElementById("page");
+    page.querySelector(":scope > .form-fiche")?.remove();
+    const f = formFiche({});
+    (page.querySelector(":scope > h1") ?? page.firstChild)?.after(f);
+    f.scrollIntoView({ block: "center" });
+  };
+  const pdf = el("button", "b-versions", "⎙ PDF");
+  pdf.title = "toutes les fiches en un PDF : couverture (synopsis, date), sommaire par cluster, liens internes gardés, bibliographie — pour une relecture par un tiers";
+  pdf.onclick = async () => {
+    pdf.disabled = true;
+    pdf.textContent = "⎙ génération…";
+    try {
+      const r = await fetch("/api/kb/pdf");
+      if (!r.ok) {
+        alert(((await r.json().catch(() => ({}))).detail ?? r.status) + "\n\nLa version imprimable va s'ouvrir : ⌘P, puis « Enregistrer au format PDF ».");
+        window.open("/api/kb/imprimable", "_blank");
+        return;
+      }
+      const nom = decodeURIComponent((r.headers.get("Content-Disposition") ?? "").split("UTF-8''")[1] ?? "base-de-connaissance.pdf");
+      const a = el("a");
+      a.href = URL.createObjectURL(await r.blob());
+      a.download = nom;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } finally {
+      pdf.disabled = false;
+      pdf.textContent = "⎙ PDF";
+    }
+  };
+  const imp = el("a", "lien-ext", "imprimable ↗");
+  imp.href = "/api/kb/imprimable";
+  imp.target = "_blank";
+  imp.title = "le même document, en HTML, dans un onglet";
+  o.append(el("span", "etiq", "la base"), nouvelle, pdf, imp);
+  majCompteFiches();
+}
+
+function ongletsFiches(actif) {
+  barreFiches(actif);
+  return el("span");
+}
+
+// ------------------------------------------------------------------ « En création »
+//
+// Les demandes de la base (fiches, pistes, renvois), séparées du stock : en cours, en attente,
+// à décider, en erreur, puis les dernières closes. La page se met à jour d'elle-même tant
+// qu'elle est ouverte.
+
+const GROUPES_CREATION = [
+  ["en_cours", "En cours", "Claude y travaille ; le déroulé est dans le tiroir."],
+  ["en_attente", "En attente", "Pas encore lancées : ▶ pour lancer, ou l'enchaînement automatique."],
+  ["prete", "À décider", "Claude a rendu sa réponse : l'ouvrir, relire, décider."],
+  ["a_confirmer", "À confirmer", "Créées d'office par la file : elles sont déjà dans la base ; les confirmer, ou ne pas les garder."],
+  ["erreur", "En erreur", "Arrêtées : reprendre, relancer (dans le tiroir), ou classer."],
+];
+
+async function pageCreation() {
+  etat.ficheCourante = null;
+  document.getElementById("volet-chapitre").hidden = true;
+  const page = document.getElementById("page");
+  const corps = el("div", "creation-corps");
+  page.replaceChildren(ongletsFiches("creation"), el("h1", null, "En création"),
+    el("p", "mut", "Les fiches en train de naître, et le travail de Claude sur la base (creuser, renvois). " +
+      "Le stock des fiches est dans la vue liste."), corps);
+  document.getElementById("fiche").replaceChildren(el("h4", null, "En création"),
+    el("p", "mut petit", "La page se met à jour d'elle-même. Une demande relancée, décidée ou classée quitte les groupes " +
+      "ouverts pour « Closes récemment »."));
+  let signature = "";
+  const remplit = async () => {
+    if (!corps.isConnected) return;
+    const [ds, F] = await Promise.all([api("/fiches/demandes").catch(() => []), api("/file").catch(() => null)]);
+    const sig = JSON.stringify(ds.map((x) => [x.id, x.etat])) + JSON.stringify(F?.reglage);
+    if (sig !== signature) {
+      signature = sig;
+      corps.replaceChildren();
+      if (F) {
+        const tete = el("div", "fiches-demandes-tete");
+        tete.append(el("strong", null, "File d'attente"), reglageFile(F, remplit));
+        corps.append(tete);
+      }
+      for (const [etatD, titre, aide] of GROUPES_CREATION) {
+        const G = ds.filter((x) => x.etat === etatD).sort((a, b) => (a.cree < b.cree ? (etatD === "en_attente" ? -1 : 1) : (etatD === "en_attente" ? 1 : -1)));
+        if (!G.length) continue;
+        corps.append(el("h5", null, `${titre} · ${G.length}`), el("p", "mut petit", aide));
+        for (const x of G) corps.append(ligneCreation(x, remplit));
+      }
+      const closes = ds.filter((x) => ["decidee", "remplacee", "abandonnee", "retiree"].includes(x.etat))
+        .sort((a, b) => (a.cree < b.cree ? 1 : -1)).slice(0, 12);
+      if (closes.length) {
+        const det = el("details", "replie");
+        det.append(el("summary", null, `Closes récemment · ${closes.length}`));
+        for (const x of closes) det.append(ligneCreation(x, remplit));
+        corps.append(det);
+      }
+      if (!ds.length) corps.append(el("p", "mut", "Rien en cours. « ◇ nouvelle fiche… », ou « ◇ creuser… » depuis une fiche."));
+    }
+    const actif = ds.some((x) => x.etat === "en_cours") || (F?.reglage.auto && F.en_attente.length);
+    setTimeout(remplit, actif ? 4000 : 15000);
+  };
+  remplit();
+  zone().scrollTo(0, 0);
+}
+
+function ligneCreation(x, apres) {
+  const l = el("div", "dem-ligne ouverte file-ligne");
+  l.append(el("span", "annot-type", LIB_TYPE_KB[x.type] ?? x.type), el("span", "dem-etat " + x.etat, etiquetteDemande(x)),
+    el("span", "dem-titre-ligne", x.question ?? x.titre ?? x.id), el("span", "annot-date", (x.cree ?? "").slice(5, 16).replace("T", " ")));
+  const a = el("span", "file-actions");
+  if (x.etat === "en_attente") a.append(boutonLancer(x.id, apres), boutonRetirer(x.id, apres));
+  if (x.etat === "erreur") {
+    const c = el("button", "pan-lien", "classer");
+    c.title = "clore cette demande sans la relancer (abandonnée)";
+    c.onclick = async (e) => {
+      e.stopPropagation();
+      const r = await fetch(`/api/chapitres/_kb/demandes/${x.id}/classer`, { method: "POST" });
+      if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+      apres?.();
+    };
+    a.append(c);
+  }
+  if ((x.etat === "decidee" || x.etat === "a_confirmer") && x.decision?.fiche && !x.decision?.rejetee) {
+    const f = el("a", "pan-lien", "fiche →");
+    f.href = `#fiches/${x.decision.fiche}`;
+    f.onclick = (e) => e.stopPropagation();
+    a.append(f);
+  }
+  l.append(a);
+  l.onclick = (e) => { if (!e.target.closest("button, a")) tiroir(x.id); };
+  return l;
+}
+
+// ------------------------------------------------------------------ le graphe des fiches
+//
+// Les fiches (cercles) et, si on le veut, les chapitres (carrés) qui les listent. Trois sortes
+// de liens : [[lien]] entre fiches, œuvres partagées, même chapitre. Les couleurs sont les
+// clusters thématiques, calculés côté serveur (Louvain) avec ces mêmes liens pondérés ; la
+// résolution règle leur nombre. Glisser un nœud, glisser le fond, molette pour zoomer ;
+// survol : les voisins ; clic : le détail à droite ; double-clic : ouvrir la fiche.
+
+const COULEURS = ["#c0712f", "#3f7fb5", "#4f9a5a", "#a2559b", "#c4a42c", "#3fa3a0", "#c4525a", "#7a6ad0",
+  "#8a8f3a", "#b07a55", "#5f7f99", "#9b6b8a"];
+
+async function pageGraphe() {
+  etat.ficheCourante = null;
+  document.getElementById("volet-chapitre").hidden = true;
+  const P = etat.grapheP ??= { resolution: 1, oeuvres: 0.5, chapitres: 0.5, voirChap: true, voirLiens: true,
+    voirOeuvres: true, voirMemeChap: false, regrouper: true, q: "" };
+  const page = document.getElementById("page");
+  const G = await api(`/fiches-graphe?resolution=${P.resolution}&oeuvres=${P.oeuvres}&chapitres=${P.chapitres}`);
+  etat.graphe = G;
+
+  const barre = el("div", "graphe-barre");
+  const coche = (cle, lib, titre) => {
+    const l = el("label", "graphe-coche");
+    const c = el("input");
+    c.type = "checkbox";
+    c.checked = P[cle];
+    c.onchange = () => { P[cle] = c.checked; sim.reprend(); };
+    l.title = titre;
+    l.append(c, " " + lib);
+    return l;
+  };
+  const curseur = (cle, lib, min, max, pas, titre) => {
+    const l = el("label", "graphe-curseur");
+    const c = el("input");
+    c.type = "range"; c.min = min; c.max = max; c.step = pas; c.value = P[cle];
+    const v = el("span", "mut", String(P[cle]));
+    c.oninput = () => { v.textContent = c.value; };
+    c.onchange = () => { P[cle] = Number(c.value); pageGraphe(); };
+    l.title = titre;
+    l.append(lib + " ", c, " ", v);
+    return l;
+  };
+  const q = el("input", "graphe-q");
+  q.type = "search";
+  q.placeholder = "surligner…";
+  q.value = P.q;
+  q.oninput = () => { P.q = q.value; sim.dessine(); };
+  barre.append(
+    coche("voirLiens", "[[liens]]", "les liens écrits d'une fiche à l'autre"),
+    coche("voirOeuvres", "œuvres partagées", "deux fiches qui exploitent les mêmes œuvres"),
+    coche("voirMemeChap", "même chapitre", "deux fiches listées par un même chapitre"),
+    coche("voirChap", "chapitres", "les chapitres, reliés à leurs fiches (carrés)"),
+    coche("regrouper", "regrouper", "rapprocher les fiches d'un même cluster"),
+    Object.assign(el("button", "pan-lien", "⤢ recadrer"), { onclick: () => sim.cadre(), title: "tout le graphe dans la boîte" }),
+    curseur("resolution", "clusters", 0.4, 2.4, 0.1, "résolution de Louvain : plus haut, plus de clusters, plus petits"),
+    curseur("oeuvres", "poids œuvres", 0, 2, 0.1, "poids d'une œuvre partagée dans le calcul des clusters"),
+    curseur("chapitres", "poids chapitres", 0, 2, 0.1, "poids d'un chapitre partagé dans le calcul des clusters"),
+    q);
+  const boite = el("div", "graphe-boite");
+  const canvas = el("canvas", "graphe-canvas");
+  boite.append(canvas);
+  page.replaceChildren(ongletsFiches("graphe"), el("h1", null, "Graphe des fiches"),
+    el("p", "mut petit", `${G.noeuds.filter((n) => n.type === "fiche").length} fiches · ${G.clusters.length} clusters · ` +
+      `modularité ${G.modularite} · survol : les voisins ; clic : le détail ; double-clic : ouvrir`), barre, boite);
+  const sim = simulation(canvas, G, P);
+  legendeGraphe(G, sim);
+  zone().scrollTo(0, 0);
+}
+
+function legendeGraphe(G, sim) {
+  const d = document.getElementById("fiche");
+  d.replaceChildren(el("h4", null, `Clusters · ${G.clusters.length}`),
+    el("p", "mut petit", "Communautés du graphe (Louvain), nommées par leurs mots propres et leurs fiches les plus liées. " +
+      "Un clic isole un cluster."));
+  for (const c of G.clusters) {
+    const b = el("div", "cluster-ligne");
+    b.style.borderLeftColor = COULEURS[c.id % COULEURS.length];
+    b.append(el("strong", null, c.mots.slice(0, 3).join(" · ") || "—"), el("span", "mut petit", ` ${c.taille} fiches`));
+    const ph = el("div", "petit");
+    ph.append(...c.phares.flatMap((s, i) => [i ? " · " : "", Object.assign(el("a", "lien-fiche-inline", s), { href: `#fiches/${s}` })]));
+    b.append(ph);
+    if (c.chapitres.length) b.append(el("div", "mut petit", "ch. " + c.chapitres.map((x) => x[0]).join(", ")));
+    b.onclick = (e) => {
+      if (e.target.closest("a")) return;
+      sim.cluster = sim.cluster === c.id ? null : c.id;
+      d.querySelectorAll(".cluster-ligne").forEach((x) => x.classList.toggle("choisi", x === b && sim.cluster === c.id));
+      sim.dessine();
+    };
+    d.append(b);
+  }
+  const det = el("div", "graphe-detail");
+  det.id = "graphe-detail";
+  d.append(det);
+}
+
+function detailNoeud(n, G, sim) {
+  const d = document.getElementById("graphe-detail");
+  if (!d) return;
+  if (!n) { d.replaceChildren(); return; }
+  const c = G.clusters[n.cluster];
+  const voisins = sim.voisins(n.id);
+  d.replaceChildren(el("h4", null, n.type === "chapitre" ? `Chapitre ${n.numero ?? ""}` : "Fiche"),
+    el("p", null, n.titre));
+  if (c) d.append(el("p", "mut petit", `cluster : ${c.mots.slice(0, 3).join(" · ")}`));
+  const act = el("div", "annot-actions");
+  if (n.type === "fiche") {
+    const o = el("a", "pan-lien", "ouvrir la fiche →");
+    o.href = `#fiches/${n.id}`;
+    act.append(o);
+    if (n.confiance) d.append(pastilles(n.confiance));
+  } else {
+    const o = el("a", "pan-lien", n.atelier ? "ouvrir l'essai →" : "ouvrir le chapitre →");
+    o.href = `#${n.id.slice(3)}/essai/texte`;
+    act.append(o);
+  }
+  d.append(act, el("h5", null, `Voisins · ${voisins.length}`));
+  for (const v of voisins.sort((a, b) => b.w - a.w).slice(0, 20)) {
+    const l = el("div", "voisin");
+    const a = el("a", "lien-fiche-inline", v.n.type === "chapitre" ? `ch. ${v.n.numero} ${v.n.titre}` : v.n.titre);
+    a.href = v.n.type === "chapitre" ? `#${v.n.id.slice(3)}/essai/texte` : `#fiches/${v.n.id}`;
+    l.append(a, el("span", "mut petit", " " + v.sortes.join(", ")));
+    d.append(l);
+  }
+}
+
+function simulation(canvas, G, P) {
+  const css = getComputedStyle(document.documentElement);
+  const FG = css.getPropertyValue("--fg").trim() || "#222", MUT = css.getPropertyValue("--mut").trim() || "#888",
+    BG = css.getPropertyValue("--bg").trim() || "#fff";
+  const pos = etat.graphePos ??= {};
+  const noeuds = G.noeuds.map((n, i) => {
+    const p = pos[n.id] ?? { x: Math.cos(n.cluster * 1.3 + i * 0.07) * (150 + (i % 7) * 12) + (Math.random() - .5) * 40,
+      y: Math.sin(n.cluster * 1.3 + i * 0.07) * (150 + (i % 7) * 12) + (Math.random() - .5) * 40 };
+    const r = n.type === "chapitre" ? 5 : 3 + Math.sqrt(n.degre) * 1.1;
+    return { ...n, x: p.x, y: p.y, vx: 0, vy: 0, r };
+  });
+  const parId = Object.fromEntries(noeuds.map((n) => [n.id, n]));
+  // chaque cluster a son ancre, sur un cercle : « regrouper » y attire ses fiches
+  const nc = G.clusters.length || 1;
+  const ancre = (c) => ({ x: Math.cos(2 * Math.PI * c / nc) * 260, y: Math.sin(2 * Math.PI * c / nc) * 260 });
+  const aretes = G.liens.map((l) => ({ ...l, a: parId[l.source], b: parId[l.target] })).filter((l) => l.a && l.b);
+  const S = { cluster: null, survol: null, choisi: null, alpha: 1, k: 1, tx: 0, ty: 0 };
+  const ctx = canvas.getContext("2d");
+  let W = 0, H = 0;
+
+  const visible = (l) => {
+    if (l.sorte === "appartient") return P.voirChap;
+    return (P.voirLiens && l.lien) || (P.voirOeuvres && l.oeuvres) || (P.voirMemeChap && l.chapitre);
+  };
+  const noeudVisible = (n) => n.type !== "chapitre" || P.voirChap;
+  const poids = (l) => l.sorte === "appartient" ? 0.4 :
+    (P.voirLiens ? l.lien : 0) + (P.voirOeuvres ? l.oeuvres * P.oeuvres : 0) + (P.voirMemeChap ? l.chapitre * P.chapitres : 0);
+
+  function taille() {
+    const r = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    W = r.width; H = r.height;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (!S.tx && !S.ty) { S.tx = W / 2; S.ty = H / 2; }
+  }
+
+  function pas() {
+    const vis = noeuds.filter(noeudVisible);
+
+    for (let i = 0; i < vis.length; i++) {
+      const a = vis[i];
+      for (let j = i + 1; j < vis.length; j++) {
+        const b = vis[j];
+        let dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy || 0.01;
+        if (d2 > 160000) continue;
+        const f = Math.min(2400 / d2, 8) * S.alpha;
+        const d = Math.sqrt(d2);
+        dx /= d; dy /= d;
+        a.vx -= dx * f; a.vy -= dy * f; b.vx += dx * f; b.vy += dy * f;
+      }
+    }
+    for (const l of aretes) {
+      if (!visible(l) || !noeudVisible(l.a) || !noeudVisible(l.b)) continue;
+      const w = Math.min(poids(l), 4);
+      if (!w) continue;
+      const dx = l.b.x - l.a.x, dy = l.b.y - l.a.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const f = (d - 55) * 0.006 * Math.sqrt(w) * S.alpha;
+      l.a.vx += dx / d * f; l.a.vy += dy / d * f; l.b.vx -= dx / d * f; l.b.vy -= dy / d * f;
+    }
+    for (const n of vis) {
+      n.vx -= n.x * 0.002 * S.alpha; n.vy -= n.y * 0.002 * S.alpha;
+      if (P.regrouper && n.type === "fiche") {
+        const c = ancre(n.cluster);
+        n.vx += (c.x - n.x) * 0.02 * S.alpha; n.vy += (c.y - n.y) * 0.02 * S.alpha;
+      }
+      if (n === S.tire) continue;
+      n.vx *= 0.82; n.vy *= 0.82;
+      n.x += Math.max(-20, Math.min(20, n.vx)); n.y += Math.max(-20, Math.min(20, n.vy));
+      pos[n.id] = { x: n.x, y: n.y };
+    }
+    S.alpha = Math.max(0.0, S.alpha * 0.985);
+  }
+
+  function voisins(id) {
+    const out = new Map();
+    for (const l of aretes) {
+      if (!visible(l)) continue;
+      const o = l.a.id === id ? l.b : l.b.id === id ? l.a : null;
+      if (!o || !noeudVisible(o)) continue;
+      const v = out.get(o.id) ?? { n: o, w: 0, sortes: [] };
+      v.w += poids(l);
+      for (const [k, lib] of [["lien", "lien"], ["oeuvres", "œuvres"], ["chapitre", "chapitre"]]) {
+        if (l[k] && !v.sortes.includes(lib) && (l.sorte !== "appartient" || k === "chapitre")) v.sortes.push(l.sorte === "appartient" ? "liste la fiche" : lib);
+      }
+      out.set(o.id, v);
+    }
+    return [...out.values()];
+  }
+
+  function dessine() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    ctx.translate(S.tx, S.ty);
+    ctx.scale(S.k, S.k);
+    const focus = S.survol ?? S.choisi;
+    const proches = focus ? new Set([focus.id, ...voisins(focus.id).map((v) => v.n.id)]) : null;
+    const plat = (s) => (s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const q = plat(P.q).trim();
+    const allume = (n) => (!proches || proches.has(n.id)) && (S.cluster == null || n.cluster === S.cluster)
+      && (!q || plat(n.titre + " " + n.id).includes(q));
+    for (const l of aretes) {
+      if (!visible(l) || !noeudVisible(l.a) || !noeudVisible(l.b)) continue;
+      const on = allume(l.a) && allume(l.b) && (!proches || l.a === focus || l.b === focus);
+      ctx.globalAlpha = on ? (proches ? 0.8 : 0.28) : 0.05;
+      ctx.strokeStyle = l.sorte === "appartient" ? MUT : l.lien ? FG : COULEURS[l.a.cluster % COULEURS.length];
+      ctx.lineWidth = (l.lien ? 0.9 : 0.6) / Math.sqrt(S.k);
+      ctx.setLineDash(l.sorte === "appartient" ? [3, 3] : l.lien ? [] : [1, 2]);
+      ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    const grands = new Set(noeuds.filter((n) => n.type === "fiche").sort((a, b) => b.degre - a.degre).slice(0, 10).map((n) => n.id));
+    for (const n of noeuds) {
+      if (!noeudVisible(n)) continue;
+      const on = allume(n);
+      ctx.globalAlpha = on ? 1 : 0.15;
+      ctx.fillStyle = COULEURS[n.cluster % COULEURS.length];
+      ctx.beginPath();
+      if (n.type === "chapitre") ctx.rect(n.x - n.r, n.y - n.r, n.r * 2, n.r * 2);
+      else ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+      ctx.fill();
+      if (n.type === "chapitre" || n === S.choisi) { ctx.strokeStyle = n === S.choisi ? FG : BG; ctx.lineWidth = 1.5 / S.k; ctx.stroke(); }
+      const etiquette = on && (n === focus || (proches && proches.has(n.id)) || (!proches && grands.has(n.id)) || S.k > 1.6
+        || (n.type === "chapitre" && (S.k > 1.1 || proches)) || (q && on) || (S.cluster != null && n.cluster === S.cluster));
+      if (etiquette) {
+        ctx.globalAlpha = on ? 0.95 : 0.2;
+        ctx.fillStyle = FG;
+        ctx.font = `${(n === focus ? 12 : 10.5) / S.k}px system-ui, sans-serif`;
+        const lib = n.type === "chapitre" ? `${n.numero ?? ""} ${n.titre}` : n.id;
+        ctx.strokeStyle = BG; ctx.lineWidth = 3 / S.k; ctx.lineJoin = "round";
+        ctx.strokeText(lib, n.x + n.r + 3 / S.k, n.y + 3.5 / S.k);
+        ctx.fillText(lib, n.x + n.r + 3 / S.k, n.y + 3.5 / S.k);
+      }
+    }
+    ctx.restore();
+  }
+
+  // cadrer : tout le graphe visible dans la boîte
+  function cadre() {
+    const vis = noeuds.filter(noeudVisible);
+    if (!vis.length || !W) return;
+    const xs = vis.map((n) => n.x), ys = vis.map((n) => n.y);
+    const x0 = Math.min(...xs) - 40, x1 = Math.max(...xs) + 140, y0 = Math.min(...ys) - 30, y1 = Math.max(...ys) + 30;
+    S.k = Math.max(0.25, Math.min(2.5, Math.min(W / (x1 - x0), H / (y1 - y0))));
+    S.tx = W / 2 - (x0 + x1) / 2 * S.k; S.ty = H / 2 - (y0 + y1) / 2 * S.k;
+  }
+  let cadre_fait = false;
+
+  let enCours = true;
+  function boucle() {
+    if (!canvas.isConnected) {                 // la page a changé : on se retire
+      enCours = false; window.removeEventListener("mouseup", haut); obs.disconnect(); return;
+    }
+    if (S.alpha > 0.01) {
+      pas();
+      if (!cadre_fait && !S.bouge && S.alpha < 0.08) { cadre(); cadre_fait = true; }
+      if (!S.bouge && !S.fini && S.alpha < 0.013) { cadre(); S.fini = true; }   // la disposition est posée : cadrer une dernière fois
+      dessine();
+    }
+    requestAnimationFrame(boucle);
+  }
+
+  const monde = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left - S.tx) / S.k, y: (e.clientY - r.top - S.ty) / S.k };
+  };
+  const sous = (e) => {
+    const m = monde(e);
+    let best = null, bd = Infinity;
+    for (const n of noeuds) {
+      if (!noeudVisible(n)) continue;
+      const d = Math.hypot(n.x - m.x, n.y - m.y);
+      if (d < n.r + 5 / S.k && d < bd) { best = n; bd = d; }
+    }
+    return best;
+  };
+  let glisse = null;
+  canvas.onmousedown = (e) => {
+    const n = sous(e);
+    glisse = { n, x: e.clientX, y: e.clientY, tx: S.tx, ty: S.ty, bouge: false };
+    if (n) { S.tire = n; }
+  };
+  const haut = () => {
+    if (glisse && !glisse.bouge) {
+      S.choisi = glisse.n;
+      detailNoeud(glisse.n, G, api_);
+      dessine();
+    }
+    glisse = null; S.tire = null;
+  };
+  window.addEventListener("mouseup", haut);
+  canvas.onmousemove = (e) => {
+    if (glisse) {
+      if (Math.hypot(e.clientX - glisse.x, e.clientY - glisse.y) > 3) glisse.bouge = true;
+      if (glisse.n) { const m = monde(e); glisse.n.x = m.x; glisse.n.y = m.y; glisse.n.vx = glisse.n.vy = 0; S.alpha = Math.max(S.alpha, 0.3); }
+      else { S.tx = glisse.tx + e.clientX - glisse.x; S.ty = glisse.ty + e.clientY - glisse.y; S.bouge = true; dessine(); }
+      return;
+    }
+    const n = sous(e);
+    if (n !== S.survol) { S.survol = n; canvas.style.cursor = n ? "pointer" : "grab"; dessine(); }
+  };
+  canvas.onmouseleave = () => { S.survol = null; dessine(); };
+  canvas.ondblclick = (e) => {
+    const n = sous(e);
+    if (n) location.hash = n.type === "fiche" ? `fiches/${n.id}` : `${n.id.slice(3)}/essai/texte`;
+  };
+  canvas.onwheel = (e) => {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const f = Math.exp(-e.deltaY * 0.0015);
+    const k = Math.max(0.25, Math.min(5, S.k * f));
+    S.tx = mx - (mx - S.tx) * (k / S.k); S.ty = my - (my - S.ty) * (k / S.k); S.k = k; S.bouge = true;
+    dessine();
+  };
+  const obs = new ResizeObserver(() => { taille(); dessine(); });
+  obs.observe(canvas.parentElement);
+  taille();
+  const api_ = {
+    get cluster() { return S.cluster; }, set cluster(v) { S.cluster = v; },
+    dessine, voisins, reprend() { S.alpha = Math.max(S.alpha, 0.6); cadre_fait = S.bouge; dessine(); },
+    cadre() { cadre(); S.bouge = false; dessine(); },
+  };
+  if (Object.keys(pos).length) { S.alpha = 0.3; cadre(); }   // une disposition connue : on la reprend doucement
+  boucle();
+  return api_;
+}
+
 async function pageFiche(slug, section, I) {
   const page = document.getElementById("page");
   let f;
@@ -4052,10 +5624,13 @@ async function pageFiche(slug, section, I) {
   catch { page.replaceChildren(el("p", "mut", `Pas de fiche « ${slug} ».`)); return; }
   const deja = etat.ficheCourante === slug;
   etat.ficheCourante = slug;
+
   const titres = Object.fromEntries(I.map((x) => [x.slug, x.titre]));
   const fil = el("p", "fil");
   const retour = el("a", null, "Fiches");
   retour.href = "#fiches";
+  const gr = el("a", null, "graphe");
+  gr.href = "#fiches/graphe";
   fil.append(retour, ` › ${slug}`);
   const corps = el("div", "fiche-corps");
   corps.innerHTML = f.html;
@@ -4071,9 +5646,57 @@ async function pageFiche(slug, section, I) {
     }
   });
   enrichit(corps);
+  marqueConfiance(corps, f.confiance_par);
+  corps.querySelectorAll(".wiki-mort").forEach((s) => {
+    s.onclick = () => {
+      document.querySelector("#page .form-fiche")?.remove();
+      const fm = formFiche({ slug: s.dataset.cible, chapitres: f.chapitres.map((c) => c.slug),
+        question: `Fiche « ${s.dataset.cible} », citée par [[${f.slug}]] : ` });
+      corps.before(fm);
+      fm.scrollIntoView({ block: "center" });
+    };
+  });
   page.replaceChildren(fil, el("h1", null, f.titre));
   if (f.meta.sujet && f.meta.sujet !== f.titre) page.append(el("p", "mut fiche-sujet-page", f.meta.sujet));
-  page.append(pastilles(f.confiance, true), corps);
+  if (f.meta.origine === "claude") {
+    const b = el("div", ["brouillon", "a_confirmer"].includes(f.meta.etat) ? "fiche-alerte petit bandeau-brouillon" : "mut petit bandeau-brouillon");
+    b.append(`Écrite par Claude (demande ${f.meta.demande ?? "?"}) · état : ${f.meta.etat ?? "?"}` +
+      (f.meta.relue ? ` le ${f.meta.relue}` : "") + (f.meta.etat === "brouillon" ? " — à relire. " : f.meta.etat === "a_confirmer"
+        ? " — créée d'office par la file, pas encore confirmée. " : ". "));
+    if (f.meta.etat === "a_confirmer" && f.meta.demande) {
+      const c = el("button", "bouton", "confirmer, ou non →");
+      c.onclick = () => tiroir(f.meta.demande);
+      b.append(c);
+    }
+    if (f.meta.etat === "brouillon") {
+      const ok = el("button", "bouton", "✓ marquer comme relue");
+      ok.title = "tu l'as relue : elle passe de brouillon à relue, et les renvois vers elle te sont proposés";
+      ok.onclick = async () => {
+        const r = await fetch(`/api/fiches/${f.slug}/relue`, { method: "POST" });
+        if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+        await indexFiches(true);
+        pageFiche(f.slug, null, etat.fichesIndex ?? []);
+      };
+      b.append(ok);
+    }
+    page.append(b);
+  }
+  // les actions sur cette fiche : dans la barre ; leurs formulaires s'ouvrent ici, sous la confiance
+  const actions = el("div", "actions-fiche");
+  const ouvre = (noeud) => { actions.replaceChildren(noeud); noeud.scrollIntoView({ block: "center" }); };
+  const creuser = el("button", "b-versions", "◇ creuser…");
+  creuser.title = "Claude lit la fiche et propose des fiches complémentaires, après avoir vérifié qu'elles ne sont pas déjà couvertes";
+  creuser.onclick = () => ouvre(formPistes(f.slug));
+  const sup = el("button", "b-versions danger", "supprimer…");
+  sup.title = "le ménage : la fiche va à la corbeille (récupérable) ; voir d'abord ce qui en dépend";
+  sup.onclick = () => formSuppression(f).then(ouvre);
+  const aFiche = el("span", "actions-barre");
+  aFiche.append(el("span", "etiq", "cette fiche"), creuser, sup);
+  barreFiches(null, aFiche);
+  api(`/fiches/${f.slug}/renvois`).then((x) => {
+    if (x.voisines?.length) { const b = boutonRenvois(f.slug, x.voisines); b.className = "b-versions"; sup.before(b); }
+  }).catch(() => {});
+  page.append(pastilles(f.confiance, true), barreConfiance(f, corps), actions, corps);
   planFiche(f);
   liensFiche(f);
   if (section) {
@@ -4117,6 +5740,27 @@ function liensFiche(f) {
     return a;
   };
 
+  // les pistes déjà demandées pour cette fiche
+  api("/fiches/demandes").then((ds) => {
+    const P = ds.filter((x) => x.type === "pistes" && x.fiche === f.slug).sort((a, b) => (a.cree < b.cree ? 1 : -1));
+    if (!P.length) return;
+    const aDecider = P.filter((x) => x.etat === "prete");
+    const h1 = document.querySelector("#page h1");
+    if (aDecider.length && h1 && !document.querySelector("#page .banniere-pistes")) {
+      const b = el("button", "banniere-pistes", `◇ ${aDecider.length > 1 ? aDecider.length + " lectures « creuser »" : "Des pistes proposées en creusant cette fiche"} ` +
+        "attendent ta décision → ouvrir");
+      b.onclick = () => tiroir(aDecider[0].id);
+      h1.before(b);
+    }
+    const bloc = el("div");
+    bloc.append(el("h4", null, `Creuser · ${P.length}`));
+    for (const x of P) {
+      const a = el("button", "pan-lien", `${x.cree.slice(0, 10)} · ${etiquetteDemande(x)}`);
+      a.onclick = () => tiroir(x.id);
+      bloc.append(a, el("br"));
+    }
+    d.prepend(bloc);
+  }).catch(() => {});
   section("Chapitres", f.chapitres.length);
   if (!f.chapitres.length) d.append(el("p", "mut petit", "Aucun chapitre de l'atelier ne la liste dans son brief."));
   for (const c of f.chapitres) {
@@ -4175,6 +5819,21 @@ function liensFiche(f) {
   d.append(fl);
 }
 
+// « Fiches · n » : les demandes de la base (fiches, pistes) à décider ou en attente.
+async function majCompteFiches() {
+  const ds = await api("/fiches/demandes").catch(() => null);
+  if (!ds) return;
+  const decider = ds.filter((x) => x.etat === "prete" || x.etat === "a_confirmer").length, attente = ds.filter((x) => x.etat === "en_attente").length;
+  const b = document.getElementById("b-fiches");
+  b.textContent = decider + attente ? `Fiches · ${decider + attente}` : "Fiches";
+  b.classList.toggle("a-decider", decider > 0);
+  b.title = `${decider} à décider · ${attente} en attente — dans Fiches › En création`;
+  const cours = ds.filter((x) => x.etat === "en_cours").length, err = ds.filter((x) => x.etat === "erreur").length;
+  const o = document.getElementById("onglet-creation");
+  if (o) o.textContent = `en création` + (cours + attente + decider + err ? ` · ${cours + attente + decider + err}` : "");
+}
+setInterval(() => { if (!document.hidden) majCompteFiches(); }, 10000);
+
 window.addEventListener("hashchange", depuisAdresse);
 
 etat.livre = await api("/livre").catch(() => ({ titre: "" }));
@@ -4186,8 +5845,17 @@ document.getElementById("b-fiches").onclick = () => { location.hash = etat.fiche
 etat.chapitres = await api("/chapitres");
 api("/sources").then((s) => { etat.sources = s; }).catch(() => {});
 etat.regles = await api("/regles").catch(() => ({}));
+indexFiches();
 await chargeModeles();
 majCompteAnnotations();
 sommaire();
 fiche();
-depuisAdresse();
+majCompteFiches();
+{
+  // un tiroir ouvert avant le rafraîchissement : le rouvrir
+  let t = null;
+  try { t = JSON.parse(sessionStorage.getItem("atelier-tiroir") ?? "null"); } catch { /* rien */ }
+  if (t?.id && t.slug !== "_kb" && location.hash.slice(1).split("/")[0] === t.slug) etat.tiroirApres = t.id;
+  depuisAdresse();
+  if (t?.id && t.slug === "_kb") setTimeout(() => tiroir(t.id), 300);
+}

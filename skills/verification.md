@@ -18,9 +18,13 @@ ajouter ou corriger. Rien n'est appliqué sans l'auteur.
 3. Sur un 403 ou un mur (science.org, PNAS, Wiley, ScienceDirect, Annual Reviews, PMC avec
    captcha) : chercher une version PMC, arXiv, ou un dépôt institutionnel — **deux tentatives
    au plus** par œuvre. Sinon, **déclarer le fait non vérifié** plutôt que de l'affirmer.
-4. Commence par le livre lui-même (lecture seule) : l'essai du chapitre, les fiches
-   scientifiques (kb/fiches/, celles du chapitre d'abord), la bibliographie centrale. Une œuvre déjà dans la
-   bibliographie centrale garde **sa** clé.
+4. **Les fiches d'abord.** Avant toute recherche web, lis les fiches (`kb/fiches/<slug>.md`) :
+   celles du chapitre, puis celles que l'index rapproche de l'assertion. Elles sont la base
+   de connaissance du livre, déjà sourcée : ce qu'une fiche établit, avec sa référence, tu le
+   reprends (et tu cites la fiche) au lieu de le rechercher. Le web sert à ce que les fiches
+   ne couvrent pas, ou à vérifier ce qu'elles donnent comme récent ou débattu — dis-le dans
+   `fiches_consultees` (quelle fiche, ce qu'elle a apporté). Puis l'essai du chapitre et la
+   bibliographie centrale : une œuvre qui y est déjà garde **sa** clé.
 5. Un DOI n'est donné que s'il a été lu sur une page consultée. Jamais de mémoire.
 6. **Mesure.** Ta recherche a un budget (donné avec la demande) ; au-delà, l'outil est
    refusé. Va d'abord à l'assertion que vise la question de l'auteur. Arrête-toi dès que deux

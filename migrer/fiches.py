@@ -29,31 +29,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from chapitre import SOURCE, CIBLE, Refus  # noqa: E402
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from atelier.essai import ident_section  # noqa: E402
 
 KB = CIBLE.parent / "kb" / "fiches"
-INTERTITRE = re.compile(r"^(#{2,6})\s+(.*?)\s*$")
-AVEC_ID = re.compile(r"\s*\{#[\w-]+\}\s*$")
 LIEN = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")
-NUMERO = re.compile(r"^(\d+(\.\d+)*\.?|[a-z]\.|[IVX]+\.)\s+")
-
-
-def identifie(texte):
-    """Pose {#id} sur chaque intertitre (hors blocs de code). Rend (texte, n posés)."""
-    lignes = texte.split("\n")
-    pris = {m.group(1) for m in re.finditer(r"\{#([\w-]+)\}", texte)}
-    code, n = False, 0
-    for i, l in enumerate(lignes):
-        if l.lstrip().startswith("```"):
-            code = not code
-            continue
-        m = None if code else INTERTITRE.match(l)
-        if not m or AVEC_ID.search(l):
-            continue
-        titre = re.sub(r"[*_`]", "", NUMERO.sub("", m.group(2)))     # « 2. **Où c'est rangé** » -> « Où c'est rangé »
-        lignes[i] = "%s {#%s}" % (l.rstrip(), ident_section(titre or m.group(2), pris))
-        n += 1
-    return "\n".join(lignes), n
+from atelier.kb import identifie  # noqa: E402,F401  (partagé avec l'atelier : une fiche créée par Claude)
 
 
 def migre(p, connues):

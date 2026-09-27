@@ -34,6 +34,9 @@ LIVRE="$(cd "$LIVRE" && pwd)"
 cd "$ICI"
 command -v poetry >/dev/null || { echo "poetry introuvable — https://python-poetry.org" >&2; exit 1; }
 [ -d .venv ] || poetry install --no-interaction
+# poppler (pdftoppm) : un outil du système, pas un paquet Python. Claude Code s'en sert pour lire
+# un PDF par pages ; sans lui, les demandes à Claude se rabattent sur les pages HTML.
+command -v pdftoppm >/dev/null || echo "note : pdftoppm introuvable — les PDF ne seront pas lus par Claude (brew install poppler)" >&2
 
 if lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   echo "le port $PORT est déjà pris — ./run.sh <livre> <autre port>" >&2; exit 1

@@ -9,10 +9,10 @@ import sys
 import pathlib
 import subprocess
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -23,6 +23,15 @@ for nom in livre.initialise() + regles.initialise():
     print("atelier : %s créé dans %s" % (nom, livre.LIVRE))
 if reecriture.interrompues():
     print("atelier : des demandes en cours ont été interrompues par le redémarrage (marquées en erreur)")
+
+
+@app.on_event("startup")
+async def _reprend_la_file():
+    """Au démarrage : si l'enchaînement est activé, la file repart d'elle-même."""
+    try:
+        file.suivante()
+    except Exception as e:                      # noqa: BLE001
+        print("atelier : file d'attente —", e)
 
 
 def _meta(m):
@@ -295,14 +304,192 @@ async def encore(slug: str, ident: str, request: Request):
 def modeles():
     """Les modèles qu'on peut choisir, et ceux que le livre retient par défaut."""
     return {"modeles": reecriture.MODELES,
-            "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture")},
-            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture")}}
+            "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes")},
+            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes")}}
 
 
 @app.get("/api/fiches")
 def fiches():
     """Les fiches de la base de connaissance (kb/fiches/), avec leurs liens."""
     return kb.index()
+
+
+@app.get("/api/fiches-graphe")
+def fiches_graphe(resolution: float = 1.0, oeuvres: float = 0.5, chapitres: float = 0.5):
+    """Le graphe des fiches (liens, œuvres partagées, chapitres) et ses clusters thématiques."""
+    return kb.graphe(max(0.2, min(3.0, resolution)), max(0.0, oeuvres), max(0.0, chapitres))
+
+
+@app.get("/api/fiches/demandes")
+def fiches_demandes():
+    """Les demandes de création de fiche (kb/demandes/)."""
+    return reecriture.liste("_kb")
+
+
+@app.post("/api/fiches/demandes")
+async def cree_fiche(request: Request):
+    """Lancer une création de fiche : {question, slug?, chapitres?, consigne?, longueur?, modele?,
+    depuis?, sources_initiales?}. Claude cherche en tâche de fond."""
+    try:
+        return creation.cree(await request.json())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/oeuvres")
+def oeuvres():
+    """Toutes les œuvres : base centrale, bibliographies des chapitres, sources des fiches."""
+    return kb.oeuvres()
+
+
+@app.post("/api/fiches/{slug}/confiance")
+async def lit_confiance(slug: str, request: Request):
+    """Lancer la lecture de la confiance par paragraphe d'une fiche : {modele?}."""
+    c = await request.json()
+    try:
+        return confiance.lance(slug, reecriture._choix_modele(c))
+    except KeyError:
+        raise HTTPException(404, "fiche inconnue : %s" % slug)
+    except reecriture.Conflit as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/file")
+def file_etat():
+    """La file d'attente : réglage (auto, simultanées), en cours, en attente."""
+    return file.etat()
+
+
+@app.put("/api/file")
+async def file_reglage(request: Request):
+    """{auto?, simultanees?} — écrit dans livre.yaml ; activer l'enchaînement lance la suivante."""
+    c = await request.json()
+    m = livre.meta()
+    livre.ecrit_meta({"claude": {"file": {k: c[k] for k in ("auto", "simultanees", "creer_d_office") if k in c}}}, m["_version"])
+    file.suivante()
+    return file.etat()
+
+
+@app.post("/api/file/{ident}/lance")
+def file_lance(ident: str):
+    try:
+        return file.lance(ident)
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except reecriture.Conflit as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/file/{ident}/retire")
+def file_retire(ident: str):
+    try:
+        return file.retire(ident)
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except reecriture.Conflit as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/api/fiches/{slug}/renvois")
+async def propose_renvois(slug: str, request: Request):
+    """Proposer les renvois vers une fiche dans les voisines qu'elle cite. {consigne?, modele?, voisines?}"""
+    c = await request.json()
+    try:
+        return renvois.cree({"fiche": slug, **{k: c[k] for k in ("consigne", "modele", "voisines") if k in c}})
+    except KeyError:
+        raise HTTPException(404, "fiche inconnue : %s" % slug)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/fiches/{slug}/renvois")
+def voisines_sans_renvoi(slug: str):
+    try:
+        return {"voisines": renvois.voisines(slug)}
+    except KeyError:
+        raise HTTPException(404, "fiche inconnue : %s" % slug)
+
+
+@app.get("/api/kb/imprimable", response_class=HTMLResponse)
+def kb_imprimable():
+    """La base de connaissance en un document HTML autonome, à imprimer (⌘P) ou à lire."""
+    return export.imprimable()
+
+
+@app.get("/api/kb/pdf")
+async def kb_pdf():
+    """La base de connaissance en PDF (Chrome sans interface), liens internes gardés."""
+    from urllib.parse import quote
+    try:
+        donnees, nom = await export.pdf()
+    except RuntimeError as e:
+        raise HTTPException(501, str(e))
+    return Response(donnees, media_type="application/pdf",
+                    headers={"Content-Disposition": "attachment; filename*=UTF-8''%s" % quote(nom)})
+
+
+@app.get("/api/fiches/{slug}/consequences")
+def consequences(slug: str):
+    """Ce qui dépend d'une fiche : fiches qui la citent, chapitres, œuvres."""
+    try:
+        return kb.consequences(slug)
+    except KeyError:
+        raise HTTPException(404, "fiche inconnue : %s" % slug)
+
+
+@app.post("/api/fiches/{slug}/supprimer")
+async def supprime_fiche(slug: str, request: Request):
+    """Le ménage : {liens: laisser|retirer, motif}. La fiche va à kb/corbeille/."""
+    c = await request.json()
+    if c.get("liens", "laisser") not in ("laisser", "retirer"):
+        raise HTTPException(400, "liens : laisser ou retirer")
+    try:
+        return kb.supprime(slug, c.get("liens", "laisser"), (c.get("motif") or "").strip())
+    except KeyError:
+        raise HTTPException(404, "fiche inconnue : %s" % slug)
+
+
+@app.post("/api/fiches/{slug}/relue")
+def marque_relue(slug: str):
+    """Une fiche écrite par Claude, relue : son état passe de brouillon à relue."""
+    try:
+        return renvois.marque_relue(slug)
+    except KeyError:
+        raise HTTPException(404, "fiche inconnue : %s" % slug)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/chapitres/{slug}/demandes/{ident}/classer")
+def classe_demande(slug: str, ident: str):
+    """Clore une demande en erreur sans la relancer."""
+    try:
+        return reecriture.classe(slug, ident)
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except reecriture.Conflit as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/api/fiches/{slug}/pistes")
+async def creuse(slug: str, request: Request):
+    """Creuser une fiche : Claude propose des fiches complémentaires. {consigne?, modele?}"""
+    c = await request.json()
+    try:
+        return pistes.cree({"fiche": slug, "consigne": c.get("consigne"), "modele": c.get("modele")})
+    except KeyError:
+        raise HTTPException(404, "fiche inconnue : %s" % slug)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/fiches/{slug}/confiance")
+def etat_confiance(slug: str):
+    return confiance.etat(slug)
 
 
 @app.get("/api/fiches/{slug}")
@@ -358,11 +545,19 @@ async def decide(slug: str, ident: str, request: Request):
     try:
         if ident.startswith("v-"):
             return verification.decide(slug, ident, await request.json())
+        if ident.startswith("f-"):
+            return creation.decide(ident, await request.json())
+        if ident.startswith("p-"):
+            return pistes.decide(ident, await request.json())
+        if ident.startswith("l-"):
+            return renvois.decide(ident, await request.json())
         return reecriture.decide(slug, ident, await request.json())
     except KeyError as e:
         raise HTTPException(404, "inconnu : %s" % e)
     except reecriture.Conflit as e:
         raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 def _edition(f):
