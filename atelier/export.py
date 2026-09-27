@@ -193,7 +193,7 @@ def chrome():
 
 
 async def pdf(quoi="kb"):
-    """Rend (octets du PDF, nom de fichier) : la base de connaissance (kb) ou l'essai. RuntimeError
+    """Rend (octets du PDF, nom de fichier) : la base de connaissance (kb), l'essai ou le récit. RuntimeError
     si aucun Chrome n'est disponible."""
     exe = chrome()
     if not exe:
@@ -202,7 +202,7 @@ async def pdf(quoi="kb"):
     with tempfile.TemporaryDirectory() as tmp:
         src, out = os.path.join(tmp, "kb.html"), os.path.join(tmp, "kb.pdf")
         with open(src, "w", encoding="utf-8") as f:
-            f.write(essai_imprimable() if quoi == "essai" else imprimable())
+            f.write(version_imprimable(quoi) if quoi in livre.VERSIONS else imprimable())
         proc = await asyncio.create_subprocess_exec(
             exe, "--headless=new", "--disable-gpu", "--no-pdf-header-footer", "--no-first-run",
             "--user-data-dir=" + os.path.join(tmp, "profil"), "--print-to-pdf=" + out, "file://" + src,
@@ -230,18 +230,19 @@ async def pdf(quoi="kb"):
         with open(out, "rb") as f:
             donnees = f.read()
     m = livre.meta()
-    nom = "%s — %s — %s.pdf" % (m.get("titre", "livre"), "essai" if quoi == "essai" else "base de connaissance",
+    nom = "%s — %s — %s.pdf" % (m.get("titre", "livre"), _nom_version(quoi) if quoi in livre.VERSIONS else "base de connaissance",
                                 datetime.date.today().isoformat())
     return donnees, nom
 
 
-# ------------------------------------------------------------------ l'essai
+# ------------------------------------------------------------------ l'essai, le récit
 
-# L'essai en un document : la page de garde du livre, la table des matières (le plan), puis chaque
+# Une version (l'essai, le récit) en un document : la page de garde du livre, la table des matières (le plan), puis chaque
 # partie — son sens, son arc, sa question, la liste de ses chapitres — et ses chapitres. Un chapitre
-# est rendu selon son avancement : le synopsis seul (rien d'écrit), le squelette (des sections
-# « à écrire »), ou le texte, avec son statut (brief, brouillon, en relecture, validé) et l'état du
-# harnais. En annexe, la bibliographie des œuvres citées.
+# est rendu selon son avancement : le synopsis seul (rien d'écrit), le squelette de l'essai (des
+# sections « à écrire »), le storyboard du récit (ses plans et leurs micro-récits), ou le texte,
+# avec son statut (brief, brouillon, en relecture, validé) et l'état du harnais. La numérotation
+# (réglage de l'essai) ne vaut que pour l'essai. En annexe, la bibliographie des œuvres citées.
 
 STATUTS_LIB = {"outline": "brief", "draft": "brouillon", "revised": "en relecture", "locked": "validé"}
 
@@ -277,6 +278,13 @@ CSS_ESSAI = """
 .chapitre > header .per{font-style:italic;color:#6b6357;margin:0 0 .4em}
 .chapitre > header .etat{display:flex;gap:.5em;flex-wrap:wrap;align-items:center;margin:.3em 0 1.2em;font-family:system-ui,sans-serif;font-size:8pt;color:#6b6357;border-bottom:1px solid #ddd6c8;padding-bottom:.6em}
 .chapitre .synopsis{border-left:3px solid #c0622f;padding-left:5mm;margin:1em 0}
+.plan-sb{margin:1.1em 0;page-break-inside:avoid}
+.plan-sb h2{font-size:13pt;font-weight:normal;margin:0 0 .15em}
+.plan-sb h2 .id{font-family:system-ui,sans-serif;font-size:9pt;color:#8a5a2b;margin-right:.5em}
+.plan-sb .cadre{font-family:system-ui,sans-serif;font-size:8pt;color:#6b6357;margin:0 0 .3em}
+.plan-sb ol{margin:.2em 0 0;padding-left:1.4em}
+.plan-sb li{font-style:italic;margin:.15em 0}
+.st.storyboard{border-color:#e8b64a;color:#a4561b}
 .chapitre .question{font-style:italic}
 .chapitre .avertit{font-family:system-ui,sans-serif;font-size:8.5pt;color:#6b6357}
 .chapitre h2{font-size:14pt;font-weight:normal;margin:1.4em 0 .4em}
@@ -299,6 +307,8 @@ def _statut_chapitre(c, a):
         return [("synopsis", "synopsis seul"), ("brief" if base == "brief" else base, base)]
     if a["niveau"] == "squelette":
         return [("squelette", "squelette · %d section(s) à écrire" % a["a_ecrire"])]
+    if a["niveau"] == "storyboard":
+        return [("storyboard", "storyboard · %d plan(s)" % a["plans"])]
     E = [({"brief": "brief", "brouillon": "brouillon", "en relecture": "relecture", "validé": "valide"}.get(base, "brouillon"), base)]
     if a["niveau"] == "origine":
         E.append(("", "texte d'origine, hors atelier"))
@@ -307,10 +317,11 @@ def _statut_chapitre(c, a):
     return E
 
 
-def _avancement(c):
-    """Ce qu'on peut montrer d'un chapitre : son texte d'essai, son squelette, ou son synopsis."""
+def _avancement(c, version="essai"):
+    """Ce qu'on peut montrer d'un chapitre dans une version : son texte, son squelette (essai), son
+    storyboard (récit), ou son synopsis."""
     d = livre.dossier(c["slug"])
-    pe = d / "essai.md"
+    pe = d / (version + ".md")
     brut = pe.read_text(encoding="utf-8") if pe.exists() else ""
     if brut.strip():
         paras = [l for l in brut.split("\n\n") if l.strip() and not l.lstrip().startswith("#")]
@@ -320,7 +331,7 @@ def _avancement(c):
         a = {"niveau": "texte", "mots": len(re.sub(r"\^[a-z0-9]+|\[\^[^\]]+\]", "", brut).split())}
         try:
             from . import validation
-            r = validation.etat(c["slug"])["resume"].get("essai") or {}
+            r = validation.etat(c["slug"])["resume"].get(version) or {}
             n = sum(v for k, v in r.items() if isinstance(v, int))
             if r.get("valide"):
                 a["harnais"] = {"ok": r.get("valide") == n, "lib": "harnais : %d/%d paragraphes validés" % (r["valide"], n)}
@@ -328,16 +339,19 @@ def _avancement(c):
             pass
         return a
     try:
-        h = livre.texte(c["slug"], "essai")["html"]      # l'héritage : le texte d'avant l'atelier
+        h = livre.texte(c["slug"], version)["html"]      # l'héritage : le texte d'avant l'atelier
         h = re.sub(r'<div class="footnote">.*$', "", h, flags=re.S)
         return {"niveau": "origine", "mots": len(re.sub(r"<[^>]+>", " ", h).split())}
     except KeyError:
-        return {"niveau": "synopsis"}
+        pass
+    if version == "recit" and c.get("beats"):
+        return {"niveau": "storyboard", "plans": len(c["beats"])}
+    return {"niveau": "synopsis"}
 
 
-def _chapitre_html(c, a):
+def _chapitre_html(c, version="essai"):
     """Le texte d'un chapitre, sans l'en-tête que livre.texte lui met, ancres préfixées par le slug."""
-    h = livre.texte(c["slug"], "essai")["html"]
+    h = livre.texte(c["slug"], version)["html"]
     h = re.sub(r"^\s*<h1>.*?</h1>\s*(<p><em>.*?</em></p>\s*)?(<hr\s*/?>)?", "", h, count=1, flags=re.S)
     s = c["slug"]
     h = re.sub(r'id="sec-([\w-]+)"', r'id="sec-%s--\1"' % s, h)
@@ -348,13 +362,35 @@ def _chapitre_html(c, a):
                   lambda m: '<cite><a href="#oeuvre-%s">%s</a></cite>' % (m.group(1), html.escape(_courte(m.group(1)))), h)
 
 
+def _nom_version(version):
+    return ((livre.meta().get("versions") or {}).get(version) or {}).get("titre") or version.capitalize()
+
+
+def _storyboard_html(beats):
+    L = []
+    for b in beats:
+        cadre = " · ".join(str(b[k]) for k in ("lieu", "temps", "ambiance") if b.get(k))
+        recits = "".join("<li>%s</li>" % html.escape(" ".join(str(r).split())) for r in b.get("recits") or [])
+        L.append('<div class="plan-sb"><h2><span class="id">%s</span>%s</h2>%s%s</div>' % (
+            html.escape(str(b.get("id", ""))), html.escape(b.get("title") or ""),
+            '<p class="cadre">%s</p>' % html.escape(cadre) if cadre else "", "<ol>%s</ol>" % recits if recits else ""))
+    return "".join(L)
+
+
 def essai_imprimable():
+    return version_imprimable("essai")
+
+
+def version_imprimable(version="essai"):
     from . import plan
+    if version not in livre.VERSIONS:
+        raise KeyError(version)
     m = livre.meta()
     P = plan.lit()
     tous = {c["slug"]: c for c in livre.chapitres()}
-    prefaces = [c for c in livre.structure().get("prefaces") or [] if "essai" in (c.get("versions") or ["essai"])]
-    mode = m.get("numerotation_essai") or "aucune"
+    prefaces = [c for c in livre.structure().get("prefaces") or [] if version in (c.get("versions") or [version])]
+    mode = (m.get("numerotation_essai") or "aucune") if version == "essai" else "aucune"
+    nom = _nom_version(version)
     jour = datetime.date.today()
     # l'avancement de chaque chapitre, une fois
     chapitres = [dict(c, numero=None, partie=None) for c in prefaces]
@@ -369,13 +405,17 @@ def essai_imprimable():
             br = yaml.safe_load(bp.read_text(encoding="utf-8")) or {}
         c.setdefault("synopsis", br.get("synopsis"))
         c.setdefault("question", br.get("question"))
-        c["av"] = _avancement(c)
+        c["beats"] = br.get("beats") or []
+        c["av"] = _avancement(c, version)
         c["etiq"] = _statut_chapitre(c, c["av"])
-        c["corps"] = _chapitre_html(c, c["av"]) if c["av"]["niveau"] in ("texte", "origine", "squelette") else None
+        c["corps"] = _chapitre_html(c, version) if c["av"]["niveau"] in ("texte", "origine", "squelette") else None
         # les sections numérotées (premier niveau), pour la table des matières quand la numérotation est active
         c["sections"] = re.findall(r'<h2 id="(sec-[\w-]+)" data-num="([^"]+)"[^>]*>(.*?)</h2>', c["corps"] or "", flags=re.S)
     ecrits = sum(1 for c in chapitres if c["av"]["niveau"] in ("texte", "origine"))
     mots = sum(c["av"].get("mots", 0) for c in chapitres)
+    citees = set()
+    for c in chapitres:
+        citees.update(re.findall(r'href="#oeuvre-([\w-]+)"', c["corps"] or ""))
 
     def badges(c):
         return "".join('<span class="st %s">%s</span>' % (k, html.escape(v)) for k, v in c["etiq"])
@@ -384,12 +424,12 @@ def essai_imprimable():
         return "%s" % c["numero"] if c.get("numero") else ""
 
     H = ['<!doctype html><html lang="%s"><head><meta charset="utf-8">' % (m.get("langue") or "fr"),
-         "<title>%s — essai</title><style>%s%s</style></head><body>" % (html.escape(m.get("titre", "")), CSS, CSS_ESSAI)]
+         "<title>%s — %s</title><style>%s%s</style></head><body>" % (html.escape(m.get("titre", "")), html.escape(nom.lower()), CSS, CSS_ESSAI)]
     # la page de garde
-    H.append('<section class="couverture">%s<div class="sur">%s</div><h1>%s</h1>%s<div class="kb">Essai</div>'
+    H.append('<section class="couverture">%s<div class="sur">%s</div><h1>%s</h1>%s<div class="kb">%s</div>'
              '<div class="synopsis">%s</div><div class="meta">%d chapitres · %d rédigés%s · état au %s</div></section>' % (
                  _couverture_img(), html.escape(m.get("auteur") or ""), html.escape(m.get("titre", "")),
-                 '<p class="sous">%s</p>' % html.escape(m["sous_titre"]) if m.get("sous_titre") else "",
+                 '<p class="sous">%s</p>' % html.escape(m["sous_titre"]) if m.get("sous_titre") else "", html.escape(nom),
                  markdown.markdown(P["livre"].get("idee") or m.get("synopsis") or ""), len(chapitres), ecrits,
                  " · %s mots" % format(mots, ",").replace(",", " ") if mots else "", jour.strftime("%d/%m/%Y")))
     # la table des matières : le plan
@@ -410,8 +450,7 @@ def essai_imprimable():
     for i, p in enumerate(P["parties"], 1):
         H.append('<div class="partie"><a href="#partie-%s">%s · %s</a></div><ol>%s</ol>' % (
             p["id"], _romain(i), html.escape(p["title"] or ""), "".join(ligne(c) for c in chapitres if c["partie"] == p["id"])))
-    H.append('<div class="partie"><a href="#bibliographie">Bibliographie</a></div></section>')
-    citees = set()
+    H.append('<div class="partie"><a href="#bibliographie">Bibliographie</a></div></section>' if citees or version == "essai" else "</section>")
 
     def chapitre(c):
         a = c["av"]
@@ -424,6 +463,12 @@ def essai_imprimable():
             corps = c["corps"]
             if a["niveau"] == "squelette":
                 corps = '<p class="avertit">Le squelette de l\'essai : les sections prévues, chacune avec ce qu\'elle doit établir.</p>' + corps
+        elif a["niveau"] == "storyboard":
+            corps = ""
+            if c.get("synopsis"):
+                corps += '<div class="synopsis">%s</div>' % markdown.markdown(c["synopsis"])
+            corps += '<p class="avertit">Le storyboard : les plans du chapitre, chacun avec son cadre et ses micro-récits, dans l\'ordre.</p>'
+            corps += _storyboard_html(c["beats"])
         else:
             corps = ""
             if c.get("synopsis"):
@@ -432,7 +477,6 @@ def essai_imprimable():
                 corps += '<p class="question">%s</p>' % html.escape(c["question"])
             if not corps:
                 corps = '<p class="avertit">Ni texte ni synopsis pour l\'instant.</p>'
-        citees.update(re.findall(r'href="#oeuvre-([\w-]+)"', corps))
         return '<section class="%s" id="chap-%s">%s%s</section>' % (classes, c["slug"], tete, corps)
 
     for c in chapitres:
@@ -448,7 +492,10 @@ def essai_imprimable():
         for c in chapitres:
             if c["partie"] == p["id"]:
                 H.append(chapitre(c))
-    # la bibliographie des œuvres citées
+    # la bibliographie des œuvres citées (le récit n'en a pas, d'ordinaire)
+    if not citees and version != "essai":
+        H.append("</body></html>")
+        return "\n".join(H)
     O = {o["cle"]: o for o in kb.oeuvres()} if (livre.LIVRE / "kb").exists() else {}
     refs = livre.sources()
     H.append('<section class="biblio" id="bibliographie"><h2>Bibliographie</h2>')

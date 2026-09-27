@@ -4,6 +4,8 @@
     poetry run python3 migrer/chapitre.py la-mer
     poetry run python3 migrer/chapitre.py la-mer --sec     vérifie sans écrire
     poetry run python3 migrer/chapitre.py la-mer --ecraser remplace aussi brief, textes et liens
+    poetry run python3 migrer/chapitre.py --texte le-corps le-sol …   les textes seuls (voir plus bas)
+    poetry run python3 migrer/chapitre.py --texte --tous            tous les chapitres sans dossier
 
 Produit, à partir du cadre, du storyboard, de l'habillage et des deux chapitres :
 
@@ -22,7 +24,15 @@ Garanties, vérifiées avant toute écriture (le script refuse sinon) :
 Les ^id sont dérivés du slug, de la version et du rang : rejouer la migration
 avant tout travail sur le texte redonne les mêmes. Après, ils vivent leur vie.
 Lecture seule côté source.
+
+--texte : pour un chapitre qui n'a pas encore de cadre (ni verrou, ni storyboard, ni habillage),
+seulement ses deux textes. Écrit recit.md et essai.md (ancrés, mêmes garanties : le texte ancré
+redonne la source), un brief minimal (les fiches de l'en-tête de l'essai, et sa « boucle » s'il
+en a une) et un links.yaml vide. Le verrou et le storyboard viendront avec le cadre, par une
+migration complète (--ecraser garde alors le verrou et ses liens vers l'essai). Ne touche pas un
+chapitre qui a déjà son dossier.
 """
+import os
 import re
 import sys
 import hashlib
@@ -32,7 +42,7 @@ import yaml
 
 AWEN = pathlib.Path(__file__).resolve().parents[3]
 SOURCE = AWEN / "noosphereV2" / "Books" / "UneVie-book"
-CIBLE = AWEN / "UneVie" / "book-atelier" / "chapters"
+CIBLE = pathlib.Path(os.environ.get("ATELIER_LIVRE", AWEN / "UneVie" / "book-atelier")) / "chapters"
 
 ENTETE = re.compile(r"^---\n.*?\n---\n", re.S)
 ANCRE = re.compile(r"[ \t]\^([a-z0-9]+)$")
@@ -50,7 +60,7 @@ def corps(p):
     Le titre et la période vivent dans structure.yaml ; les répéter ici ferait deux
     sources pour une même donnée."""
     t = ENTETE.sub("", p.read_text(encoding="utf-8"), count=1)
-    m = re.match(r"\s*# [^\n]*\n\s*\*[^\n]*\*\s*\n\s*---\s*\n+", t)
+    m = re.match(r"\s*# [^\n]*\n(\s*\*[^\n]*\*\s*\n)?\s*---\s*\n+", t)    # la période peut manquer (préface)
     if not m:
         raise Refus("%s : en-tête « # Titre / *période* / --- » introuvable" % p)
     return t[m.end():].rstrip("\n") + "\n"
@@ -63,7 +73,7 @@ def blocs(texte):
         tete = b.lstrip()
         ancrable = not (tete.startswith("#") or re.fullmatch(r"-{3,}|\*{3,}", tete.strip())
                         or tete.startswith("[^") or tete.startswith("|")
-                        or tete.startswith("```"))
+                        or tete.startswith("```") or tete.startswith("<!--"))   # un commentaire (FIGURE, BROUILLON)
         out.append((b, ancrable))
     return out
 
@@ -392,7 +402,75 @@ def garde_verrou(slug, sections):
 GARDE_TETE = {}
 
 
+def migre_texte(slug):
+    """Les deux textes seuls, pour un chapitre sans cadre."""
+    src = {"recit": SOURCE / "recit" / "chapitres" / (slug + ".md"),
+           "essai": SOURCE / "livre" / "chapitres" / (slug + ".md")}
+    for k, p in src.items():
+        if not p.exists():
+            raise Refus("source absente (%s) : %s" % (k, p.relative_to(AWEN)))
+    pris, textes, stats = set(), {}, {}
+    for v, p in src.items():
+        s = corps(p)
+        a, ids = ancre(slug, v, s, pris)
+        if norm(desancre(a)) != norm(s) or desancre(a).strip() != s.strip():
+            raise Refus("%s : le texte ancré ne redonne pas la source" % v)
+        textes[v + ".md"], stats["blocs " + v] = a, len(ids)
+    tete = (ENTETE.match(src["essai"].read_text(encoding="utf-8")) or re.match("", "")).group(0)   # pas du YAML strict : ligne à ligne
+    brief = {"chapter": slug}
+    f = re.search(r"^fiches:\s*\[(.*)\]", tete, re.M)
+    if f:
+        brief["fiches"] = [x.strip() for x in f.group(1).split(",") if x.strip()]
+    b = re.search(r"^boucle:\s*(.+)$", tete, re.M)
+    if b:
+        brief["boucle"] = " ".join(b.group(1).split())
+    provenance = "# Importé le %s (textes seuls, sans cadre) depuis :\n%s\n" % (
+        datetime.date.today().isoformat(), "".join("#   %s\n" % p.relative_to(AWEN) for p in src.values()))
+    fichiers = dict(textes)
+    fichiers["brief.yaml"] = dump("# Brief — %s. Pas encore de cadre : ni verrou ni storyboard.\n" % slug + provenance + "\n", brief)
+    fichiers["links.yaml"] = "recit: {}\n"
+    stats["fiches"] = len(brief.get("fiches") or [])
+    return fichiers, stats
+
+
+def _identifie_essai(slug):
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+    os.environ.setdefault("ATELIER_LIVRE", str(CIBLE.parent))
+    from atelier import essai as _essai
+    return _essai.pose_identifiants(slug)
+
+
+def main_texte():
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if "--tous" in sys.argv:
+        s = yaml.safe_load((CIBLE.parent / "structure.yaml").read_text(encoding="utf-8")) or {}
+        args = [c["slug"] for c in (s.get("prefaces") or []) + [c for p in s.get("parts") or [] for c in p.get("chapters") or []]]
+    faits, refus = 0, 0
+    for slug in args:
+        d = CIBLE / slug
+        if d.exists():
+            print("%-32s déjà dans l'atelier — laissé" % slug)
+            continue
+        try:
+            fichiers, stats = migre_texte(slug)
+        except Refus as e:
+            print("%-32s REFUS — %s" % (slug, e))
+            refus += 1
+            continue
+        print("%-32s %s" % (slug, "  ".join("%s %d" % kv for kv in stats.items())))
+        if "--sec" in sys.argv:
+            continue
+        d.mkdir(parents=True)
+        for nom, contenu in fichiers.items():
+            (d / nom).write_text(contenu, encoding="utf-8")
+        n = _identifie_essai(slug)
+        faits += 1
+    print("%d chapitre(s) migré(s)%s%s" % (faits, ", %d refus" % refus if refus else "", " (à sec)" if "--sec" in sys.argv else ""))
+
+
 def main():
+    if "--texte" in sys.argv:
+        return main_texte()
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if len(args) != 1:
         sys.exit(__doc__)

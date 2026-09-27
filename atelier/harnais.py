@@ -137,7 +137,11 @@ def portes_recit(slug):
         q = quota.get(plan)
         if isinstance(q, int) and n > q:
             rel.append({"bloc": None, "extrait": "plan %s" % plan, "libelle": "%d ajouts hors verrou pour un quota de %d" % (n, q)})
-    P.append(_porte("verrou", "Verrou", rel, resume="%d assertions, %d portées" % (len(at["assertions"]), len(portees))))
+    if not at["assertions"]:                  # migré sans cadre : rien à tenir encore, on le dit une fois
+        P.append(_porte("verrou", "Verrou", [{"bloc": None, "extrait": "", "libelle": "pas encore de verrou : chapitre migré sans cadre"}],
+                        niveau="avertissement", resume="pas encore de verrou"))
+    else:
+        P.append(_porte("verrou", "Verrou", rel, resume="%d assertions, %d portées" % (len(at["assertions"]), len(portees))))
     # séquence
     rel, declares = [], 0
     for beat in br.get("beats") or []:

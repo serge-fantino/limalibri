@@ -705,15 +705,31 @@ def kb_imprimable():
 @app.get("/api/essai/imprimable", response_class=HTMLResponse)
 def essai_imprimable():
     """L'essai en un document HTML autonome : page de garde, table des matières, parties et chapitres."""
-    return export.essai_imprimable()
+    return export.version_imprimable("essai")
+
+
+@app.get("/api/recit/imprimable", response_class=HTMLResponse)
+def recit_imprimable():
+    """Le récit en un document HTML autonome : page de garde, table des matières, parties et chapitres."""
+    return export.version_imprimable("recit")
 
 
 @app.get("/api/essai/pdf")
 async def essai_pdf():
     """L'essai en PDF (Chrome sans interface), liens internes gardés."""
+    return await _pdf_version("essai")
+
+
+@app.get("/api/recit/pdf")
+async def recit_pdf():
+    """Le récit en PDF."""
+    return await _pdf_version("recit")
+
+
+async def _pdf_version(quoi):
     from urllib.parse import quote
     try:
-        donnees, nom = await export.pdf("essai")
+        donnees, nom = await export.pdf(quoi)
     except RuntimeError as e:
         raise HTTPException(501, str(e))
     return Response(donnees, media_type="application/pdf",

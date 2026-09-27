@@ -212,6 +212,12 @@ avancement : le **texte**, avec son statut (brief, brouillon, en relecture, vali
 seul, avec sa question. La numérotation (sections, sections + §) suit le réglage du livre. En annexe,
 la bibliographie des œuvres citées.
 
+Le **récit** s'exporte de la même façon (**⎙ récit PDF** dans la barre du livre, **⎙ PDF** dans celle du
+récit ; `/api/recit/pdf`, `/api/recit/imprimable`), avec un niveau d'avancement à lui : entre le synopsis
+et le texte, le **storyboard** — les plans du chapitre, chacun avec son cadre (lieu, temps, ambiance) et
+ses micro-récits. Pas de numérotation (elle est propre à l'essai) ; la bibliographie n'y paraît que si le
+récit cite une œuvre.
+
 La **bibliographie du livre** vit dans `kb/sources/<cle>.yaml`, une œuvre par fichier
 (`atelier/sources.py`) : clé stable, référence, DOI (lu, jamais de mémoire), fiches où l'œuvre est
 exploitée, **statut** — importée (venue de la base centrale, jamais vérifiée une à une), à vérifier,
@@ -378,6 +384,9 @@ poetry install                                        # une fois
 brew install poppler                                  # une fois, hors Poetry : pdftoppm, pour que Claude lise les PDF par pages
 poetry run python3 migrer/structure.py                # ordre.md -> book-atelier/structure.yaml
 poetry run python3 migrer/chapitre.py la-mer          # un chapitre -> book-atelier/chapters/la-mer/
+poetry run python3 migrer/chapitre.py --texte --tous  # les chapitres sans cadre : leurs deux textes seuls (ni verrou ni storyboard)
+poetry run python3 migrer/storyboard.py --tous        # leur storyboard, reconstitué depuis le récit : un plan par groupe entre « --- »,
+                                                      # titres, cadre et micro-récits par Claude (un appel par chapitre)
 poetry run python3 migrer/liens_essai.py la-mer <analyse.json>   # liens verrou -> essai, écarts
 poetry run python3 migrer/bibliographie.py la-mer <analyse.json>  # bibliographie du chapitre
 poetry run python3 migrer/fiches.py                   # science/*.md -> book-atelier/kb/fiches/

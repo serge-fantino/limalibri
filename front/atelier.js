@@ -298,6 +298,7 @@ function barreOutils() {
     const sb = v === "storyboard";
     o.append(bouton("storyboard", sb, () => { location.hash = `${etat.slug}/recit/${sb ? "texte" : "storyboard"}`; },
       "bascule", "le storyboard en regard du récit, ligne à ligne"));
+    o.append(boutonsPdf("recit", "⎙ PDF", "recit.pdf", titrePdf("recit"))[0]);
   } else if (v === "essai") {
     const g = el("span", "groupe");
     for (const [m, lib] of [["texte", "texte"], ["notes", "notes"], ["biblio", "bibliographie"]]) {
@@ -305,7 +306,7 @@ function barreOutils() {
     }
     o.append(g);
     o.append(el("span", "espace"));
-    o.append(boutonsPdf("essai", "⎙ PDF", "essai.pdf", titrePdfEssai())[0]);
+    o.append(boutonsPdf("essai", "⎙ PDF", "essai.pdf", titrePdf("essai"))[0]);
     o.append(el("span", "etiq", "numérotation"));
     const sel = el("select");
     for (const [val, lib] of [["aucune", "aucune"], ["sections", "sections"], ["paragraphes", "sections + §"]]) {
@@ -1053,6 +1054,13 @@ async function storyboard(page) {
       }
       grille.append(g, gout, d);
     }
+  }
+  if (!(br.beats ?? []).length) {            // migré sans cadre : pas de plans, le texte est dans la vue récit
+    const m = el("div", "par-texte");
+    const a = el("a", null, "lire le récit");
+    a.href = `#${etat.slug}/recit/texte`;
+    m.append(el("p", "mut", "Pas encore de storyboard : ce chapitre a été migré avec ses textes seuls, sans cadre. "), a);
+    grille.append(m, el("div", "par-gout"), el("div", "par-sb"));
   }
 
   if (br.constraints?.length) {
@@ -3681,7 +3689,12 @@ function barreLivre() {
   }
   b("claude", etat.ongletLivre === "claude", "livre/claude", "le modèle et le budget de chaque demande, la file d'attente");
   b("consommation", etat.ongletLivre === "consommation", "livre/consommation", "ce que Claude a consommé : jetons, cache, coût, par type, modèle, chapitre, jour");
-  o.append(el("span", "etiq", "livre"), g, el("span", "espace"), ...boutonsPdf("essai", "⎙ essai PDF", "essai.pdf", titrePdfEssai()));
+  o.append(el("span", "etiq", "livre"), g, el("span", "espace"));
+  for (const v of ["recit", "essai"].filter((x) => etat.livre.versions?.[x])) {
+    const [pdf, imp] = boutonsPdf(v, `⎙ ${(etat.livre.versions[v].titre ?? v).toLowerCase()} PDF`, v + ".pdf", titrePdf(v));
+    imp.textContent = "↗";
+    o.append(pdf, imp);
+  }
   const y = el("a", "lien-ext", "livre.yaml ↗");
   y.href = "vscode://file" + (etat.livre.chemins?.["livre.yaml"] ?? "");
   y.title = "ouvrir livre.yaml dans l'éditeur";
@@ -7642,9 +7655,12 @@ async function sectionConsommation() {
 // ------------------------------------------------------------------ les exports PDF
 // Le serveur imprime avec Chrome sans interface ; faute de Chrome, la version imprimable s'ouvre (⌘P).
 
-function titrePdfEssai() {
-  return "tout l'essai en un PDF : page de garde, table des matières (le plan), chaque partie et ses chapitres — " +
-  "le texte avec son statut (brouillon, en relecture, validé, harnais), le squelette, ou le synopsis seul ; bibliographie des œuvres citées";
+function titrePdf(version) {
+  return version === "essai"
+    ? "tout l'essai en un PDF : page de garde, table des matières (le plan), chaque partie et ses chapitres — " +
+      "le texte avec son statut (brouillon, en relecture, validé, harnais), le squelette, ou le synopsis seul ; bibliographie des œuvres citées"
+    : "tout le récit en un PDF : page de garde, table des matières (le plan), chaque partie et ses chapitres — " +
+      "le texte avec son statut (brouillon, en relecture, validé, harnais), le storyboard (plans et micro-récits), ou le synopsis seul";
 }
 
 function boutonsPdf(quoi, lib, nomDefaut, titre) {
