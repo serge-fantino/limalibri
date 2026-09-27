@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -23,6 +23,7 @@ for nom in livre.initialise() + regles.initialise():
     print("atelier : %s créé dans %s" % (nom, livre.LIVRE))
 if reecriture.interrompues():
     print("atelier : des demandes en cours ont été interrompues par le redémarrage (marquées en erreur)")
+conversation.interrompues()
 
 
 @app.on_event("startup")
@@ -305,7 +306,7 @@ def modeles():
     """Les modèles qu'on peut choisir, et ceux que le livre retient par défaut."""
     return {"modeles": reecriture.MODELES,
             "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan")},
-            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan")}}
+            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan", "conversation")}}
 
 
 @app.get("/api/fiches")
@@ -351,6 +352,65 @@ def statuts_oeuvres():
 def refs_resout(texte: str = "", ref: str = ""):
     """Résoudre les références d'un texte (ou une seule) : [{ref, ok, titre, fichier, extrait, vue}]."""
     return [refs.resout(r) for r in ([ref] if ref else refs.trouve(texte))]
+
+
+@app.get("/api/conversations")
+def conversations():
+    return conversation.liste()
+
+
+@app.post("/api/conversations")
+async def conversation_cree(request: Request):
+    """Une conversation neuve : {question?, ici?, modele?}. Avec une question, Claude répond aussitôt."""
+    try:
+        return conversation.cree(await request.json())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/conversations/{ident}")
+def conversation_lit(ident: str):
+    try:
+        return conversation.lit(ident)
+    except KeyError:
+        raise HTTPException(404, "conversation inconnue")
+
+
+@app.post("/api/conversations/{ident}")
+async def conversation_demande(ident: str, request: Request):
+    """Un tour de plus : {question, ici?}."""
+    try:
+        return conversation.demande(ident, await request.json())
+    except KeyError:
+        raise HTTPException(404, "conversation inconnue")
+    except reecriture.Conflit as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/conversations/{ident}")
+def conversation_supprime(ident: str):
+    try:
+        conversation.supprime(ident)
+        return {"ok": True}
+    except KeyError:
+        raise HTTPException(404, "conversation inconnue")
+    except reecriture.Conflit as e:
+        raise HTTPException(409, str(e))
+
+
+@app.post("/api/conversations/{ident}/tours/{n}/actions/{i}")
+async def conversation_action(ident: str, n: int, i: int, request: Request):
+    """Lancer une action proposée (paramètres revus éventuellement) : elle devient une demande."""
+    try:
+        return conversation.lance(ident, n, i, await request.json())
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except reecriture.Conflit as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/plan")

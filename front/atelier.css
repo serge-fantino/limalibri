@@ -829,6 +829,40 @@ h2:hover > .ref-titre,h3:hover > .ref-titre,h4:hover > .ref-titre{opacity:.7}
 .aide-refs{display:flex;flex-wrap:wrap;gap:.3rem .6rem;margin:.2rem 0 .4rem;font-family:var(--ui);font-size:.72rem}
 .ref-resolue.ok{color:#2f6f4f}
 .ref-resolue.ko{color:#c4525a}
+/* ---- parler avec Claude ---- */
+#dialogue{position:fixed;top:2.8rem;right:0;bottom:0;width:min(40rem,50vw);z-index:26;display:flex;flex-direction:column;
+ background:var(--bg);border-left:1px solid var(--rule);box-shadow:-8px 0 30px rgba(0,0,0,.3);font-family:var(--ui);font-size:.84rem;line-height:1.5}
+#dialogue[hidden]{display:none}
+.dia-tete{display:flex;align-items:center;gap:.5rem;padding:.6rem 1rem;border-bottom:1px solid var(--rule)}
+.dia-tete h4{margin:0;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);white-space:nowrap}
+.dia-liste{flex:1;min-width:0;font:inherit;font-size:.78rem}
+.dia-fil{flex:1;overflow:auto;padding:.8rem 1rem 1.5rem}
+.dia-tour{margin-bottom:1.4rem}
+.dia-question{margin-left:15%;padding:.5rem .7rem;background:var(--bar);border-radius:8px;white-space:pre-wrap}
+.dia-ici{font-size:.72rem;color:var(--mut);margin-top:.2rem}
+.dia-reponse{margin-top:.6rem}
+.dia-reponse p{margin:.45rem 0}
+.dia-reponse ul,.dia-reponse ol{margin:.4rem 0;padding-left:1.3rem}
+.dia-reponse h5{margin:.8rem 0 .3rem;font-size:.84rem}
+.dia-reponse code{font-size:.8em;background:var(--bar);padding:0 .2rem;border-radius:3px}
+.dia-direct{margin-top:.6rem}
+.dia-action{margin:.6rem 0;padding:.5rem .7rem;border:1px solid var(--rule);border-left:3px solid var(--acc);border-radius:4px}
+.dia-action.lancee{opacity:.75;border-left-color:#2f6f4f}
+.dia-action-tete{display:flex;gap:.5rem;align-items:baseline}
+.dia-type{font-size:.72rem;color:var(--acc);white-space:nowrap}
+.dia-cible{font-size:.74rem;color:var(--mut);margin:.2rem 0}
+.dia-consigne{width:100%;box-sizing:border-box;margin-top:.3rem}
+.dia-pied{display:flex;align-items:center;gap:.7rem;margin-top:.3rem;flex-wrap:wrap}
+.dia-meta{display:flex;gap:.7rem;flex-wrap:wrap;margin-top:.3rem}
+.dia-saisie{border-top:1px solid var(--rule);padding:.6rem 1rem .8rem}
+.dia-q{width:100%;box-sizing:border-box}
+.dia-ici-choix{font-size:.74rem;color:var(--mut)}
+@media(max-width:700px){#dialogue{width:100vw}}
+/* ---- la liste des demandes : filtres ---- */
+.dem-choix,.dem-date,.dem-texte{font:inherit;font-size:.76rem;padding:.1rem .3rem;margin:.2rem .4rem .2rem 0}
+.dem-texte{min-width:12rem}
+.plan-historique{margin:.4rem 0;font-family:var(--ui);font-size:.8rem}
+.plan-historique ul{margin:.3rem 0;padding-left:1.2rem}
 @media(max-width:1100px){#cadre{grid-template-columns:14rem minmax(0,1fr) 16rem}
  body[data-vue="storyboard"][data-panneau] #cadre{grid-template-columns:minmax(0,1fr) 22rem}
  body[data-vue="storyboard"][data-panneau] #gauche{display:none}}

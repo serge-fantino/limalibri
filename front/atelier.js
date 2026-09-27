@@ -2530,6 +2530,8 @@ function liensDemandes(filtre, titre) {
 // (une demande peut partir d'une annotation ; la carte montre alors ce lien).
 async function tiroirAnnotations() {
   clearTimeout(suivi);
+  etat.tiroirMontre = null;
+  clearTimeout(suivi);
   const t = document.getElementById("tiroir");
   t.hidden = false;
   document.body.dataset.tiroir = "1";
@@ -2609,13 +2611,14 @@ function retiensTiroir(ident) {
 
 async function tiroir(ident) {
   clearTimeout(suivi);
+  etat.tiroirMontre = ident ?? null;
   retiensTiroir(ident);
   majCompteFiches();
   const t = document.getElementById("tiroir");
   t.hidden = false;
   document.body.dataset.tiroir = "1";
   if ((!etat.slug || !etat.atelier) && !/^[fplros]-/.test(String(ident ?? ""))) {
-    if (!ident && etat.wiki) return historiqueFiches(t);
+    if (!ident) return historique(t, etat.wiki ? "fiches" : null);
     t.replaceChildren(teteTiroir("Réécritures"), el("p", "mut", "Ouvrir un chapitre de l'atelier."));
     return;
   }
@@ -2945,7 +2948,8 @@ async function rafraichitDirect(ident) {
   if (t.hidden) return;
   const d = await api(`/chapitres/${slugDe(ident)}/demandes/${ident}`).catch(() => null);
   const z = document.getElementById("dem-direct");
-  if (!d || d.etat !== "en_cours" || !z) return tiroir(ident);      // fini (ou autre tiroir) : tout redessiner
+  if (etat.tiroirMontre !== ident) return;                           // le tiroir montre autre chose : on arrête
+  if (!d || d.etat !== "en_cours" || !z) return tiroir(ident);       // fini : tout redessiner
   remplitDirect(z, d);
   suivi = setTimeout(() => rafraichitDirect(ident), 2000);
 }
@@ -3158,7 +3162,7 @@ function teteTiroir(titre, retour = null) {
   if (retour) {
     const r = el("button", "retour", "← demandes");
     r.title = "revenir à la liste des demandes";
-    r.onclick = retour;
+    r.onclick = () => { clearTimeout(suivi); retiensTiroir(null); retour(); };
     h.append(r);
   }
   const x = el("button", "fermer", "×");
@@ -3169,29 +3173,96 @@ function teteTiroir(titre, retour = null) {
 
 const OUVERTES = new Set(["en_cours", "prete", "en_attente", "a_confirmer"]);
 
-async function historique(t) {
-  const F = etat.filtresDem ??= { portee: "chapitre", type: "tout", statut: "tout" };
+const LIB_TYPES = { reecriture: "↻ réécriture", verification: "🔎 vérification", naive: "👁 lecture naïve", fiche: "◇ fiche",
+  pistes: "◇ creuser", renvois: "⇄ renvois", reference: "🔎 référence", document: "⤓ original", plan: "✦ plan" };
+const STATUTS_DEM = [["tout", "tous les statuts"], ["ouvertes", "ouvertes"], ["en_cours", "en cours"], ["a_decider", "à décider"],
+  ["en_attente", "en attente"], ["erreur", "en erreur"], ["retenues", "retenues"], ["rejetees", "rejetées"], ["closes", "closes"]];
+const PERIODES = [["tout", "toutes dates"], ["1", "aujourd'hui"], ["2", "depuis hier"], ["7", "7 jours"], ["30", "30 jours"], ["date", "depuis le…"]];
+
+function statutDe(d, s) {
+  switch (s) {
+    case "tout": return true;
+    case "ouvertes": return OUVERTES.has(d.etat);
+    case "closes": return !OUVERTES.has(d.etat);
+    case "a_decider": return d.etat === "prete" || d.etat === "a_confirmer";
+    case "retenues": return d.etat === "decidee" && !!d.decision?.proposition;
+    case "rejetees": return d.etat === "decidee" && !d.decision?.proposition;
+    default: return d.etat === s;
+  }
+}
+
+function periodeDe(d, F) {
+  if (F.periode === "tout") return true;
+  const c = (d.cree ?? "").slice(0, 10);
+  if (F.periode === "date") return !F.depuis || c >= F.depuis;
+  const j = new Date();
+  j.setDate(j.getDate() - (Number(F.periode) - 1));
+  return c >= j.toLocaleDateString("sv");                 // AAAA-MM-JJ, heure locale
+}
+
+// La liste des demandes : ce chapitre, tout le livre, ou les fiches (la base) ; filtres par type,
+// statut, période et texte. Les filtres sont retenus pour la session.
+async function historique(t, portee = null) {
+  clearTimeout(suivi);
+  etat.tiroirMontre = null;
+  const F = etat.filtresDem ??= { portee: "chapitre", type: "tout", statut: "tout", periode: "tout", depuis: "", texte: "" };
+  if (portee) F.portee = portee;
+  const sansChapitre = !etat.slug || !etat.atelier || etat.wiki || etat.accueil;
+  if (F.portee === "chapitre" && sansChapitre) F.portee = "livre";
   const ds = F.portee === "livre" ? await api("/demandes").catch(() => [])
+    : F.portee === "fiches" ? (await api("/fiches/demandes").catch(() => [])).map((d) => ({ ...d, chapitre: "_kb" }))
     : (await api(`/chapitres/${etat.slug}/demandes`).catch(() => [])).map((d) => ({ ...d, chapitre: etat.slug }));
-  t.replaceChildren(teteTiroir(F.portee === "livre" ? "Demandes du livre" : "Demandes du chapitre"));
-  const filtre = (cle, options) => {
+  t.replaceChildren(teteTiroir({ livre: "Demandes du livre", fiches: "Demandes des fiches", chapitre: "Demandes du chapitre" }[F.portee]));
+  const redessine = () => historique(t);
+  const boutons = (cle, options) => {
     const g = el("span", "groupe filtres");
     for (const [v, lib] of options) {
       const b = el("button", F[cle] === v ? "actif" : null, lib);
-      b.onclick = () => { F[cle] = v; historique(t); };
+      b.onclick = () => { F[cle] = v; redessine(); };
       g.append(b);
     }
     return g;
   };
+  const choix = (cle, options, compte) => {
+    const s = el("select", "dem-choix");
+    for (const [v, lib] of options) {
+      const n = compte ? compte(v) : null;
+      s.append(new Option(n == null || v === "tout" ? lib : `${lib} (${n})`, v, false, F[cle] === v));
+    }
+    s.onchange = () => { F[cle] = s.value; redessine(); };
+    return s;
+  };
   const barre = el("div", "dem-filtres");
-  barre.append(filtre("portee", [["chapitre", "ce chapitre"], ["livre", "tout le livre"]]),
-    filtre("type", [["tout", "tout"], ["reecriture", "réécritures"], ["verification", "recherches"], ["fiche", "fiches"]]),
-    filtre("statut", [["tout", "tout"], ["ouvertes", "ouvertes"], ["closes", "closes"]]));
-  t.append(barre);
-  const garde = ds.filter((d) => (F.type === "tout" || (d.type ?? "reecriture") === F.type || (F.type === "fiche" && d.type === "pistes"))
-    && (F.statut === "tout" || (F.statut === "ouvertes") === OUVERTES.has(d.etat)));
+  barre.append(boutons("portee", [...(sansChapitre ? [] : [["chapitre", "ce chapitre"]]), ["livre", "tout le livre"], ["fiches", "fiches"]]));
+  const types = [["tout", "tous les types"], ...Object.entries(LIB_TYPES).filter(([v]) => ds.some((d) => (d.type ?? "reecriture") === v))];
+  const sel = el("div", "dem-filtres");
+  sel.append(choix("type", types, (v) => ds.filter((d) => (d.type ?? "reecriture") === v).length),
+    choix("statut", STATUTS_DEM, (v) => ds.filter((d) => statutDe(d, v)).length),
+    choix("periode", PERIODES));
+  if (F.periode === "date") {
+    const dt = el("input", "dem-date");
+    dt.type = "date";
+    dt.value = F.depuis;
+    dt.onchange = () => { F.depuis = dt.value; redessine(); };
+    sel.append(dt);
+  }
+  const q = el("input", "dem-texte");
+  q.type = "search";
+  q.placeholder = "chercher (titre, consigne)…";
+  q.value = F.texte;
+  let minuteur = null;
+  q.oninput = () => { clearTimeout(minuteur); minuteur = setTimeout(() => { F.texte = q.value; redessine(); }, 300); };
+  sel.append(q);
+  const efface = el("button", "pan-lien", "effacer les filtres");
+  efface.onclick = () => { Object.assign(F, { type: "tout", statut: "tout", periode: "tout", depuis: "", texte: "" }); redessine(); };
+  if (F.type !== "tout" || F.statut !== "tout" || F.periode !== "tout" || F.texte) sel.append(efface);
+  t.append(barre, sel);
+  const mots = F.texte.trim().toLowerCase();
+  const garde = ds.filter((d) => (F.type === "tout" || (d.type ?? "reecriture") === F.type) && statutDe(d, F.statut) && periodeDe(d, F)
+    && (!mots || `${d.titre ?? ""} ${d.consigne ?? ""} ${d.question ?? ""}`.toLowerCase().includes(mots)));
+  if (F.texte) setTimeout(() => { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 0);
   if (!garde.length) {
-    t.append(el("p", "mut", ds.length ? "Aucune demande pour ces filtres." :
+    t.append(el("p", "mut", ds.length ? `Aucune demande pour ces filtres (${ds.length} en tout).` :
       "Aucune demande. ↻ réécrire depuis une annotation, un paragraphe ou un plan ; 🔎 vérifier depuis une assertion ou une annotation."));
     return;
   }
@@ -3206,10 +3277,10 @@ async function historique(t) {
     return s;
   }, { e: 0, s: 0, c: 0, n: 0, nc: 0 });
   // les demandes anciennes n'ont que leur coût : chaque total dit sur combien de demandes il porte
-  const totaux = [];
-  if (tot.n) totaux.push(`jetons (${tot.n} demande${tot.n > 1 ? "s" : ""}) : ↑ ${k(tot.e)} en entrée · ↓ ${k(tot.s)} en sortie`);
-  if (tot.nc) totaux.push(`≈ ${tot.c.toFixed(2)} $ au tarif API (${tot.nc} demande${tot.nc > 1 ? "s" : ""})`);
-  if (totaux.length) t.append(el("p", "mut petit", "Total — " + totaux.join(" ; ")));
+  const totaux = [`${garde.length} demande${garde.length > 1 ? "s" : ""}${garde.length < ds.length ? ` sur ${ds.length}` : ""}`];
+  if (tot.n) totaux.push(`jetons (${tot.n}) : ↑ ${k(tot.e)} en entrée · ↓ ${k(tot.s)} en sortie`);
+  if (tot.nc) totaux.push(`≈ ${tot.c.toFixed(2)} $ au tarif API (${tot.nc})`);
+  t.append(el("p", "mut petit", totaux.join(" ; ")));
   // classement par chapitre, dans l'ordre du livre ; dans un chapitre, les plus récentes d'abord
   const parChap = new Map();
   for (const d of garde) {
@@ -3218,18 +3289,16 @@ async function historique(t) {
   }
   const ordre = etat.chapitres.map((c) => c.slug);
   for (const slug of [...parChap.keys()].sort((a, b) => ordre.indexOf(a) - ordre.indexOf(b))) {
-    const c = slug === "_kb" ? { numero: "◇", title: "Fiches" } : etat.chapitres.find((x) => x.slug === slug);
-    const liste = parChap.get(slug);
+    const c = slug === "_kb" ? { numero: "◇", title: "Fiches et livre" } : etat.chapitres.find((x) => x.slug === slug);
+    const liste = parChap.get(slug).sort((a, b) => (a.cree < b.cree ? 1 : -1));
     const ouvertes = liste.filter((d) => OUVERTES.has(d.etat)).length;
-    t.append(el("h5", "dem-chapitre", `${c?.numero ?? ""} · ${c?.title ?? slug} — ${liste.length} demande(s)${ouvertes ? `, ${ouvertes} ouverte(s)` : ""}`));
+    if (F.portee !== "chapitre") t.append(el("h5", "dem-chapitre", `${c?.numero ?? ""} · ${c?.title ?? slug} — ${liste.length} demande(s)${ouvertes ? `, ${ouvertes} ouverte(s)` : ""}`));
     for (const d of liste) {
       const l = el("button", "dem-ligne " + (OUVERTES.has(d.etat) ? "ouverte" : "close"));
       const haut = el("span", "dem-haut");
-      haut.append(el("span", "annot-type", d.type === "verification" ? "🔎 recherche" : d.type === "fiche" ? "◇ fiche"
-        : d.type === "pistes" ? "◇ creuser" : d.type === "renvois" ? "⇄ renvois" : d.type === "reference" ? "🔎 référence"
-        : d.type === "naive" ? "👁 lecture naïve" : "↻ réécriture"),
+      haut.append(el("span", "annot-type", LIB_TYPES[d.type ?? "reecriture"] ?? d.type),
         el("span", "dem-etat " + d.etat, etiquetteDemande(d)), el("span", "annot-date", d.cree.slice(0, 16).replace("T", " ")));
-      l.append(haut, el("span", "dem-titre-ligne", d.titre ?? ""));
+      l.append(haut, el("span", "dem-titre-ligne", d.titre ?? d.question ?? ""));
       if (d.consigne) l.append(el("span", "dem-consigne", "« " + d.consigne + " »"));
       if (d.jetons) {
         const j = d.jetons;
@@ -3793,15 +3862,15 @@ function sectionClaude(L) {
     el("span", "mut petit", `${F.en_attente.length} en attente · désactivé : chaque demande se lance à la main`))).catch(() => {});
   s.append(fileBox);
   const LIB = { verification: "Vérification", reecriture: "Réécriture", fiche: "Fiche nouvelle", pistes: "Creuser", reference: "Référence",
-    naive: "Lecture naïve", document: "Texte original", plan: "Plan" };
+    naive: "Lecture naïve", document: "Texte original", plan: "Plan", conversation: "Conversation" };
   const CH = { tours: "tours", recherches: "recherches web", pages: "pages lues" };
-  for (const g of ["verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan"]) {
+  for (const g of ["conversation", "verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan"]) {
     const G = C[g] ?? {};
     const lim = etat.modeles?.limites?.[g] ?? {};
     const box = el("div", "claude-genre");
     box.append(el("strong", null, LIB[g]),
       selModele(G.modele, "comme le livre", (v) => apres({ [g]: { modele: v } })));
-    for (const cle of ["verification", "fiche", "reference", "document"].includes(g) ? ["tours", "recherches", "pages"] : g === "naive" ? [] : ["tours"]) {
+    for (const cle of ["verification", "fiche", "reference", "document", "conversation"].includes(g) ? ["tours", "recherches", "pages"] : g === "naive" ? [] : ["tours"]) {
       const n = el("input", "claude-nombre");
       n.type = "number";
       n.min = 0;
@@ -4612,7 +4681,7 @@ function lieRefs(racine) {
   for (const n of aTraiter) {
     const frag = document.createDocumentFragment();
     let i = 0;
-    for (const m of n.data.matchAll(MOTIF_REF)) {
+    for (const m of n.data.matchAll(new RegExp(MOTIF_REF.source, "g"))) {
       frag.append(n.data.slice(i, m.index));
       const a = el("a", "ref-lien", m[0]);
       a.href = "#";
@@ -4629,7 +4698,7 @@ function lieRefs(racine) {
 let refsMinuteur = null;
 document.addEventListener("input", (e) => {
   const x = e.target;
-  if (!(x instanceof HTMLTextAreaElement || x instanceof HTMLInputElement) || !x.closest("#tiroir, #page, #fiche")) return;
+  if (!(x instanceof HTMLTextAreaElement || x instanceof HTMLInputElement) || !x.closest("#tiroir, #page, #fiche, #dialogue")) return;
   clearTimeout(refsMinuteur);
   refsMinuteur = setTimeout(async () => {
     let aide = x.nextElementSibling?.classList.contains("aide-refs") ? x.nextElementSibling : null;
@@ -4731,11 +4800,29 @@ function boutonPropose(niveau, cible, lib) {
 async function demandesPlan(niveau, cible) {
   const ds = await api("/fiches/demandes").catch(() => []);
   const d = el("div");
-  for (const x of ds.filter((y) => y.type === "plan" && y.niveau === niveau && (niveau === "livre" || y.partie === cible || y.chapitre === cible)
-    && ["en_cours", "prete", "erreur"].includes(y.etat))) {
+  const ici = ds.filter((y) => y.type === "plan" && y.niveau === niveau && (niveau === "livre" || y.partie === cible || y.chapitre === cible));
+  for (const x of ici.filter((y) => ["en_cours", "prete", "erreur"].includes(y.etat))) {
     const b = el("button", "banniere-pistes", `✦ ${x.titre} — ${etiquetteDemande(x)} → ouvrir`);
     b.onclick = () => tiroir(x.id);
     d.append(b);
+  }
+  // les propositions passées restent attachées à leur niveau : ce qui a été retenu, rejeté, et leurs manques
+  const passees = ici.filter((y) => !["en_cours", "prete", "erreur"].includes(y.etat));
+  if (passees.length) {
+    const h = el("details", "plan-historique");
+    h.append(el("summary", "mut petit", `propositions passées de Claude (${passees.length})`));
+    const ul = el("ul");
+    for (const x of passees) {
+      const li = el("li");
+      const a = el("a", null, `${(x.cree ?? "").slice(0, 10)} · ${x.decision?.proposition === "retenue" ? `retenue (${x.decision.faits?.length ?? 0} changements)` : etiquetteDemande(x)}`);
+      a.href = "#";
+      a.onclick = (e) => { e.preventDefault(); tiroir(x.id); };
+      li.append(a);
+      if (x.consigne) li.append(el("span", "mut petit", " — " + x.consigne.slice(0, 90)));
+      ul.append(li);
+    }
+    h.append(ul);
+    d.append(h);
   }
   return d;
 }
@@ -5613,6 +5700,8 @@ const ICONE_PORTE = (p) => (p.ok ? "✓" : p.niveau === "bloquant" ? "✗" : "�
 
 async function tiroirHarnais(version) {
   clearTimeout(suivi);
+  etat.tiroirMontre = null;
+  clearTimeout(suivi);
   retiensTiroir(null);
   const t = document.getElementById("tiroir");
   t.hidden = false;
@@ -6167,19 +6256,8 @@ function formFiche(base = {}) {
 }
 
 // La liste des demandes de fiche (tiroir ouvert depuis le wiki).
-async function historiqueFiches(t) {
-  const ds = (await api("/fiches/demandes").catch(() => [])).sort((a, b) => (a.cree < b.cree ? 1 : -1));
-  t.replaceChildren(teteTiroir("Demandes de fiches"));
-  if (!ds.length) t.append(el("p", "mut", "Aucune. « ◇ nouvelle fiche… » sur l'index des fiches."));
-  for (const x of ds) {
-    const l = el("button", "dem-ligne " + (OUVERTES.has(x.etat) ? "ouverte" : "close"));
-    const haut = el("span", "dem-haut");
-    haut.append(el("span", "annot-type", LIB_TYPE_KB[x.type] ?? x.type),
-      el("span", "dem-etat " + x.etat, etiquetteDemande(x)), el("span", "annot-date", x.cree.slice(0, 16).replace("T", " ")));
-    l.append(haut, el("span", "dem-titre-ligne", x.question ?? x.titre));
-    l.onclick = () => tiroir(x.id);
-    t.append(l);
-  }
+function historiqueFiches(t) {
+  return historique(t, "fiches");
 }
 
 async function tiroirFiche(t, d) {
@@ -7189,3 +7267,265 @@ majCompteFiches();
   depuisAdresse();
   if (t?.id && t.slug === "_kb") setTimeout(() => tiroir(t.id), 300);
 }
+
+// ------------------------------------------------------------------ parler avec Claude
+//
+// Un panneau ouvert depuis l'en-tête, dans toutes les vues. Claude lit le livre et répond ; il ne
+// touche à rien. Ses propositions de travail sont des actions que l'auteur lance d'un clic : elles
+// deviennent des demandes ordinaires. « ici » : la référence de ce que l'auteur regarde, jointe à la
+// question (décochable).
+
+let suiviDialogue = null;
+
+const poste = (chemin, corps, methode = "POST") =>
+  fetch("/api" + chemin, { method: methode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps ?? {}) })
+    .then(async (r) => (r.ok ? r.json() : Promise.reject((await r.json().catch(() => ({}))).detail ?? r.status)));
+
+// Ce que l'auteur regarde, en référence.
+function refIci() {
+  const [a, b, c] = decodeURIComponent(location.hash.slice(1)).split("/");
+  if (a === "fiches" && b) return `@fiche/${b}${c ? "#" + c : ""}`;
+  if (a === "biblio" && b) return `@oeuvre/${b}`;
+  if (a === "plan" && b === "p" && c) return `@partie/${c}`;
+  if (a === "plan" && b === "c" && c) return `@chapitre/${c}`;
+  if ((a === "livre" || !a) && b === "regles" && c) return etat.regleCible ? `@regle/${c}/${etat.regleCible}` : null;
+  if (etat.accueil || etat.wiki || !etat.slug) return null;
+  const v = versionVue();
+  const bloc = v === "essai" ? etat.blocEssai : etat.bloc;
+  return bloc ? `@chapitre/${etat.slug}/${v}^${bloc}` : `@chapitre/${etat.slug}/${v}`;
+}
+
+// Un Markdown sobre : titres, listes, paragraphes, **gras**, *italique*, `code`.
+function mdDialogue(texte) {
+  const f = document.createDocumentFragment();
+  const enLigne = (n, s) => {
+    for (const m of s.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*)/)) {
+      if (!m) continue;
+      if (m.startsWith("**")) n.append(el("strong", null, m.slice(2, -2)));
+      else if (m.startsWith("`")) n.append(el("code", null, m.slice(1, -1)));
+      else if (m.startsWith("*") && m.length > 2) n.append(el("em", null, m.slice(1, -1)));
+      else n.append(document.createTextNode(m));
+    }
+    return n;
+  };
+  let liste = null;
+  for (const bloc of (texte ?? "").split(/\n{2,}/)) {
+    const lignes = bloc.split("\n");
+    if (lignes.every((l) => /^\s*([-*]|\d+\.)\s/.test(l) || !l.trim())) {
+      liste = el(/^\s*\d/.test(lignes[0]) ? "ol" : "ul");
+      for (const l of lignes.filter((x) => x.trim())) liste.append(enLigne(el("li"), l.replace(/^\s*([-*]|\d+\.)\s+/, "")));
+      f.append(liste);
+      continue;
+    }
+    const h = bloc.match(/^(#{1,4})\s+(.*)$/);
+    if (h && lignes.length === 1) { f.append(enLigne(el("h5"), h[2])); continue; }
+    const p = el("p");
+    lignes.forEach((l, i) => { if (i) p.append(el("br")); enLigne(p, l); });
+    f.append(p);
+  }
+  return f;
+}
+
+const LIB_ACTION = { fiche: "✚ fiche", pistes: "⛏ creuser", verification: "🔎 vérification", reecriture: "↻ réécriture",
+  naive: "👁 lecture naïve", plan: "✦ plan" };
+
+function cibleAction(a) {
+  const x = [];
+  if (a.chapitre) x.push("@chapitre/" + a.chapitre);
+  if (a.fiche) x.push("@fiche/" + a.fiche);
+  if (a.question) x.push("question : " + a.question);
+  if (a.slug) x.push("slug : " + a.slug);
+  if (a.chapitres?.length) x.push("chapitres : " + a.chapitres.join(", "));
+  if (a.assertions?.length) x.push("assertions : " + a.assertions.join(", "));
+  if (a.blocs?.length) x.push("paragraphes : " + a.blocs.map((b) => "^" + b).join(" "));
+  if (a.plan) x.push("plan " + a.plan);
+  if (a.annotation) x.push("annotation " + a.annotation);
+  if (a.version) x.push(a.version);
+  if (a.niveau) x.push(a.niveau + (a.partie ? " " + a.partie : ""));
+  return x.join(" · ");
+}
+
+function carteAction(c, n, i, a) {
+  const d = el("div", "dia-action" + (a.lancee ? " lancee" : ""));
+  const tete = el("div", "dia-action-tete");
+  tete.append(el("span", "dia-type", LIB_ACTION[a.type] ?? a.type), el("strong", null, a.titre));
+  d.append(tete, el("div", "mut petit", a.pourquoi ?? ""));
+  const cible = el("div", "dia-cible", cibleAction(a));
+  d.append(cible);
+  setTimeout(() => lieRefs(cible), 0);
+  if (a.lancee) {
+    const o = el("a", "ref-lien", "lancée · " + a.lancee.id + " · ouvrir");
+    o.href = "#";
+    o.onclick = (e) => { e.preventDefault(); ouvreDemande(a.lancee.slug, a.lancee.id); };
+    d.append(o);
+    return d;
+  }
+  const consigne = el("textarea", "dem-motif dia-consigne");
+  consigne.rows = 2;
+  consigne.placeholder = "consigne (facultative)";
+  consigne.value = a.consigne ?? "";
+  const b = el("button", "b-versions", "lancer");
+  const err = el("span", "err petit");
+  b.onclick = async () => {
+    b.disabled = true;
+    err.textContent = "";
+    try {
+      const r = await poste(`/conversations/${c.id}/tours/${n}/actions/${i}`, { consigne: consigne.value });
+      a.lancee = { id: r.demande.id, slug: r.slug };
+      d.replaceWith(carteAction(c, n, i, a));
+      marquesDemandes?.();
+    } catch (e) { err.textContent = String(e); b.disabled = false; }
+  };
+  const pied = el("div", "dia-pied");
+  pied.append(b, err);
+  d.append(consigne, pied);
+  return d;
+}
+
+function tourDialogue(c, t, n) {
+  const d = el("div", "dia-tour");
+  const q = el("div", "dia-question");
+  q.append(el("div", null, t.question));
+  if (t.ici) q.append(el("div", "dia-ici", "ici : " + t.ici));
+  d.append(q);
+  setTimeout(() => lieRefs(q), 0);
+  if (t.etat === "en_cours") {
+    const z = el("div", "dia-direct");
+    const der = (t.deroule ?? []).filter((e) => e.nom !== "StructuredOutput");
+    z.append(el("div", "dem-attente", `Claude lit et réfléchit… (${der.length} étapes)`));
+    const ol = el("ol", "deroule");
+    ol.append(...der.slice(-6).map(ligneDeroule));
+    z.append(ol);
+    d.append(z);
+    return d;
+  }
+  if (t.etat === "erreur") d.append(el("div", "err", t.erreur ?? "erreur"));
+  if (t.reponse) {
+    const r = el("div", "dia-reponse");
+    r.append(mdDialogue(t.reponse));
+    d.append(r);
+    setTimeout(() => lieRefs(r), 0);
+  }
+  (t.actions ?? []).forEach((a, i) => d.append(carteAction(c, n, i, a)));
+  const pied = el("div", "dia-meta");
+  const ex = t.execution ?? {};
+  pied.append(el("span", "mut petit", [ex.modele, ex.duree_s != null ? ex.duree_s + " s" : null,
+    ex.cout_usd != null ? "$" + ex.cout_usd.toFixed(3) : null].filter(Boolean).join(" · ")));
+  const j = ligneJetons(ex.jetons);
+  if (j) pied.append(j);
+  d.append(pied);
+  const dc = derouleComplet({ deroule: t.deroule ?? [] });
+  if (dc) d.append(dc);
+  return d;
+}
+
+async function dialogue(ident = etat.conversation) {
+  clearTimeout(suiviDialogue);
+  const z = document.getElementById("dialogue");
+  z.hidden = false;
+  document.body.dataset.dialogue = "1";
+  document.getElementById("b-claude").classList.add("actif");
+  etat.conversation = ident ?? null;
+  try { sessionStorage.setItem("atelier-conversation", ident ?? ""); } catch { /* sans stockage */ }
+  const tete = el("div", "dia-tete");
+  const liste = el("select", "dia-liste");
+  const L = await api("/conversations").catch(() => []);
+  liste.append(new Option("— nouvelle conversation —", ""));
+  for (const x of L) liste.append(new Option(`${(x.titre ?? "sans titre").slice(0, 60)} · ${x.tours} · ${(x.modifie ?? "").slice(0, 10)}`, x.id, false, x.id === ident));
+  liste.onchange = () => dialogue(liste.value || null);
+  const sup = el("button", "pan-lien", "🗑");
+  sup.title = "supprimer cette conversation";
+  sup.hidden = !ident;
+  sup.onclick = async () => {
+    if (!confirm("Supprimer cette conversation ?")) return;
+    await poste(`/conversations/${ident}`, null, "DELETE").catch((e) => alert(e));
+    dialogue(null);
+  };
+  const x = el("button", "fermer", "×");
+  x.onclick = () => { clearTimeout(suiviDialogue); z.hidden = true; delete document.body.dataset.dialogue; document.getElementById("b-claude").classList.remove("actif"); };
+  tete.append(el("h4", null, "✦ Claude"), liste, sup, x);
+  const fil = el("div", "dia-fil");
+  let c = null;
+  if (ident) {
+    c = await api(`/conversations/${ident}`).catch(() => null);
+    if (!c) return dialogue(null);
+    c.tours.forEach((t, n) => fil.append(tourDialogue(c, t, n)));
+  } else {
+    fil.append(el("p", "mut", "Une question sur le livre : ce qu'il dit, où, sur quelles sources, ce qui manque, ce qui se contredit. " +
+      "Claude lit tout (textes, cadres, fiches, bibliographie, garde-fous) et peut proposer du travail — vous le lancez. " +
+      "Collez des références (⧉) pour viser un morceau précis."));
+  }
+  const saisie = el("div", "dia-saisie");
+  const q = el("textarea", "dem-motif dia-q");
+  q.rows = 3;
+  q.placeholder = "votre question… (⌘/Ctrl + Entrée pour envoyer)";
+  q.value = etat.brouillonDialogue ?? "";
+  q.oninput = () => { etat.brouillonDialogue = q.value; };
+  const ref = refIci();
+  const lieu = el("label", "dia-ici-choix");
+  q.onfocus = () => { const r = refIci(); lieu.hidden = !r; lieu.lastChild.textContent = " joindre ici : " + (r ?? "—"); };
+  const coche = el("input");
+  coche.type = "checkbox";
+  coche.checked = !!ref;
+  lieu.append(coche, document.createTextNode(" joindre ici : " + (ref ?? "—")));
+  lieu.hidden = !ref;
+  const envoi = el("button", "b-versions", "envoyer");
+  const err = el("span", "err petit");
+  const occupe = c?.etat === "en_cours";
+  envoi.disabled = occupe;
+  const part = async () => {
+    const question = q.value.trim();
+    if (!question || envoi.disabled) return;
+    envoi.disabled = true;
+    const corps = { question, ici: coche.checked ? refIci() : null };
+    try {
+      const r = ident ? await poste(`/conversations/${ident}`, corps) : await poste("/conversations", corps);
+      etat.brouillonDialogue = "";
+      dialogue(r.id);
+    } catch (e) { err.textContent = String(e); envoi.disabled = false; }
+  };
+  envoi.onclick = part;
+  q.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); part(); } };
+  const pied = el("div", "dia-pied");
+  pied.append(envoi, lieu, err);
+  saisie.append(q, pied);
+  z.replaceChildren(tete, fil, saisie);
+  fil.scrollTop = fil.scrollHeight;
+  if (!occupe) q.focus();
+  if (occupe) suiviDialogue = setTimeout(() => rafraichitDialogue(ident), 2000);
+}
+
+async function rafraichitDialogue(ident) {
+  const z = document.getElementById("dialogue");
+  if (z.hidden || etat.conversation !== ident) return;
+  const c = await api(`/conversations/${ident}`).catch(() => null);
+  if (!c) return;
+  if (c.etat !== "en_cours") return dialogue(ident);
+  const n = c.tours.length - 1;
+  const tours = z.querySelectorAll(".dia-tour");
+  tours[tours.length - 1]?.replaceWith(tourDialogue(c, c.tours[n], n));
+  suiviDialogue = setTimeout(() => rafraichitDialogue(ident), 2000);
+}
+
+// La référence de la vue change avec la navigation : la case « ici » suit.
+window.addEventListener("hashchange", () => {
+  const z = document.getElementById("dialogue");
+  if (!z || z.hidden) return;
+  setTimeout(() => {
+    const l = z.querySelector(".dia-ici-choix");
+    if (!l) return;
+    const r = refIci();
+    l.hidden = !r;
+    l.lastChild.textContent = " joindre ici : " + (r ?? "—");
+    l.querySelector("input").checked = !!r;
+  }, 300);
+});
+
+document.getElementById("b-claude").onclick = () => {
+  const z = document.getElementById("dialogue");
+  if (!z.hidden) return z.querySelector(".fermer").click();
+  let id = etat.conversation;
+  if (id === undefined) { try { id = sessionStorage.getItem("atelier-conversation") || null; } catch { id = null; } }
+  dialogue(id);
+};
+

@@ -330,6 +330,17 @@ dans une annotation ou une consigne affichée, une référence est un lien.
 @chapitre/la-mer/plan/A   …/assertion/1.9   …/note/<cle>   …/annotation/<id>
 ```
 
+**✦ Claude** (en-tête, dans toutes les vues) : **parler du livre**. Claude lit tout — textes, cadres,
+verrous, annotations, fiches, bibliographie, garde-fous, l'héritage, le web avec mesure — et répond,
+en désignant ce dont il parle par des références cliquables. Il n'écrit rien. Quand la réponse
+appelle du travail, il le **propose** : une fiche, creuser une fiche, une vérification, une
+réécriture, une lecture naïve, un plan (trois au plus) ; l'auteur relit la consigne et **lance** —
+l'action devient une demande ordinaire, qu'on ouvre depuis la conversation. La case « joindre ici »
+donne à Claude la référence de ce que l'auteur regarde (le paragraphe choisi, la fiche, l'œuvre…).
+Une conversation se poursuit dans la même session : Claude garde ce qu'il a lu. Elles vivent dans
+`kb/conversations/<id>.json` (`atelier/conversation.py`) ; budget et modèle dans les réglages Claude
+du livre (`claude.conversation` : 30 tours, 4 recherches, 6 pages par question).
+
 Le **storyboard** se recadre dans la vue Récit (mode storyboard) : double-clic sur un micro-récit,
 champs du plan dans son détail. Écrit dans `brief.yaml` (mise en forme gardée), noté au
 journal ; la réécriture suivante lit le nouveau cadre. Une re-migration du chapitre ne

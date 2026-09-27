@@ -64,6 +64,7 @@ LIMITES = {"verification": {"tours": 25, "recherches": 6, "pages": 12},
            "naive": {"tours": 3, "recherches": 0, "pages": 0},
            "document": {"tours": 12, "recherches": 3, "pages": 5},
            "plan": {"tours": 24, "recherches": 0, "pages": 0},
+           "conversation": {"tours": 30, "recherches": 4, "pages": 6},
            "reecriture": {"tours": 16, "recherches": 0, "pages": 0}}
 # Un message du CLI peut porter un gros résultat d'outil (un PDF lu d'un bloc) : 1 Mo par défaut
 # ne suffit pas. Et un PDF se lit par pages, jamais entier (voir le crochet).
