@@ -138,7 +138,10 @@ def compile_contexte(d):
         "Une assertion ne demande pas une revue de littérature — deux sources sérieuses qui concordent suffisent.",
         "Une fiche n'est pas une revue exhaustive : les sources de référence, et les récentes qui changent quelque chose."))
     depot, h = livre.heritage()
-    if depot:
+    if (livre.LIVRE / "kb" / "sources").is_dir():
+        L.append("\nLa bibliographie du livre : kb/sources/<cle>.yaml (une œuvre par fichier) — une œuvre qui y est "
+                 "déjà garde sa clé (Grep sur le titre ou le DOI pour la retrouver).")
+    elif depot:
         L.append("\nBibliographie centrale (lecture seule, pour reprendre les clés) : %s" % (depot / h.get("bibliographie", "")))
     return systeme, "\n".join(x for x in L if x)
 
@@ -317,6 +320,21 @@ def _ecrit_fiche(d, R, slug, titre, etat):
             par[kb.empreinte_bloc(bloc)] = {"degre": courant, "raison": "degré de la section, donné à la création"}
     if par:
         kb.ecrit_confiance(slug, {"par": "creation", "demande": ident, "date": livre._maintenant(), "paragraphes": par})
+    # ses sources entrent dans la bibliographie du livre (à vérifier) ; une œuvre déjà là gagne la fiche
+    from . import sources
+    for s in R.get("sources") or []:
+        cle = _slug(s.get("cle") or "")
+        if not cle:
+            continue
+        try:
+            o = dict(sources.lit(cle))
+            if slug not in (o.get("fiches") or []):
+                sources.ecrit(cle, dict(o, fiches=list(o.get("fiches") or []) + [slug]))
+        except KeyError:
+            sources.ajoute(cle, {"ref": s.get("ref") or cle, "doi": s.get("doi"), "url": s.get("url"), "fiches": [slug],
+                                 "origine": "source de la fiche %s (demande %s)" % (slug, ident),
+                                 "notes": "extrait relevé%s : « %s »" % ("" if s.get("verifie") else " (non vérifié)", s["extrait"])
+                                 if s.get("extrait") else None})
 
 
 def _relie(slug, chapitres, ident):

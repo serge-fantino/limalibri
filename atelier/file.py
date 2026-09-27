@@ -47,6 +47,9 @@ def lance(ident):
             d["creer_d_office"] = True
             reecriture._ecrit(SLUG_KB, d)
         return creation.demarre(ident)
+    if d.get("type") == "reference":
+        from . import references
+        return references.demarre(ident)
     raise ValueError("type de demande sans file : %s" % d.get("type"))
 
 

@@ -116,7 +116,15 @@ def _chapitres_par_fiche():
 
 
 def _centrale_par_fiche():
-    """fiche -> clés de la bibliographie centrale d'héritage qui y sont exploitées."""
+    """fiche -> clés des œuvres qui y sont exploitées : kb/sources/ s'il existe, sinon la
+    bibliographie centrale d'héritage."""
+    from . import sources as S
+    if S.existe():
+        out = {}
+        for cle, o in S.toutes().items():
+            for f in o.get("fiches") or []:
+                out.setdefault(f, []).append(cle)
+        return out
     depot, h = livre.heritage()
     p = depot / h["bibliographie"] if depot and h.get("bibliographie") else None
     out = {}
@@ -282,9 +290,18 @@ def oeuvres():
 
     def oeuvre(cle):
         return out.setdefault(cle, {"cle": cle, "ref": "", "doi": None, "url": None, "centrale": False,
-                                    "fiches": [], "chapitres": [], "extraits": [], "doute": None})
+                                    "fiches": [], "chapitres": [], "extraits": [], "doute": None,
+                                    "statut": None, "verification": None, "doublon_de": None, "notes": None})
+    from . import sources as S
+    if S.existe():                               # la bibliographie du livre : kb/sources/
+        for cle, x in S.toutes().items():
+            o = oeuvre(cle)
+            o.update({k: x.get(k) for k in ("ref", "doi", "url", "statut", "verification", "doublon_de", "doute", "notes", "origine")})
+            o["ref"] = o["ref"] or ""
+            o["centrale"] = True                 # « dans la base »
+            o["fiches"] = list(x.get("fiches") or [])
     depot, h = livre.heritage()
-    p = depot / h["bibliographie"] if depot and h.get("bibliographie") else None
+    p = depot / h["bibliographie"] if depot and h.get("bibliographie") and not S.existe() else None
     if p and p.exists():
         for bloc in re.split(r"^### ", p.read_text(encoding="utf-8"), flags=re.M)[1:]:
             lignes = [l.strip() for l in bloc.strip().splitlines() if l.strip()]
@@ -308,12 +325,16 @@ def oeuvres():
             for f in e.get("fiches") or []:
                 if f not in o["fiches"]:
                     o["fiches"].append(f)
+            if not o["centrale"] and o["statut"] is None:
+                o["statut"] = "hors_base"
             o["chapitres"].append({"slug": c["slug"], "title": c["title"], "numero": c.get("numero"),
                                    "notes": e.get("notes") or [], "citation": e.get("citation")})
     for s in _slugs():
         _, corps = _lit(s)
         for cle, r in _refs_de_fiche(corps).items():
             o = oeuvre(cle)
+            if not o["centrale"] and o["statut"] is None:
+                o["statut"] = "hors_base"
             o["ref"] = o["ref"] or r["ref"]
             o["doi"] = o["doi"] or r["doi"]
             o["url"] = o["url"] or r["url"]
@@ -573,6 +594,9 @@ def supprime(slug, liens="laisser", motif=""):
                 else:
                     del e["fiches"]
         p.write_text(livre.rt_texte(y, doc), encoding="utf-8")
+    from . import sources as S
+    if S.existe():
+        S.retire_fiche(slug)
     defaits = 0
     if liens == "retirer":
         for x in C["citee_par"]:

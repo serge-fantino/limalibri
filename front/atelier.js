@@ -2472,7 +2472,7 @@ async function chargeDemandes() {
   b.classList.toggle("a-decider", n > 0);
 }
 
-const LIB_TYPE_KB = { fiche: "◇ fiche", pistes: "◇ creuser", renvois: "⇄ renvois" };
+const LIB_TYPE_KB = { fiche: "◇ fiche", pistes: "◇ creuser", renvois: "⇄ renvois", reference: "🔎 référence" };
 const ETIQ_DEM = { en_cours: "en cours", prete: "à décider", erreur: "erreur", remplacee: "remplacée",
   en_attente: "en attente", retiree: "retirée", abandonnee: "abandonnée", a_confirmer: "à confirmer" };
 
@@ -2573,7 +2573,7 @@ function majCompteAnnotations() {
 let suivi = null;
 // Le « chapitre » d'une demande : les créations de fiche vivent dans kb/demandes (« _kb »).
 function slugDe(ident) {
-  return /^[fpl]-/.test(String(ident ?? "")) ? "_kb" : etat.slug;
+  return /^[fplr]-/.test(String(ident ?? "")) ? "_kb" : etat.slug;
 }
 
 // Le tiroir ouvert est retenu (session du navigateur) : un rafraîchissement le rouvre.
@@ -2591,7 +2591,7 @@ async function tiroir(ident) {
   const t = document.getElementById("tiroir");
   t.hidden = false;
   document.body.dataset.tiroir = "1";
-  if ((!etat.slug || !etat.atelier) && !/^[fpl]-/.test(String(ident ?? ""))) {
+  if ((!etat.slug || !etat.atelier) && !/^[fplr]-/.test(String(ident ?? ""))) {
     if (!ident && etat.wiki) return historiqueFiches(t);
     t.replaceChildren(teteTiroir("Réécritures"), el("p", "mut", "Ouvrir un chapitre de l'atelier."));
     return;
@@ -2602,6 +2602,7 @@ async function tiroir(ident) {
   if (d.type === "fiche") return tiroirFiche(t, d);
   if (d.type === "pistes") return tiroirPistes(t, d);
   if (d.type === "renvois") return tiroirRenvois(t, d);
+  if (d.type === "reference") return tiroirReference(t, d);
   t.replaceChildren(teteTiroir(`Réécriture · ${d.portee}${d.cible.plan ? " " + d.cible.plan : ""} · ${MODES_R[d.mode]}`, () => tiroir(null)));
   if (d.titre) t.append(el("p", "dem-titre", d.titre));
   const cible = el("div", "dem-cible");
@@ -3198,7 +3199,7 @@ async function historique(t) {
       const l = el("button", "dem-ligne " + (OUVERTES.has(d.etat) ? "ouverte" : "close"));
       const haut = el("span", "dem-haut");
       haut.append(el("span", "annot-type", d.type === "verification" ? "🔎 recherche" : d.type === "fiche" ? "◇ fiche"
-        : d.type === "pistes" ? "◇ creuser" : d.type === "renvois" ? "⇄ renvois" : "↻ réécriture"),
+        : d.type === "pistes" ? "◇ creuser" : d.type === "renvois" ? "⇄ renvois" : d.type === "reference" ? "🔎 référence" : "↻ réécriture"),
         el("span", "dem-etat " + d.etat, etiquetteDemande(d)), el("span", "annot-date", d.cree.slice(0, 16).replace("T", " ")));
       l.append(haut, el("span", "dem-titre-ligne", d.titre ?? ""));
       if (d.consigne) l.append(el("span", "dem-consigne", "« " + d.consigne + " »"));
@@ -3740,15 +3741,15 @@ function sectionClaude(L) {
   api("/file").then((F) => fileBox.append(reglageFile(F, () => accueil()),
     el("span", "mut petit", `${F.en_attente.length} en attente · désactivé : chaque demande se lance à la main`))).catch(() => {});
   s.append(fileBox);
-  const LIB = { verification: "Vérification", reecriture: "Réécriture", fiche: "Fiche nouvelle", pistes: "Creuser" };
+  const LIB = { verification: "Vérification", reecriture: "Réécriture", fiche: "Fiche nouvelle", pistes: "Creuser", reference: "Référence" };
   const CH = { tours: "tours", recherches: "recherches web", pages: "pages lues" };
-  for (const g of ["verification", "reecriture", "fiche", "pistes"]) {
+  for (const g of ["verification", "reecriture", "fiche", "pistes", "reference"]) {
     const G = C[g] ?? {};
     const lim = etat.modeles?.limites?.[g] ?? {};
     const box = el("div", "claude-genre");
     box.append(el("strong", null, LIB[g]),
       selModele(G.modele, "comme le livre", (v) => apres({ [g]: { modele: v } })));
-    for (const cle of ["verification", "fiche"].includes(g) ? ["tours", "recherches", "pages"] : ["tours"]) {
+    for (const cle of ["verification", "fiche", "reference"].includes(g) ? ["tours", "recherches", "pages"] : ["tours"]) {
       const n = el("input", "claude-nombre");
       n.type = "number";
       n.min = 0;
@@ -4201,6 +4202,24 @@ async function chargeOeuvres(force = false) {
   return etat.oeuvres;
 }
 
+const STATUT_OEUVRE = {
+  importee: ["importée", "", "venue de la base centrale, jamais vérifiée une à une"],
+  a_verifier: ["à vérifier", "doute", "hors base, douteuse, ou relevée par Claude"],
+  verifiee: ["vérifiée", "ok", "l'œuvre existe, la référence est juste"],
+  corrigee: ["corrigée", "ok", "l'œuvre existe, la référence a été rectifiée"],
+  introuvable: ["introuvable", "hors", "aucune trace fiable de l'œuvre"],
+  mal_attribuee: ["mal attribuée", "hors", "l'œuvre existe, mais ne dit pas ce qu'on lui fait dire"],
+  doublon: ["doublon", "hors", "la même œuvre qu'une autre clé"],
+  hors_base: ["hors base", "hors", "citée, mais absente de kb/sources"],
+};
+
+function badgeStatut(o) {
+  const s = STATUT_OEUVRE[o.statut ?? (o.centrale ? "importee" : "hors_base")] ?? [o.statut, "", ""];
+  const b = el("span", "badge statut-" + (s[1] || "neutre"), s[0]);
+  b.title = s[2];
+  return b;
+}
+
 // Une œuvre dans la colonne de droite : sa référence, ses liens, et tout ce qui la cite.
 async function apercuOeuvre(cle) {
   const d = document.getElementById("fiche");
@@ -4232,11 +4251,61 @@ async function apercuOeuvre(cle) {
   ref.innerHTML = mdLigne(o.ref || cle);
   box.append(ref);
   const meta = el("div", "biblio-ou");
-  if (o.centrale) meta.append(el("span", "badge", "base centrale")); else meta.append(el("span", "badge hors", "hors base"));
+  meta.append(badgeStatut(o));
+  if (o.doublon_de) { const x = el("button", "pan-lien", "même œuvre que " + o.doublon_de); x.onclick = () => apercuOeuvre(o.doublon_de); meta.append(x); }
   if (o.doute) { const x = el("span", "badge doute", "doute"); x.title = o.doute; meta.append(x); }
   meta.append(liensSource(o.doi, o.ref));
   if (o.url) { const a = el("a", "lien-ext", "page ↗"); a.href = o.url; a.target = "_blank"; meta.append(a); }
   box.append(meta);
+  if (o.doute) box.append(el("p", "mut petit", "doute : " + o.doute));
+  if (o.notes) box.append(el("p", "mut petit", o.notes));
+  // la dernière vérification retenue
+  const V = o.verification;
+  if (V) {
+    const v = el("div", "oeuvre-verif");
+    v.append(el("span", "appui-lieu", `vérifiée le ${V.date} (${V.verdict})`), el("p", "petit", V.resume ?? ""));
+    for (const c of V.citations ?? []) {
+      const l = el("p", "petit");
+      l.append(el("span", "badge " + (c.appui === "oui" ? "statut-ok" : c.appui === "non" ? "hors" : "doute"), c.appui), ` ${c.ou} — ${c.commentaire ?? ""}`);
+      v.append(l);
+    }
+    const a = el("button", "pan-lien", "la demande →");
+    a.onclick = () => tiroir(V.demande);
+    v.append(a);
+    box.append(v);
+  }
+  // les actions : vérifier, modifier, ajouter à la base
+  const act = el("div", "annot-actions oeuvre-actions");
+  if (o.centrale) {
+    const ver = el("button", "bouton", "🔎 vérifier la référence…");
+    ver.title = "Claude la retrouve (éditeur, PubMed, arXiv…), cherche un doublon, et contrôle ce que chaque endroit lui fait dire";
+    ver.onclick = () => ver.replaceWith(formVerifReference(cle));
+    const mod = el("button", "pan-lien", "✎ modifier");
+    mod.onclick = () => { box.querySelector(".form-oeuvre")?.remove(); act.after(formOeuvre(o)); };
+    act.append(ver, mod);
+  } else {
+    const aj = el("button", "bouton", "＋ ajouter à la base");
+    aj.title = "l'écrire dans kb/sources (statut « à vérifier »), pour pouvoir la vérifier";
+    aj.onclick = async () => {
+      const r = await fetch("/api/oeuvres", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cle, ref: o.ref, doi: o.doi, url: o.url, doute: o.doute, fiches: o.fiches,
+          origine: "ajoutée depuis la bibliographie de l'atelier (citée " + (o.chapitres.length ? "par l'essai" : "par une fiche") + ")" }) });
+      if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+      await chargeOeuvres(true);
+      d.querySelector(":scope > .apercu-fiche")?.remove();
+      apercuOeuvre(cle);
+    };
+    act.append(aj);
+  }
+  box.append(act);
+  api("/fiches/demandes").then((ds) => {
+    const V2 = ds.filter((x) => x.type === "reference" && x.cle === cle && x.etat !== "decidee");
+    for (const x of V2) {
+      const b = el("button", "pan-lien", `🔎 vérification ${etiquetteDemande(x)} →`);
+      b.onclick = () => tiroir(x.id);
+      act.append(b);
+    }
+  }).catch(() => {});
   box.append(el("h5", null, `Dans l'essai · ${o.chapitres.length} chapitre(s)`));
   if (!o.chapitres.length) box.append(el("p", "mut petit", "Aucune note d'un chapitre de l'atelier ne la cite."));
   for (const c of o.chapitres) {
@@ -4268,6 +4337,157 @@ async function apercuOeuvre(cle) {
   document.getElementById("droite").scrollTop = 0;
 }
 
+function formVerifReference(cle) {
+  const f = el("div", "form-demande");
+  const z = el("textarea", "annot-texte petit-texte");
+  z.placeholder = "Précision (facultatif) : ce qui fait douter…";
+  const mod = choixModele("reference");
+  const lim = etat.modeles?.limites?.reference;
+  const go = el("button", "bouton", "🔎 vérifier");
+  go.onclick = async () => {
+    go.disabled = true;
+    const r = await fetch(`/api/oeuvres/${cle}/verification`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ consigne: z.value, modele: mod.valeur() }) });
+    if (!r.ok) { go.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+    tiroir((await r.json()).id);
+  };
+  const non = el("button", "pan-lien", "annuler");
+  non.onclick = () => f.remove();
+  const act = el("div", "annot-actions");
+  act.append(go, non);
+  f.append(el("span", "appui-lieu", "vérifier la référence " + cle), z, mod.noeud,
+    el("p", "mut petit", `Budget : ${lim ? `${lim.recherches} recherches, ${lim.pages} pages, ${lim.tours} tours` : "livre.yaml"}. ` +
+      "Rien n'est modifié sans toi."), act);
+  return f;
+}
+
+function formOeuvre(o) {
+  const f = el("div", "form-demande form-oeuvre");
+  const champ = (nom, v, long = false) => {
+    const x = el(long ? "textarea" : "input", long ? "annot-texte petit-texte" : "dem-motif");
+    x.value = v ?? "";
+    f.append(el("span", "appui-lieu", nom), x);
+    return x;
+  };
+  const ref = champ("référence (Markdown : *revue*)", o.ref, true);
+  const doi = champ("DOI (lu sur une page, jamais de mémoire)", o.doi);
+  const url = champ("page", o.url);
+  const st = el("select", "livre-select");
+  for (const [k, [lib]] of Object.entries(STATUT_OEUVRE)) {
+    if (k === "hors_base") continue;
+    const op = el("option", null, lib); op.value = k; if (k === o.statut) op.selected = true; st.append(op);
+  }
+  f.append(el("span", "appui-lieu", "statut"), st);
+  const doute = champ("doute", o.doute, true);
+  const notes = champ("notes", o.notes, true);
+  const motif = el("input", "dem-motif");
+  motif.placeholder = "motif (va au journal)";
+  const ok = el("button", "bouton", "enregistrer");
+  ok.onclick = async () => {
+    const r = await fetch(`/api/oeuvres/${o.cle}`, { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ champs: { ref: ref.value, doi: doi.value, url: url.value, statut: st.value, doute: doute.value, notes: notes.value },
+        motif: motif.value }) });
+    if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+    await chargeOeuvres(true);
+    document.querySelector("#fiche > .apercu-fiche")?.remove();
+    apercuOeuvre(o.cle);
+  };
+  const non = el("button", "pan-lien", "annuler");
+  non.onclick = () => f.remove();
+  const act = el("div", "annot-actions");
+  act.append(ok, non);
+  f.append(motif, act);
+  return f;
+}
+
+const VERDICT_REF = { confirmee: "confirmée", corrigee: "corrigée", introuvable: "introuvable", mal_attribuee: "mal attribuée", doublon: "doublon" };
+
+async function tiroirReference(t, d) {
+  t.replaceChildren(teteTiroir("Vérifier une référence", () => historiqueFiches(t)));
+  const cible = el("div", "dem-cible");
+  const c = el("p", "annot-corps");
+  const lien = el("button", "pan-lien", d.cible.cle);
+  lien.onclick = () => apercuOeuvre(d.cible.cle);
+  c.append(lien, " — ");
+  const ref = el("span");
+  ref.innerHTML = mdLigne(d.cible.ref ?? "");
+  c.append(ref);
+  cible.append(c);
+  if (d.cible.usages?.length) cible.append(el("p", "mut petit", "citée : " + d.cible.usages.join(" · ")));
+  t.append(cible);
+  if (d.etat === "en_attente" || d.etat === "retiree") return t.append(blocAttente(d));
+  if (d.etat === "en_cours") {
+    t.append(enDirect(d));
+    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    return piedTiroir(t, d);
+  }
+  if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
+  const R = d.resultat ?? {};
+  const tete = el("div", "annot-tete");
+  tete.append(el("strong", null, "Verdict : "), el("span", "verdict " + (R.verdict === "confirmee" ? "etabli" : R.verdict === "corrigee" ? "nuance" : "contredit"),
+    VERDICT_REF[R.verdict] ?? R.verdict));
+  t.append(tete, el("p", "annot-corps", R.resume ?? ""));
+  const I = R.identite ?? {};
+  if (Object.keys(I).length) {
+    const id = el("div", "verif-source");
+    id.append(el("span", "verif-ref", [I.auteurs, I.titre && `« ${I.titre} »`, I.revue, I.volume, I.pages, I.annee].filter(Boolean).join(" · ")));
+    if (I.doi) { const a = el("a", "lien-ext", "doi ↗"); a.href = "https://doi.org/" + I.doi; a.target = "_blank"; id.append(" ", a); }
+    if (I.url) { const a = el("a", "lien-ext", "page ↗"); a.href = I.url; a.target = "_blank"; id.append(" ", a); }
+    if (I.lu_sur) id.append(el("span", "mut petit", " · lu sur " + I.lu_sur));
+    t.append(el("h5", null, "L'œuvre trouvée"), id);
+  }
+  if (R.ref) {
+    const p = el("p", "annot-corps");
+    p.innerHTML = "référence proposée : " + mdLigne(R.ref);
+    t.append(p);
+  }
+  if (R.doublon_de) {
+    const p = el("p", "fiche-alerte petit");
+    const b = el("button", "pan-lien", R.doublon_de);
+    b.onclick = () => apercuOeuvre(R.doublon_de);
+    p.append("même œuvre que ", b, " : la clé n'est pas fusionnée, le doublon est signalé.");
+    t.append(p);
+  }
+  if ((R.citations ?? []).length) {
+    t.append(el("h5", null, "Ce qu'on lui fait dire"));
+    for (const x of R.citations) {
+      const b = el("div", "verif-source");
+      b.append(el("span", "badge " + (x.appui === "oui" ? "statut-ok" : x.appui === "non" ? "hors" : "doute"), x.appui), ` ${x.ou}`);
+      b.append(el("p", "petit", x.commentaire ?? ""));
+      if (x.extrait) b.append(el("blockquote", "verif-extrait", x.extrait));
+      t.append(b);
+    }
+  }
+  if (d.decision) t.append(el("div", "dem-decision", d.decision.proposition ? `Retenue — statut : ${d.decision.statut}` +
+    (d.decision.chapitres?.length ? ` · bibliographie de ${d.decision.chapitres.join(", ")} mise à jour` : "") : "Non retenue"));
+  if (d.etat === "prete") {
+    const faire = el("div", "que-faire");
+    faire.append(el("h5", null, "Que faire ?"), el("p", "mut petit",
+      "Retenir écrit l'œuvre dans kb/sources (référence, DOI, statut, cette vérification) et met à jour la bibliographie " +
+      "des chapitres qui la citent. Un « mal attribuée » ne corrige pas l'essai : la note est à reprendre à part."));
+    const z = el("textarea", "annot-texte petit-texte");
+    z.value = R.ref ?? "";
+    z.placeholder = "référence à écrire (vide : garder l'actuelle)";
+    const oui = el("button", "bouton", "retenir");
+    const non = el("button", "pan-lien", "ne pas retenir");
+    const envoie = async (corps) => {
+      const r = await fetch(`/api/chapitres/_kb/demandes/${d.id}/decision`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+      if (!r.ok) { alert("échec : " + ((await r.json().catch(() => ({}))).detail ?? r.status)); return; }
+      await chargeOeuvres(true);
+      etat.sources = await api("/sources").catch(() => etat.sources);
+      tiroir(d.id);
+    };
+    oui.onclick = () => envoie({ action: "retenir", ref: z.value });
+    non.onclick = () => envoie({ action: "rejeter" });
+    const act = el("div", "annot-actions");
+    act.append(oui, non);
+    faire.append(z, act);
+    t.append(faire);
+  }
+  piedTiroir(t, d);
+}
+
 // Un clic sur une citation, où qu'elle soit (essai, notes, fiche, aperçu) : l'œuvre à droite.
 document.addEventListener("click", (e) => {
   const c = e.target.closest?.("cite[data-cle]");
@@ -4292,8 +4512,11 @@ async function vueBiblioLivre(cle) {
   q.placeholder = "chercher (auteur, titre, revue, année, clé)…";
   q.value = F.q;
   const sortes = [["toutes", "toutes", () => true], ["essai", "citées par l'essai", (o) => o.chapitres.length],
-    ["fiches", "sources des fiches écrites ici", (o) => o.extraits.length], ["hors", "hors base centrale", (o) => !o.centrale],
-    ["sansdoi", "sans DOI", (o) => !o.doi], ["doute", "douteuses", (o) => o.doute || o.extraits.some((x) => !x.verifie)]];
+    ["fiches", "sources des fiches écrites ici", (o) => o.extraits.length],
+    ["a_verifier", "à vérifier", (o) => o.statut === "a_verifier"], ["importee", "importées", (o) => o.statut === "importee"],
+    ["verifiees", "vérifiées", (o) => o.statut === "verifiee" || o.statut === "corrigee"],
+    ["problemes", "introuvables, mal attribuées, doublons", (o) => ["introuvable", "mal_attribuee", "doublon"].includes(o.statut)],
+    ["hors", "hors base", (o) => !o.centrale], ["sansdoi", "sans DOI", (o) => !o.doi]];
   const barre = el("div", "dem-filtres");
   const g = el("span", "groupe filtres");
   for (const [v, lib, fn] of sortes) {
@@ -4309,6 +4532,8 @@ async function vueBiblioLivre(cle) {
     const fn = sortes.find((s) => s[0] === F.sorte)[2];
     const garde = O.filter(fn).filter((o) => mots.every((m) => plat(o.cle + " " + o.ref).includes(m)));
     liste.replaceChildren(el("p", "mut petit", `${garde.length} œuvre(s)`));
+    etat.biblioSelection = garde.filter((o) => o.centrale && !["verifiee", "corrigee"].includes(o.statut)).map((o) => o.cle);
+    majVerifSelection?.();
     for (const o of garde.slice(0, 400)) {
       const li = el("li", "source");
       li.dataset.source = o.cle;
@@ -4316,7 +4541,7 @@ async function vueBiblioLivre(cle) {
       ref.innerHTML = mdLigne(o.ref || o.cle);
       const meta = el("div", "biblio-ou");
       meta.append(el("span", "appui-lieu", o.cle));
-      if (!o.centrale) meta.append(el("span", "badge hors", "hors base"));
+      meta.append(badgeStatut(o));
       if (o.doute) meta.append(el("span", "badge doute", "doute"));
       if (o.extraits.some((x) => !x.verifie)) meta.append(el("span", "badge doute", "non vérifiée"));
       if (o.chapitres.length) meta.append(el("span", "puce", "essai : ch. " + o.chapitres.map((c) => c.numero ?? c.slug).join(", ")));
@@ -4333,14 +4558,37 @@ async function vueBiblioLivre(cle) {
     }
     if (garde.length > 400) liste.append(el("p", "mut petit", `… et ${garde.length - 400} autres : préciser la recherche.`));
   };
+  // la barre : vérifier la sélection (ce que montrent la recherche et le filtre, hors œuvres déjà vérifiées)
+  const verSel = el("button", "b-versions", "🔎 vérifier la sélection…");
+  let majVerifSelection = () => {
+    const n = (etat.biblioSelection ?? []).length;
+    verSel.textContent = `🔎 vérifier la sélection (${n})…`;
+    verSel.disabled = !n;
+  };
+  verSel.title = "met en file d'attente une vérification par œuvre affichée (hors œuvres déjà vérifiées) — lancées à la main, ou enchaînées si l'option est activée";
+  verSel.onclick = async () => {
+    const cles = etat.biblioSelection ?? [];
+    const lim = etat.modeles?.limites?.reference;
+    if (!confirm(`Mettre ${cles.length} vérification(s) en attente ?\n\nChacune : jusqu'à ${lim?.recherches ?? "?"} recherches et ${lim?.pages ?? "?"} pages, ` +
+      `de l'ordre de 0,10 à 0,30 $ avec Sonnet (davantage avec Opus). Rien ne part sans ▶, sauf si l'enchaînement est activé (Fiches › en création).`)) return;
+    const r = await fetch("/api/oeuvres/verifications", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cles }) });
+    const x = await r.json();
+    alert(`${x.en_attente.length} vérification(s) en attente : Fiches › en création.`);
+    majCompteFiches();
+  };
+  const aBib = el("span", "actions-barre");
+  aBib.append(el("span", "etiq", "la sélection"), verSel);
   q.oninput = () => { F.q = q.value; remplit(); };
   remplit();
-  page.replaceChildren(ongletsFiches("biblio"), el("h1", null, "Bibliographie"),
+  barreFiches("biblio", aBib);
+  majVerifSelection();
+  page.replaceChildren(el("span"), el("h1", null, "Bibliographie"),
     el("p", "mut", "Toutes les œuvres du livre : la base centrale (ancien dépôt), les bibliographies des chapitres " +
       "(avec les notes de l'essai qui les citent), les sources des fiches écrites ici. Un clic : l'œuvre, et tout ce qui la cite."),
     q, barre, liste);
   document.getElementById("fiche").replaceChildren(el("h4", null, "Bibliographie"),
-    el("p", "mut petit", `${O.length} œuvres · ${O.filter((o) => o.centrale).length} dans la base centrale · ` +
+    el("p", "mut petit", `${O.length} œuvres · ${O.filter((o) => o.centrale).length} dans la base (kb/sources) · ` +
+      `${O.filter((o) => o.statut === "verifiee" || o.statut === "corrigee").length} vérifiées · ` +
       `${O.filter((o) => o.chapitres.length).length} citées par l'essai · ${O.filter((o) => o.extraits.length).length} dans les fiches écrites ici.`),
     el("p", "mut petit", "Partout dans l'atelier, un clic sur une citation ouvre son œuvre ici, à droite."));
   if (cle) {

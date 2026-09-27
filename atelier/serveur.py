@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -304,8 +304,8 @@ async def encore(slug: str, ident: str, request: Request):
 def modeles():
     """Les modèles qu'on peut choisir, et ceux que le livre retient par défaut."""
     return {"modeles": reecriture.MODELES,
-            "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes")},
-            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes")}}
+            "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference")},
+            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference")}}
 
 
 @app.get("/api/fiches")
@@ -340,6 +340,61 @@ async def cree_fiche(request: Request):
 def oeuvres():
     """Toutes les œuvres : base centrale, bibliographies des chapitres, sources des fiches."""
     return kb.oeuvres()
+
+
+@app.get("/api/oeuvres/statuts")
+def statuts_oeuvres():
+    return {"statuts": sources.STATUTS, "base": sources.existe()}
+
+
+@app.put("/api/oeuvres/{cle}")
+async def modifie_oeuvre(cle: str, request: Request):
+    """Modifier une œuvre de kb/sources à la main : {champs: {ref, doi, url, statut, doute, notes}, motif}."""
+    c = await request.json()
+    try:
+        return sources.modifie(cle, c.get("champs") or {}, c.get("motif", ""))
+    except KeyError:
+        raise HTTPException(404, "œuvre inconnue : %s" % cle)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/oeuvres")
+async def ajoute_oeuvre(request: Request):
+    """Ajouter une œuvre à la base (une œuvre « hors base ») : {cle, ref, doi?, url?, origine?, doute?}."""
+    c = await request.json()
+    try:
+        return sources.ajoute(c.get("cle"), {k: c[k] for k in ("ref", "doi", "url", "origine", "doute", "notes", "fiches") if c.get(k)},
+                              c.get("motif", ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/oeuvres/{cle}/verification")
+async def verifie_oeuvre(cle: str, request: Request):
+    """Vérifier une référence (tout de suite) : {consigne?, modele?}."""
+    c = await request.json()
+    try:
+        return references.cree({"cle": cle, "consigne": c.get("consigne"), "modele": c.get("modele")})
+    except KeyError:
+        raise HTTPException(404, "œuvre absente de kb/sources : %s — l'y ajouter d'abord" % cle)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/oeuvres/verifications")
+async def verifie_oeuvres(request: Request):
+    """Vérifier un lot : {cles: [...], modele?} — mises en attente dans la file (lancées à la main,
+    ou enchaînées si l'option est activée)."""
+    c = await request.json()
+    faites = []
+    for cle in c.get("cles") or []:
+        try:
+            faites.append(references.cree({"cle": cle, "modele": c.get("modele")}, lancer=False)["id"])
+        except KeyError:
+            continue
+    file.suivante()
+    return {"en_attente": faites}
 
 
 @app.post("/api/fiches/{slug}/confiance")
@@ -551,6 +606,8 @@ async def decide(slug: str, ident: str, request: Request):
             return pistes.decide(ident, await request.json())
         if ident.startswith("l-"):
             return renvois.decide(ident, await request.json())
+        if ident.startswith("r-"):
+            return references.decide(ident, await request.json())
         return reecriture.decide(slug, ident, await request.json())
     except KeyError as e:
         raise HTTPException(404, "inconnu : %s" % e)

@@ -73,7 +73,8 @@ parts: []
 EDITABLES = ("titre", "sous_titre", "auteur", "langue", "synopsis", "quatrieme", "couverture",
              "numerotation_essai", "claude")
 CLAUDE_GENRES = {"verification": ("tours", "recherches", "pages", "modele"), "reecriture": ("tours", "modele"),
-                 "fiche": ("tours", "recherches", "pages", "modele"), "pistes": ("tours", "modele")}
+                 "fiche": ("tours", "recherches", "pages", "modele"), "pistes": ("tours", "modele"),
+                 "reference": ("tours", "recherches", "pages", "modele")}
 NUMEROTATIONS = ("aucune", "sections", "paragraphes")
 
 
@@ -388,10 +389,11 @@ def atelier(slug):
 
 @functools.lru_cache(maxsize=1)
 def sources():
-    """clé -> référence complète (HTML), depuis la bibliographie centrale d'héritage.
-
-    Format : « ### cle », une ou plusieurs lignes de référence, « fiches: … ».
-    Lecture seule, en attendant la migration vers kb/sources."""
+    """clé -> référence complète (HTML) : kb/sources/ s'il existe (la bibliographie du livre),
+    sinon la bibliographie centrale d'héritage (« ### cle », référence, « fiches: … »)."""
+    from . import sources as S
+    if S.existe():
+        return S.tout_html()
     depot, h = heritage()
     if not depot or not h.get("bibliographie"):
         return {}

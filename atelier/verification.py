@@ -151,6 +151,8 @@ def compile_contexte(slug, d):
              "Dossier courant : chapters/%s/ (essai.md, verrou.yaml, bibliographie.yaml) ; les fiches "
              "scientifiques du livre : kb/fiches/<slug>.md%s%s." % (
                  slug, _fiches_du_chapitre(slug),
+                 " ; la bibliographie du livre : kb/sources/<cle>.yaml (une œuvre par fichier, sa clé est à garder)"
+                 if (livre.LIVRE / "kb" / "sources").is_dir() else
                  " ; dépôt d'origine : %s — bibliographie centrale %s" % (depot, h.get("bibliographie", "")) if depot else ""))
     return systeme, "\n".join(L)
 

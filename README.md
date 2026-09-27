@@ -202,6 +202,20 @@ qui la citent, chapitres, œuvres), la bibliographie des œuvres exploitées en 
 est imprimé par Chrome sans interface (`ATELIER_CHROME` pour un autre chemin) ; sans Chrome, la
 version imprimable s'imprime depuis le navigateur. De quoi faire relire la base par un tiers.
 
+La **bibliographie du livre** vit dans `kb/sources/<cle>.yaml`, une œuvre par fichier
+(`atelier/sources.py`) : clé stable, référence, DOI (lu, jamais de mémoire), fiches où l'œuvre est
+exploitée, **statut** — importée (venue de la base centrale, jamais vérifiée une à une), à vérifier,
+vérifiée, corrigée, introuvable, mal attribuée, doublon —, origine, dernière vérification. Migrée par
+`migrer/sources.py` (base centrale de l'ancien dépôt, œuvres citées hors base par l'essai, sources
+des fiches). Une fiche créée y fait entrer ses sources, à vérifier. Sur une œuvre : ✎ modifier
+(journal), ＋ ajouter à la base (une œuvre hors base), et **🔎 vérifier la référence**
+(`atelier/references.py`) : Claude retrouve l'œuvre (éditeur, PubMed, arXiv…), cherche un doublon
+parmi les œuvres proches, et contrôle à chaque endroit qui la cite (notes de l'essai, fiches) ce
+qu'on lui fait dire ; verdict confirmée, corrigée, introuvable, mal attribuée ou doublon (budget
+`claude.reference` : 14 tours, 3 recherches, 4 pages). Retenir écrit l'œuvre (référence, DOI,
+statut, la vérification) et la bibliographie des chapitres qui la citent. La vue bibliographie
+filtre par statut ; « vérifier la sélection » met en file une vérification par œuvre affichée.
+
 Les **vérifications lisent les fiches d'abord** : la consigne leur donne les fiches du
 chapitre et l'index entier, avec la règle d'y chercher avant le web ; la réponse dit quelles
 fiches ont servi et à quoi (« fiches consultées »).

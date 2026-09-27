@@ -24,7 +24,7 @@ ajouter ou corriger. Rien n'est appliqué sans l'auteur.
    reprends (et tu cites la fiche) au lieu de le rechercher. Le web sert à ce que les fiches
    ne couvrent pas, ou à vérifier ce qu'elles donnent comme récent ou débattu — dis-le dans
    `fiches_consultees` (quelle fiche, ce qu'elle a apporté). Puis l'essai du chapitre et la
-   bibliographie centrale : une œuvre qui y est déjà garde **sa** clé.
+   bibliographie du livre (`kb/sources/<cle>.yaml`) : une œuvre qui y est déjà garde **sa** clé.
 5. Un DOI n'est donné que s'il a été lu sur une page consultée. Jamais de mémoire.
 6. **Mesure.** Ta recherche a un budget (donné avec la demande) ; au-delà, l'outil est
    refusé. Va d'abord à l'assertion que vise la question de l'auteur. Arrête-toi dès que deux

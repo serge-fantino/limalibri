@@ -60,6 +60,7 @@ class Conflit(Exception):
 LIMITES = {"verification": {"tours": 25, "recherches": 6, "pages": 12},
            "fiche": {"tours": 40, "recherches": 12, "pages": 25},
            "pistes": {"tours": 20, "recherches": 0, "pages": 0},
+           "reference": {"tours": 14, "recherches": 3, "pages": 4},
            "reecriture": {"tours": 16, "recherches": 0, "pages": 0}}
 # Un message du CLI peut porter un gros résultat d'outil (un PDF lu d'un bloc) : 1 Mo par défaut
 # ne suffit pas. Et un PDF se lit par pages, jamais entier (voir le crochet).
@@ -191,7 +192,7 @@ def liste(slug):
                    | {"blocs": d["cible"].get("blocs") or [], "annotations": d["cible"].get("annotations") or [],
                       "assertions": d["cible"].get("assertions") or [],
                       "chapitres": d["cible"].get("chapitres") or [], "question": d["cible"].get("question"),
-                      "fiche": d["cible"].get("fiche"),
+                      "fiche": d["cible"].get("fiche"), "cle": d["cible"].get("cle"),
                       "plan": d["cible"].get("plan"), "decision": d.get("decision")})
     return sorted(out, key=lambda d: d["cree"], reverse=True)
 
@@ -225,6 +226,9 @@ def relance(slug, ident, consigne=None, modele_choisi=False):
     elif d.get("type") == "renvois":
         from . import renvois
         n = renvois.cree({"fiche": c["fiche"], "consigne": consigne, "modele": mc})
+    elif d.get("type") == "reference":
+        from . import references
+        n = references.cree({"cle": c["cle"], "consigne": consigne, "modele": mc})
     elif d.get("type") == "fiche":
         from . import creation
         n = creation.cree({"question": c["question"], "slug": c.get("slug"), "chapitres": c.get("chapitres"),
@@ -417,6 +421,9 @@ def titre_de(d):
     if d.get("type") == "renvois":
         from . import renvois
         return renvois.titre_de(d)
+    if d.get("type") == "reference":
+        from . import references
+        return references.titre_de(d)
     if d.get("type") == "verification":
         morceaux = []
         for a in d["cible"].get("assertions", []):
@@ -552,7 +559,9 @@ def compile_contexte(slug, d):
                  "scientifiques kb/fiches/.%s Consulte-les "
                  "quand une annotation pose une question de fond ou qu'un raccord l'exige ; cite le "
                  "fichier dans ta note. Tu ne modifies rien." % (
-                     slug, " Le dépôt d'origine (%s) contient la bibliographie centrale (%s)." % (
+                     slug, " La bibliographie du livre est dans kb/sources/ (une œuvre par fichier)."
+                     if (livre.LIVRE / "kb" / "sources").is_dir() else
+                     " Le dépôt d'origine (%s) contient la bibliographie centrale (%s)." % (
                          depot, h.get("bibliographie", "")) if depot else ""))
     L.append("\n## Demande\n\nmode : %s\n%s" % (d["mode"], d.get("consigne") or
              "(pas de consigne : répondre aux annotations, et sinon améliorer selon les règles)"))
@@ -749,6 +758,9 @@ def _genre(d):
     if d.get("type") == "renvois":
         from . import renvois
         return "pistes", renvois.SCHEMA, renvois.conclut, None
+    if d.get("type") == "reference":
+        from . import references
+        return "reference", references.SCHEMA, references.conclut, None
     return "reecriture", SCHEMA, _conclut, None
 
 
@@ -782,7 +794,7 @@ def encore(slug, ident, consigne=""):
     """Chercher encore : rouvrir la session d'une vérification (arrêtée, ou dont la réponse ne suffit
     pas) avec un budget neuf. Claude garde tout ce qu'il a lu ; la nouvelle réponse remplace l'ancienne."""
     d = lit(slug, ident)
-    if d.get("type") not in ("verification", "fiche"):
+    if d.get("type") not in ("verification", "fiche", "reference"):
         raise ValueError("« poursuivre la recherche » ne vaut que pour une vérification ou une fiche")
     if d["etat"] not in ("erreur", "prete"):
         raise Conflit("seule une vérification en erreur ou à décider peut chercher encore")

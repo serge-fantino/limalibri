@@ -770,6 +770,11 @@ cite[data-cle]:hover{color:var(--acc)}
 #outils .sep-barre{width:1px;height:1.2rem;background:var(--rule)}
 #outils .b-versions.danger{color:#c4525a;border-color:#c4525a55}
 .actions-fiche:empty{display:none}
+/* ---- bibliographie : statuts, vérification ---- */
+.badge.statut-ok{color:#2f6f4f;border-color:#2f6f4f}
+.badge.statut-neutre{color:var(--mut)}
+.oeuvre-verif{border-left:3px solid #2f6f4f;padding:.3rem .6rem;margin:.5rem 0;background:var(--bar)}
+.oeuvre-actions{flex-wrap:wrap;margin:.6rem 0}
 @media(max-width:1100px){#cadre{grid-template-columns:14rem minmax(0,1fr) 16rem}
  body[data-vue="storyboard"][data-panneau] #cadre{grid-template-columns:minmax(0,1fr) 22rem}
  body[data-vue="storyboard"][data-panneau] #gauche{display:none}}
