@@ -85,6 +85,8 @@ def compile_contexte(d):
     L.append("\n## Les chapitres de l'atelier (slugs possibles pour « chapitres »)\n" +
              "\n".join("- %s — %s" % (c["slug"], c["title"]) for c in chap))
     L.append("\n## Toutes les fiches (kb/fiches/<slug>.md)\n\n" + creation.index_texte())
+    from . import refs
+    L.append(refs.annexe(d.get("consigne")))
     return systeme, "\n".join(L)
 
 

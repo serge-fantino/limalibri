@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -304,8 +304,8 @@ async def encore(slug: str, ident: str, request: Request):
 def modeles():
     """Les modèles qu'on peut choisir, et ceux que le livre retient par défaut."""
     return {"modeles": reecriture.MODELES,
-            "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document")},
-            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document")}}
+            "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan")},
+            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan")}}
 
 
 @app.get("/api/fiches")
@@ -345,6 +345,66 @@ def oeuvres():
 @app.get("/api/oeuvres/statuts")
 def statuts_oeuvres():
     return {"statuts": sources.STATUTS, "base": sources.existe()}
+
+
+@app.get("/api/refs")
+def refs_resout(texte: str = "", ref: str = ""):
+    """Résoudre les références d'un texte (ou une seule) : [{ref, ok, titre, fichier, extrait, vue}]."""
+    return [refs.resout(r) for r in ([ref] if ref else refs.trouve(texte))]
+
+
+@app.get("/api/plan")
+def plan_lit():
+    """Le plan et le synopsis : le livre, ses parties, ses chapitres."""
+    return plan.lit()
+
+
+@app.post("/api/plan")
+async def plan_op(request: Request):
+    """Une opération sur le plan : {op, ...}.
+    livre {champs} · partie_ajoute {titre, apres?} · partie {id, champs} · partie_deplace {id, sens} ·
+    partie_supprime {id} · chapitre_ajoute {partie, titre, apres?} · chapitre {slug, champs} ·
+    chapitre_deplace {slug, partie?, sens?} · chapitre_supprime {slug}"""
+    c = await request.json()
+    op = c.get("op")
+    try:
+        if op == "livre":
+            return plan.modifie_livre(c.get("champs") or {})
+        if op == "partie_ajoute":
+            plan.ajoute_partie(c.get("titre"), c.get("apres"), c.get("champs"))
+        elif op == "partie":
+            plan.modifie_partie(c["id"], c.get("champs") or {})
+        elif op == "partie_deplace":
+            plan.deplace_partie(c["id"], int(c.get("sens") or 0))
+        elif op == "partie_supprime":
+            plan.supprime_partie(c["id"])
+        elif op == "chapitre_ajoute":
+            plan.ajoute_chapitre(c["partie"], c.get("titre"), c.get("slug"), c.get("apres"), c.get("champs"))
+        elif op == "chapitre":
+            plan.modifie_chapitre(c["slug"], c.get("champs") or {})
+        elif op == "chapitre_deplace":
+            plan.deplace_chapitre(c["slug"], c.get("partie"), int(c.get("sens") or 0))
+        elif op == "chapitre_supprime":
+            plan.supprime_chapitre(c["slug"])
+        else:
+            raise ValueError("opération inconnue : %s" % op)
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return plan.lit()
+
+
+@app.post("/api/plan/propose")
+async def plan_propose(request: Request):
+    """Demander une proposition à Claude : {niveau: livre|partie|chapitre, partie?, chapitre?, consigne?, modele?}."""
+    c = await request.json()
+    try:
+        return planif.cree(c)
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/oeuvres/{cle}")
@@ -703,6 +763,8 @@ async def decide(slug: str, ident: str, request: Request):
             return naif.decide(slug, ident, await request.json())
         if ident.startswith("o-"):
             return documents.decide(ident, await request.json())
+        if ident.startswith("s-"):
+            return planif.decide(ident, await request.json())
         return reecriture.decide(slug, ident, await request.json())
     except KeyError as e:
         raise HTTPException(404, "inconnu : %s" % e)

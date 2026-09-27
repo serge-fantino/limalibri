@@ -136,6 +136,12 @@ async function ouvre(slug) {
     }
   }
   fiche();
+  if (etat.blocApres && etat.blocApres.version === (vue === "storyboard" ? "recit" : vue)) {
+    const b = etat.blocApres.bloc;
+    etat.blocApres = null;
+    setTimeout(() => choisis(b, true), 60);
+    return;
+  }
   if (etat.cibleSection && vue === "essai") {
     const h = document.getElementById("sec-" + etat.cibleSection);
     etat.cibleSection = null;
@@ -201,7 +207,7 @@ function vueNotes(page) {
     corps.append(...contenuNote(n.li));
     enrichit(corps);
     li.append(corps);
-    li.append(el("span", "note-cle", n.cle + (n.appels.length ? "" : " · non appelée")));
+    li.append(el("span", "note-cle", n.cle + (n.appels.length ? "" : " · non appelée")), boutonRef(`@chapitre/${etat.slug}/note/${n.cle}`));
     const fs = fichesDeNote(n.cle);
     if (fs.length) {
       const d = el("span", "note-fiches");
@@ -326,6 +332,7 @@ function barreOutils() {
     o.append(bval);
   }
   if (etat.atelier && (v === "recit" || v === "storyboard" || v === "essai")) {
+    o.append(boutonRef(`@chapitre/${etat.slug}`, "b-versions"));
     const bh = el("button", "b-validation b-harnais", "✓ harnais");
     bh.title = "les portes du chapitre (verrou, budget, garde-fous, répétitions, lecture naïve…) puis la validation";
     bh.onclick = () => tiroirHarnais(versionVue());
@@ -1519,6 +1526,7 @@ async function panneauAssertion(id) {
   const x = a.assertions[id];
   marque(`#page [data-assertion="${id}"]`);
   const f = panneau("Assertion " + id);
+  f.querySelector(".pan-tete h4")?.append(" ", boutonRef(`@chapitre/${etat.slug}/assertion/${id}`));
   if (!x) { f.append(el("p", "mut", "Absente du verrou.")); return; }
   const sec = a.verrou.sections.find((s) => s.id === x.section);
   f.append(el("p", "pan-meta", `${x.statut} · section ${x.section}${sec ? " — " + sec.title : ""}`));
@@ -1717,6 +1725,7 @@ async function panneauPlan(pid) {
   if (!b) return;
   marque(`#page [data-plan-titre="${pid}"]`);
   const f = panneau(`Plan ${b.id} — ${b.title}`);
+  f.querySelector(".pan-tete h4")?.append(" ", boutonRef(`@chapitre/${etat.slug}/plan/${b.id}`));
   f.append(el("p", "mut petit", "Modifiable : la prochaine réécriture lira ce cadre."));
   for (const k of ["title", "lieu", "temps", "ambiance", "attaque", "chute"]) f.append(champPlan(pid, k, b[k]));
   const ids = parPlan()[pid] ?? [];
@@ -2094,7 +2103,7 @@ function panneauBloc(bloc, saisie = null) {
   const x = el("button", "fermer", "×");
   x.title = "Fermer (Échap)";
   x.onclick = () => pan.remove();
-  tete.append(el("span", "appui-lieu", "annotations · ^" + bloc), x);
+  tete.append(el("span", "appui-lieu", "annotations · ^" + bloc), boutonRef(`@chapitre/${etat.slug}/${versionVue()}^${bloc}`), x);
   pan.append(tete);
   if (saisie) pan.append(formulaire(saisie.ancre, saisie.existante, pan));
   const dl = versionVue() === "recit" && liensDemandes((x) => x.blocs.includes(bloc), "réécritures de ce paragraphe");
@@ -2251,8 +2260,10 @@ function carteAnnotation(a, avecLieu = false) {
   tete.append(el("span", "annot-type", TYPES[a.type] ?? a.type));
   if (a.etat === "resolue") tete.append(el("span", "annot-etat", "résolue"));
   if (etat.orphelines?.includes(a)) tete.append(el("span", "annot-orph", "orpheline"));
-  tete.append(el("span", "annot-date", `${a.auteur ?? ""} · ${(a.modifie ?? a.cree ?? "").slice(0, 10)}`));
+  tete.append(el("span", "annot-date", `${a.auteur ?? ""} · ${(a.modifie ?? a.cree ?? "").slice(0, 10)}`),
+    boutonRef(`@chapitre/${a.chapitre ?? etat.slug}/annotation/${a.id}`));
   d.append(tete);
+  setTimeout(() => lieRefs(d), 0);
   if (avecLieu) {
     const l = etat.atelier?.links?.[a.version]?.[a.bloc];
     d.append(el("span", "appui-lieu", `${a.version}${l?.plan ? " · plan " + l.plan : ""} · ^${a.bloc}`));
@@ -2483,7 +2494,7 @@ async function chargeDemandes() {
   b.classList.toggle("a-decider", n > 0);
 }
 
-const LIB_TYPE_KB = { fiche: "◇ fiche", pistes: "◇ creuser", renvois: "⇄ renvois", reference: "🔎 référence", document: "⤓ original" };
+const LIB_TYPE_KB = { fiche: "◇ fiche", pistes: "◇ creuser", renvois: "⇄ renvois", reference: "🔎 référence", document: "⤓ original", plan: "✦ plan" };
 const ETIQ_DEM = { en_cours: "en cours", prete: "à décider", erreur: "erreur", remplacee: "remplacée",
   en_attente: "en attente", retiree: "retirée", abandonnee: "abandonnée", a_confirmer: "à confirmer" };
 
@@ -2585,7 +2596,7 @@ function majCompteAnnotations() {
 let suivi = null;
 // Le « chapitre » d'une demande : les créations de fiche vivent dans kb/demandes (« _kb »).
 function slugDe(ident) {
-  return /^[fplro]-/.test(String(ident ?? "")) ? "_kb" : etat.slug;
+  return /^[fplros]-/.test(String(ident ?? "")) ? "_kb" : etat.slug;
 }
 
 // Le tiroir ouvert est retenu (session du navigateur) : un rafraîchissement le rouvre.
@@ -2603,7 +2614,7 @@ async function tiroir(ident) {
   const t = document.getElementById("tiroir");
   t.hidden = false;
   document.body.dataset.tiroir = "1";
-  if ((!etat.slug || !etat.atelier) && !/^[fplro]-/.test(String(ident ?? ""))) {
+  if ((!etat.slug || !etat.atelier) && !/^[fplros]-/.test(String(ident ?? ""))) {
     if (!ident && etat.wiki) return historiqueFiches(t);
     t.replaceChildren(teteTiroir("Réécritures"), el("p", "mut", "Ouvrir un chapitre de l'atelier."));
     return;
@@ -2617,6 +2628,7 @@ async function tiroir(ident) {
   if (d.type === "reference") return tiroirReference(t, d);
   if (d.type === "naive") return tiroirNaif(t, d);
   if (d.type === "document") return tiroirDocument(t, d);
+  if (d.type === "plan") return tiroirPlan(t, d);
   t.replaceChildren(teteTiroir(`Réécriture · ${d.portee}${d.cible.plan ? " " + d.cible.plan : ""} · ${MODES_R[d.mode]}`, () => tiroir(null)));
   if (d.titre) t.append(el("p", "dem-titre", d.titre));
   const cible = el("div", "dem-cible");
@@ -3011,6 +3023,7 @@ function ligneBudget(b) {
 }
 
 function piedTiroir(t, d) {
+  setTimeout(() => lieRefs(t.querySelector(".dem-cible")), 0);
   const dc = d.etat !== "en_cours" && derouleComplet(d);
   if (dc) t.append(dc);
   // reprendre : la session est gardée ; Claude y retrouve ce qu'il a lu et rend sa réponse
@@ -3576,25 +3589,40 @@ function afficheTitre() {
 }
 
 // Les onglets de la page du livre : la présentation, puis les garde-fous de chaque version.
-function ongletsLivre() {
-  const o = el("nav", "livre-onglets");
-  const onglet = (texte, actif, hash) => {
-    const a = el("a", actif ? "actif" : null, texte);
-    a.href = "#" + hash;
-    o.append(a);
+// La barre de vue de la page du livre, comme celles des chapitres et des fiches :
+// présentation · garde-fous de chaque version · Claude (modèles, budgets, file d'attente).
+function barreLivre() {
+  const o = document.getElementById("outils");
+  o.replaceChildren();
+  o.hidden = false;
+  const g = el("span", "groupe");
+  const b = (lib, actif, h, titre = "") => {
+    const x = el("button", actif ? "actif" : null, lib);
+    x.onclick = () => { location.hash = h; };
+    if (titre) x.title = titre;
+    g.append(x);
   };
-  onglet("Présentation", etat.ongletLivre !== "regles", "livre");
+  b("présentation", etat.ongletLivre === "presentation" || !etat.ongletLivre, "livre", "titre, auteur, synopsis, couverture, versions, structure");
   for (const v of Object.keys(etat.regles ?? {})) {
     const n = etat.regles[v].elements.filter((e) => e.type === "regle").length;
-    onglet(`Garde-fous · ${etat.livre.versions?.[v]?.titre ?? v} (${n})`,
-      etat.ongletLivre === "regles" && etat.reglesVue === v, `livre/regles/${v}`);
+    b(`garde-fous · ${(etat.livre.versions?.[v]?.titre ?? v).toLowerCase()} (${n})`, etat.ongletLivre === "regles" && etat.reglesVue === v,
+      `livre/regles/${v}`, "les règles d'écriture de cette version, et leurs contrôles");
   }
-  return o;
+  b("claude", etat.ongletLivre === "claude", "livre/claude", "le modèle et le budget de chaque demande, la file d'attente");
+  o.append(el("span", "etiq", "livre"), g, el("span", "espace"));
+  const y = el("a", "lien-ext", "livre.yaml ↗");
+  y.href = "vscode://file" + (etat.livre.chemins?.["livre.yaml"] ?? "");
+  y.title = "ouvrir livre.yaml dans l'éditeur";
+  o.append(y);
+}
+
+function ongletsLivre() {
+  barreLivre();
+  return el("span");
 }
 
 async function accueil() {
   document.body.dataset.vue = "livre";
-  document.getElementById("outils").hidden = true;
   document.getElementById("volet-chapitre").hidden = true;
   delete document.body.dataset.panneau;
   etat.livre = await api("/livre").catch(() => etat.livre);
@@ -3602,6 +3630,15 @@ async function accueil() {
   sommaire();
   const L = etat.livre;
   const page = document.getElementById("page");
+  if (etat.ongletLivre === "claude") {
+    page.replaceChildren(ongletsLivre(), el("h1", null, "Claude"),
+      el("p", "mut", "Ce que Claude peut faire pour chaque sorte de demande : le modèle, le nombre de tours, de recherches web et de " +
+        "pages lues. Au-delà du budget, l'outil est refusé et Claude rend sa réponse avec ce qu'il a. Chaque demande peut aussi " +
+        "choisir son modèle, pour elle seule."), sectionClaude(L));
+    colonneLivre();
+    zone().scrollTo(0, 0);
+    return;
+  }
   if (etat.ongletLivre === "regles") {
     page.replaceChildren(ongletsLivre(), sectionRegles());
     colonneLivre();
@@ -3665,7 +3702,6 @@ async function accueil() {
   }
 
   // Claude : le modèle par défaut et le budget de chaque demande
-  const cl = sectionClaude(L);
 
   // la structure, en un coup d'œil
   const st = el("section", "livre-bloc");
@@ -3694,7 +3730,7 @@ async function accueil() {
   if (!parties.length) grille.append(el("p", "mut", "Aucun chapitre : structure.yaml est vide."));
   st.append(grille);
 
-  page.replaceChildren(ongletsLivre(), tete, corps, versions, cl, st);
+  page.replaceChildren(ongletsLivre(), tete, corps, versions, st);
   page.querySelectorAll("textarea").forEach(ajuste);
   colonneLivre();
   zone().scrollTo(0, 0);
@@ -3731,9 +3767,9 @@ function ajuste(t) {
 function sectionClaude(L) {
   const C = L.claude ?? {};
   const s = el("section", "livre-bloc");
-  s.append(el("h3", null, "Claude"), el("p", "mut petit",
-    "Le modèle et le budget de chaque demande (livre.yaml, section « claude »). Un modèle moins cher convient souvent " +
-    "à une retouche ; la vérification demande du jugement sur les sources. Chaque demande peut choisir le sien."));
+  s.append(el("p", "mut petit",
+    "Écrit dans livre.yaml, section « claude ». Un modèle moins cher convient souvent à une retouche, à la vérification " +
+    "d'une référence ou à une lecture naïve ; la vérification d'un fait et la création d'une fiche demandent du jugement sur les sources."));
   const selModele = (valeur, vide, surChange) => {
     const sel = el("select", "livre-select");
     const o0 = el("option", null, vide);
@@ -3757,9 +3793,9 @@ function sectionClaude(L) {
     el("span", "mut petit", `${F.en_attente.length} en attente · désactivé : chaque demande se lance à la main`))).catch(() => {});
   s.append(fileBox);
   const LIB = { verification: "Vérification", reecriture: "Réécriture", fiche: "Fiche nouvelle", pistes: "Creuser", reference: "Référence",
-    naive: "Lecture naïve", document: "Texte original" };
+    naive: "Lecture naïve", document: "Texte original", plan: "Plan" };
   const CH = { tours: "tours", recherches: "recherches web", pages: "pages lues" };
-  for (const g of ["verification", "reecriture", "fiche", "pistes", "reference", "naive", "document"]) {
+  for (const g of ["verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan"]) {
     const G = C[g] ?? {};
     const lim = etat.modeles?.limites?.[g] ?? {};
     const box = el("div", "claude-genre");
@@ -3883,7 +3919,7 @@ function carteRegle(e) {
   const c = el("div", "regle");
   c.id = `regle-${etat.reglesVue}-${e.id}`;
   const h = el("div", "regle-tete");
-  h.append(el("span", "regle-id", e.id), el("span", "regle-titre", e.titre));
+  h.append(el("span", "regle-id", e.id), el("span", "regle-titre", e.titre), boutonRef(`@regle/${etat.reglesVue}/${e.id}`));
   const act = el("span", "regle-actions");
   const mod = el("button", "pan-lien", "modifier");
   mod.onclick = () => c.replaceWith(formRegle(e));
@@ -3956,7 +3992,7 @@ async function finRegles(r) {
 async function rafraichitRegles() {
   etat.regles = await api("/regles").catch(() => etat.regles);
   document.getElementById("garde-fous")?.replaceWith(sectionRegles());
-  document.querySelector(".livre-onglets")?.replaceWith(ongletsLivre());
+  if (etat.accueil) barreLivre();
 }
 
 // Markdown d'un bloc de règle : paragraphes, listes, tableaux (tels quels), *italique*, **gras**.
@@ -4032,20 +4068,23 @@ function boutons() {
     b.classList.toggle("actif", b.dataset.v === "recit" ? recit : b.dataset.v === etat.version));
   document.body.dataset.recit = recit ? "1" : "";
   if (etat.wiki) document.querySelectorAll("#versions button[data-v]").forEach((b) => b.classList.remove("actif"));
-  document.getElementById("b-fiches").classList.toggle("actif", !!etat.wiki);
+  document.getElementById("b-fiches").classList.toggle("actif", !!etat.wiki && !etat.enPlan);
+  document.getElementById("b-plan").classList.toggle("actif", !!etat.enPlan);
 }
 
 function depuisAdresse() {
   quitte();
   const [slug, vue, mode] = decodeURIComponent(location.hash.slice(1)).split("/");
   if (slug.startsWith("fn")) return;
-  etat.wiki = slug === "fiches" || slug === "biblio";
+  etat.enPlan = slug === "plan";
+  etat.wiki = slug === "fiches" || slug === "biblio" || etat.enPlan;
   boutons();
+  if (etat.enPlan) { etat.accueil = false; return vuePlan(vue, mode); }
   if (slug === "biblio") { etat.accueil = false; return vue ? pageOeuvre(vue) : vueBiblioLivre(); }
   if (etat.wiki) { etat.accueil = false; return vueFiches(vue, mode); }
   if (!slug || slug === "livre") {
     etat.accueil = true;
-    etat.ongletLivre = vue === "regles" ? "regles" : "presentation";
+    etat.ongletLivre = vue === "regles" ? "regles" : vue === "claude" ? "claude" : "presentation";
     if (vue === "regles") { etat.reglesVue = mode ?? etat.reglesVue; etat.regleCible = decodeURIComponent(location.hash).split("/")[3]; }
     return accueil();
   }
@@ -4134,7 +4173,7 @@ async function apercuFiche(slug, section = null) {
   };
   const plein = el("a", "pan-lien", "pleine page ↗");
   plein.href = `#fiches/${slug}${section ? "/" + section : ""}`;
-  tete.append(retour, el("span", "mut petit", "fiche · " + slug), plein);
+  tete.append(retour, el("span", "mut petit", "fiche · " + slug), boutonRef("@fiche/" + slug), plein);
   const corps = el("div", "fiche-corps apercu");
   corps.innerHTML = f.html;
   corps.querySelectorAll("a.wiki").forEach((a) => {
@@ -4256,7 +4295,7 @@ async function apercuOeuvre(cle) {
   };
   const plein = el("a", "pan-lien", "page de l'œuvre ↗");
   plein.href = `#biblio/${cle}`;
-  tete.append(retour, el("span", "mut petit", "œuvre · " + cle), plein);
+  tete.append(retour, el("span", "mut petit", "œuvre · " + cle), boutonRef("@oeuvre/" + cle), plein);
   box.append(tete);
   if (!o) {
     box.append(el("p", "fiche-alerte", `Clé « ${cle} » introuvable : ni dans la base centrale, ni dans une bibliographie de chapitre, ni dans les sources d'une fiche.`));
@@ -4506,6 +4545,519 @@ async function tiroirReference(t, d) {
   piedTiroir(t, d);
 }
 
+// ------------------------------------------------------------------ les références
+//
+// @fiche/luca#section · @oeuvre/cle · @chapitre/slug[/essai#sec|/essai^bloc|/recit^bloc|/plan/A|
+// /assertion/1.9|/note/cle|/annotation/id] · @partie/p1 · @regle/recit/R11
+// ⧉ copie une référence ; collée dans une consigne ou une annotation, Claude reçoit la partie visée.
+
+const MOTIF_REF = /(?<![\w[])@(fiche|oeuvre|chapitre|partie|regle)\/[\w./#^:-]*[\w-]/g;
+
+function copieRef(ref) {
+  const fin = () => {
+    const a = el("div", "avis", "copié : " + ref);
+    document.body.append(a);
+    setTimeout(() => a.remove(), 2200);
+  };
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(ref).then(fin, () => prompt("La référence :", ref));
+  else prompt("La référence :", ref);
+}
+
+function boutonRef(ref, classe = "pan-lien ref-copie") {
+  const b = el("button", classe, "⧉");
+  b.title = "copier la référence " + ref + " — à coller dans une consigne : Claude lira cette partie";
+  b.onclick = (e) => { e.stopPropagation(); e.preventDefault(); copieRef(ref); };
+  return b;
+}
+
+// Aller à ce qu'une référence désigne.
+function allerRef(ref) {
+  const m = ref.match(/^@(\w+)\/(.+)$/);
+  if (!m) return;
+  const [, genre, chemin] = m;
+  if (genre === "fiche") { const [s, sec] = chemin.split("#"); location.hash = `fiches/${s}${sec ? "/" + sec : ""}`; return; }
+  if (genre === "oeuvre") { location.hash = `biblio/${chemin}`; return; }
+  if (genre === "partie") { location.hash = `plan/p/${chemin}`; return; }
+  if (genre === "regle") { location.hash = `livre/regles/${chemin}`; return; }
+  const c = chemin.match(/^([\w-]+)(?:\/(.*))?$/);
+  const slug = c[1], reste = c[2] ?? "";
+  let x;
+  if ((x = reste.match(/^(essai|recit)\^([\w-]+)$/))) {
+    if (etat.slug === slug && !etat.wiki && !etat.accueil) return vaVers(x[1], x[2]);
+    etat.blocApres = { version: x[1], bloc: x[2] };
+    location.hash = `${slug}/${x[1] === "essai" ? "essai/texte" : "recit/texte"}`;
+  } else if ((x = reste.match(/^(essai|recit)#([\w-]+)$/))) {
+    etat.cibleSection = x[2];
+    location.hash = `${slug}/${x[1] === "essai" ? "essai/texte" : "recit/texte"}`;
+  } else if ((x = reste.match(/^note\/(.+)$/))) {
+    etat.noteApres = x[1];
+    location.hash = `${slug}/essai/notes`;
+  } else if ((x = reste.match(/^annotation\/(.+)$/))) {
+    etat.annotApres = x[1];
+    location.hash = `${slug}/recit/texte`;
+  } else if (/^(plan|assertion)\//.test(reste)) location.hash = `${slug}/recit/storyboard`;
+  else if (/^(essai|recit)$/.test(reste)) location.hash = `${slug}/${reste === "essai" ? "essai/texte" : "recit/texte"}`;
+  else location.hash = `plan/c/${slug}`;
+}
+
+// Les références d'un nœud déjà écrit deviennent des liens (le texte ne change pas).
+function lieRefs(racine) {
+  if (!racine) return;
+  const w = document.createTreeWalker(racine, NodeFilter.SHOW_TEXT);
+  const aTraiter = [];
+  while (w.nextNode()) {
+    MOTIF_REF.lastIndex = 0;
+    if (MOTIF_REF.test(w.currentNode.data) && !w.currentNode.parentElement.closest("a, textarea, input, .ref-lien")) aTraiter.push(w.currentNode);
+  }
+  for (const n of aTraiter) {
+    const frag = document.createDocumentFragment();
+    let i = 0;
+    for (const m of n.data.matchAll(MOTIF_REF)) {
+      frag.append(n.data.slice(i, m.index));
+      const a = el("a", "ref-lien", m[0]);
+      a.href = "#";
+      a.onclick = (e) => { e.preventDefault(); e.stopPropagation(); allerRef(m[0]); };
+      frag.append(a);
+      i = m.index + m[0].length;
+    }
+    frag.append(n.data.slice(i));
+    n.replaceWith(frag);
+  }
+}
+
+// Sous un champ de consigne : ce que Claude lira, pour chaque référence collée.
+let refsMinuteur = null;
+document.addEventListener("input", (e) => {
+  const x = e.target;
+  if (!(x instanceof HTMLTextAreaElement || x instanceof HTMLInputElement) || !x.closest("#tiroir, #page, #fiche")) return;
+  clearTimeout(refsMinuteur);
+  refsMinuteur = setTimeout(async () => {
+    let aide = x.nextElementSibling?.classList.contains("aide-refs") ? x.nextElementSibling : null;
+    MOTIF_REF.lastIndex = 0;
+    if (!MOTIF_REF.test(x.value)) { aide?.remove(); return; }
+    const R = await api("/refs?texte=" + encodeURIComponent(x.value)).catch(() => []);
+    if (!aide) { aide = el("div", "aide-refs"); x.after(aide); }
+    aide.replaceChildren(el("span", "mut petit", "Claude lira : "));
+    for (const r of R) {
+      const s = el("span", "ref-resolue " + (r.ok ? "ok" : "ko"), (r.ok ? "✓ " + r.titre : "✗ " + r.ref + " — " + (r.erreur ?? "introuvable")));
+      if (r.ok) s.title = (r.extrait ?? "").slice(0, 600);
+      aide.append(s);
+    }
+  }, 350);
+});
+
+// ------------------------------------------------------------------ le plan et le synopsis
+//
+// #plan              le livre : synopsis, idée, arc, et la structure (parties, chapitres)
+// #plan/p/<id>       une partie : son sens, son arc, sa question, ses chapitres
+// #plan/c/<slug>     un chapitre : son synopsis, sa question, ses fiches
+// À chaque niveau, on édite à la main, ou on demande une proposition à Claude (✦).
+
+async function opSynopsis(corps) {
+  const r = await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+  if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return null; }
+  etat.plan = await r.json();
+  etat.chapitres = await api("/chapitres").catch(() => etat.chapitres);
+  sommaire();
+  return etat.plan;
+}
+
+// Un champ du plan : il s'enregistre quand on le quitte.
+function champPlanSyn(lib, valeur, enregistre, { long = false, aide = "" } = {}) {
+  const l = el("label", "champ-edit champ-plan-syn");
+  l.append(el("span", "nom", lib));
+  const x = el(long ? "textarea" : "input", long ? "annot-texte" : "dem-motif");
+  x.value = valeur ?? "";
+  if (aide) x.placeholder = aide;
+  if (long) { x.rows = 2; setTimeout(() => ajuste(x), 0); x.addEventListener("input", () => ajuste(x)); }
+  x.addEventListener("change", async () => {
+    x.classList.add("enregistre");
+    await enregistre(x.value);
+    x.classList.remove("enregistre");
+  });
+  l.append(x);
+  return l;
+}
+
+function barrePlan(niveau, cible, actions) {
+  const o = document.getElementById("outils");
+  o.replaceChildren();
+  o.hidden = false;
+  o.append(el("span", "etiq", "plan"));
+  const g = el("span", "groupe");
+  const P = etat.plan;
+  const b = (lib, h, actif) => { const x = el("button", actif ? "actif" : null, lib); x.onclick = () => { location.hash = h; }; g.append(x); };
+  b("le livre", "plan", niveau === "livre");
+  if (niveau !== "livre") {
+    const pid = niveau === "partie" ? cible : P.parties.find((p) => p.chapitres.some((c) => c.slug === cible))?.id;
+    const p = P.parties.find((x) => x.id === pid);
+    if (p) b(p.title.slice(0, 32), `plan/p/${p.id}`, niveau === "partie");
+    if (niveau === "chapitre") b(P.parties.flatMap((x) => x.chapitres).find((c) => c.slug === cible)?.title?.slice(0, 32) ?? cible, `plan/c/${cible}`, true);
+  }
+  o.append(g, el("span", "espace"));
+  if (actions) o.append(actions);
+}
+
+function boutonPropose(niveau, cible, lib) {
+  const b = el("button", "b-versions", lib);
+  b.title = "Claude lit le plan et la base de fiches, et propose ; tu retiens élément par élément";
+  b.onclick = () => {
+    const z = document.querySelector("#page > .actions-fiche");
+    const f = el("div", "form-demande");
+    const cons = el("textarea", "annot-texte petit-texte");
+    cons.placeholder = "Précision (facultatif) : ce qui compte, ce qu'il faut garder, l'angle…";
+    const mod = choixModele("plan");
+    const go = el("button", "bouton", "✦ proposer");
+    go.onclick = async () => {
+      go.disabled = true;
+      const r = await fetch("/api/plan/propose", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ niveau, partie: niveau === "partie" ? cible : null, chapitre: niveau === "chapitre" ? cible : null,
+          consigne: cons.value, modele: mod.valeur() }) });
+      if (!r.ok) { go.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+      tiroir((await r.json()).id);
+    };
+    const non = el("button", "pan-lien", "annuler");
+    non.onclick = () => f.remove();
+    const act = el("div", "annot-actions");
+    act.append(go, non);
+    f.append(el("span", "appui-lieu", lib.replace("…", "") + " — une lecture du plan et des fiches, sans web ; rien n'est écrit sans toi"), cons, mod.noeud, act);
+    z.replaceChildren(f);
+    f.scrollIntoView({ block: "center" });
+  };
+  return b;
+}
+
+// Les demandes de plan en cours ou à décider, pour ce niveau.
+async function demandesPlan(niveau, cible) {
+  const ds = await api("/fiches/demandes").catch(() => []);
+  const d = el("div");
+  for (const x of ds.filter((y) => y.type === "plan" && y.niveau === niveau && (niveau === "livre" || y.partie === cible || y.chapitre === cible)
+    && ["en_cours", "prete", "erreur"].includes(y.etat))) {
+    const b = el("button", "banniere-pistes", `✦ ${x.titre} — ${etiquetteDemande(x)} → ouvrir`);
+    b.onclick = () => tiroir(x.id);
+    d.append(b);
+  }
+  return d;
+}
+
+function colonnePlanSyn(niveau, cible) {
+  const volet = document.getElementById("volet-chapitre");
+  volet.hidden = false;
+  volet.querySelector(".volet-titre").textContent = "Plan";
+  const col = document.getElementById("plan-col");
+  const r = el("div", "plan-fiche");
+  const lien = (lib, h, actif, niv) => {
+    const a = el("a", "pf-ligne" + (actif ? " actif" : ""), lib);
+    a.href = "#" + h;
+    a.style.paddingLeft = (niv * .9 + .6) + "rem";
+    r.append(a);
+  };
+  lien(etat.plan.livre.titre || "Le livre", "plan", niveau === "livre", 0);
+  let n = 0;
+  for (const p of etat.plan.parties) {
+    lien(p.title, `plan/p/${p.id}`, niveau === "partie" && cible === p.id, 1);
+    for (const c of p.chapitres) lien(`${++n}. ${c.title}`, `plan/c/${c.slug}`, niveau === "chapitre" && cible === c.slug, 2);
+  }
+  col.replaceChildren(r);
+}
+
+async function vuePlan(vue, id) {
+  document.body.dataset.vue = "plan";
+  delete document.body.dataset.panneau;
+  sommaire();
+  etat.plan = await api("/plan");
+  if (vue === "p") return pagePartie(id);
+  if (vue === "c") return pageChapitrePlan(id);
+  return pageLivrePlan();
+}
+
+// Une liste de chapitres (d'une partie), avec de quoi les ranger.
+function listeChapitres(p) {
+  const d = el("div", "plan-chapitres");
+  const tous = etat.plan.parties.flatMap((x) => x.chapitres.map((c) => c.slug));
+  p.chapitres.forEach((c) => {
+    const l = el("div", "plan-chapitre");
+    const a = el("a", "plan-chapitre-titre", `${tous.indexOf(c.slug) + 1}. ${c.title}`);
+    a.href = `#plan/c/${c.slug}`;
+    l.append(a);
+    if (c.periode) l.append(el("span", "mut petit", " · " + c.periode));
+    l.append(el("span", "badge " + (c.a_texte ? "statut-ok" : ""), c.a_texte ? "texte" : c.status ?? "outline"));
+    const outils = el("span", "plan-outils");
+    const bt = (lib, titre, f) => { const x = el("button", "pan-lien", lib); x.title = titre; x.onclick = f; outils.append(x); };
+    bt("↑", "monter (au bord : partie précédente)", () => opSynopsis({ op: "chapitre_deplace", slug: c.slug, sens: -1 }).then((P) => P && vuePlanCourant()));
+    bt("↓", "descendre (au bord : partie suivante)", () => opSynopsis({ op: "chapitre_deplace", slug: c.slug, sens: 1 }).then((P) => P && vuePlanCourant()));
+    if (!c.a_texte) bt("✕", "supprimer (le chapitre n'a pas de texte)", () => confirm(`Supprimer « ${c.title} » du plan ?`) &&
+      opSynopsis({ op: "chapitre_supprime", slug: c.slug }).then((P) => P && vuePlanCourant()));
+    l.append(outils);
+    if (c.synopsis) l.append(el("p", "plan-synopsis", c.synopsis.length > 320 ? c.synopsis.slice(0, 320) + "…" : c.synopsis));
+    else l.append(el("p", "mut petit", "pas encore de synopsis"));
+    if (c.fiches.length) { const f = el("div", "pastilles"); f.append(...c.fiches.map((x) => puceFiche(x))); l.append(f); }
+    d.append(l);
+  });
+  const ajout = el("div", "annot-actions");
+  const titre = el("input", "dem-motif");
+  titre.placeholder = "＋ un chapitre (son titre)";
+  titre.onkeydown = async (e) => {
+    if (e.key !== "Enter" || !titre.value.trim()) return;
+    if (await opSynopsis({ op: "chapitre_ajoute", partie: p.id, titre: titre.value })) vuePlanCourant();
+  };
+  ajout.append(titre);
+  d.append(ajout);
+  return d;
+}
+
+function vuePlanCourant() {
+  const [, vue, id] = decodeURIComponent(location.hash.slice(1)).split("/");
+  if (vue === "p") return pagePartie(id);
+  if (vue === "c") return pageChapitrePlan(id);
+  return pageLivrePlan();
+}
+
+async function pageLivrePlan() {
+  const P = etat.plan, L = P.livre;
+  const page = document.getElementById("page");
+  const actions = el("span", "actions-barre");
+  actions.append(boutonPropose("livre", null, "✦ proposer la structure…"));
+  barrePlan("livre", null, actions);
+  colonnePlanSyn("livre");
+  const zone_ = el("div", "actions-fiche");
+  page.replaceChildren(el("h1", null, L.titre || "Le livre"), await demandesPlan("livre"), zone_,
+    champPlanSyn("synopsis court", L.synopsis, (v) => opSynopsis({ op: "livre", champs: { synopsis: v } }), { long: true, aide: "le livre en un paragraphe (celui de la couverture)" }),
+    champPlanSyn("idée maîtresse", L.idee, (v) => opSynopsis({ op: "livre", champs: { idee: v } }), { long: true, aide: "une phrase : ce que le livre démontre" }),
+    champPlanSyn("arc", L.arc, (v) => opSynopsis({ op: "livre", champs: { arc: v } }), { long: true, aide: "le mouvement d'ensemble, du début à la fin" }),
+    champPlanSyn("synopsis développé", L.developpe, (v) => opSynopsis({ op: "livre", champs: { developpe: v } }), { long: true, aide: "quelques paragraphes" }));
+  page.append(el("h2", "oeuvre-section", `Structure · ${P.parties.length} partie(s) · ${P.parties.reduce((s, p) => s + p.chapitres.length, 0)} chapitre(s)`));
+  P.parties.forEach((p, i) => {
+    const c = el("div", "plan-partie");
+    const tete = el("div", "plan-partie-tete");
+    const a = el("a", "plan-partie-titre", `${i + 1}. ${p.title}`);
+    a.href = `#plan/p/${p.id}`;
+    tete.append(a);
+    const outils = el("span", "plan-outils");
+    const bt = (lib, titre, f) => { const x = el("button", "pan-lien", lib); x.title = titre; x.onclick = f; outils.append(x); };
+    bt("↑", "monter", () => opSynopsis({ op: "partie_deplace", id: p.id, sens: -1 }).then((X) => X && pageLivrePlan()));
+    bt("↓", "descendre", () => opSynopsis({ op: "partie_deplace", id: p.id, sens: 1 }).then((X) => X && pageLivrePlan()));
+    if (!p.chapitres.length) bt("✕", "supprimer la partie (vide)", () => opSynopsis({ op: "partie_supprime", id: p.id }).then((X) => X && pageLivrePlan()));
+    tete.append(outils);
+    c.append(tete);
+    if (p.sens) c.append(el("p", "plan-synopsis", p.sens));
+    if (p.question) c.append(el("p", "mut petit", "question : " + p.question));
+    c.append(listeChapitres(p));
+    page.append(c);
+  });
+  const np = el("input", "dem-motif");
+  np.placeholder = "＋ une partie (son titre)";
+  np.onkeydown = async (e) => {
+    if (e.key !== "Enter" || !np.value.trim()) return;
+    if (await opSynopsis({ op: "partie_ajoute", titre: np.value })) pageLivrePlan();
+  };
+  page.append(np);
+  document.getElementById("fiche").replaceChildren(el("h4", null, "Plan"), el("p", "mut petit",
+    "Le livre s'écrit de haut en bas : l'idée et l'arc du livre, le sens de chaque partie, le synopsis de chaque chapitre, puis le texte. " +
+    "Chaque niveau s'édite à la main, ou avec une proposition de Claude (✦) qu'on retient élément par élément."),
+    el("p", "mut petit", "Les champs s'enregistrent quand on les quitte."));
+  zone().scrollTo(0, 0);
+}
+
+async function pagePartie(pid) {
+  const P = etat.plan;
+  const i = P.parties.findIndex((x) => x.id === pid);
+  const p = P.parties[i];
+  const page = document.getElementById("page");
+  if (!p) { page.replaceChildren(el("p", "mut", "Partie inconnue.")); return; }
+  const actions = el("span", "actions-barre");
+  actions.append(boutonRef("@partie/" + pid, "b-versions"), boutonPropose("partie", pid, "✦ développer la partie…"));
+  barrePlan("partie", pid, actions);
+  colonnePlanSyn("partie", pid);
+  const zone_ = el("div", "actions-fiche");
+  const voisins = el("p", "fil");
+  if (i > 0) { const a = el("a", null, "← " + P.parties[i - 1].title); a.href = `#plan/p/${P.parties[i - 1].id}`; voisins.append(a, "   "); }
+  if (i < P.parties.length - 1) { const a = el("a", null, P.parties[i + 1].title + " →"); a.href = `#plan/p/${P.parties[i + 1].id}`; voisins.append(a); }
+  page.replaceChildren(voisins, el("h1", null, `Partie ${i + 1} — ${p.title}`), await demandesPlan("partie", pid), zone_,
+    champPlanSyn("titre", p.title, (v) => opSynopsis({ op: "partie", id: pid, champs: { title: v } })),
+    champPlanSyn("sens", p.sens, (v) => opSynopsis({ op: "partie", id: pid, champs: { sens: v } }), { long: true, aide: "ce que la partie accomplit dans le livre, et pourquoi elle vient là" }),
+    champPlanSyn("arc", p.arc, (v) => opSynopsis({ op: "partie", id: pid, champs: { arc: v } }), { long: true, aide: "son mouvement, du premier chapitre au dernier" }),
+    champPlanSyn("question", p.question, (v) => opSynopsis({ op: "partie", id: pid, champs: { question: v } }), { aide: "la question à laquelle elle répond" }),
+    el("h2", "oeuvre-section", `Chapitres · ${p.chapitres.length}`), listeChapitres(p));
+  document.getElementById("fiche").replaceChildren(el("h4", null, "Partie"), el("p", "mut petit",
+    "Son sens et ses chapitres. « Développer la partie » : Claude propose son sens, son arc, sa question, et la liste de ses chapitres — ajouter, retirer, réordonner."));
+  zone().scrollTo(0, 0);
+}
+
+async function pageChapitrePlan(slug) {
+  const P = etat.plan;
+  const tous = P.parties.flatMap((p) => p.chapitres.map((c) => ({ ...c, partie: p })));
+  const i = tous.findIndex((c) => c.slug === slug);
+  const c = tous[i];
+  const page = document.getElementById("page");
+  if (!c) { page.replaceChildren(el("p", "mut", "Chapitre inconnu.")); return; }
+  const actions = el("span", "actions-barre");
+  actions.append(boutonRef("@chapitre/" + slug, "b-versions"), boutonPropose("chapitre", slug, "✦ développer le chapitre…"));
+  for (const v of c.versions.filter((v) => c.a_texte || v === "essai")) {
+    const a = el("a", "b-versions lien-barre", `${v === "essai" ? "essai" : "récit"} ↗`);
+    a.href = `#${slug}/${v === "essai" ? "essai/texte" : "recit"}`;
+    actions.append(a);
+  }
+  barrePlan("chapitre", slug, actions);
+  colonnePlanSyn("chapitre", slug);
+  const zone_ = el("div", "actions-fiche");
+  const voisins = el("p", "fil");
+  if (i > 0) { const a = el("a", null, "← " + tous[i - 1].title); a.href = `#plan/c/${tous[i - 1].slug}`; voisins.append(a, "   "); }
+  if (i < tous.length - 1) { const a = el("a", null, tous[i + 1].title + " →"); a.href = `#plan/c/${tous[i + 1].slug}`; voisins.append(a); }
+  const statut = el("select", "livre-select");
+  for (const s of ["outline", "draft", "revised", "locked"]) { const o = el("option", null, s); o.value = s; if (s === (c.status ?? "outline")) o.selected = true; statut.append(o); }
+  statut.onchange = () => opSynopsis({ op: "chapitre", slug, champs: { status: statut.value } });
+  const partie = el("select", "livre-select");
+  for (const p of P.parties) { const o = el("option", null, p.title); o.value = p.id; if (p.id === c.partie.id) o.selected = true; partie.append(o); }
+  partie.onchange = () => opSynopsis({ op: "chapitre_deplace", slug, partie: partie.value }).then((X) => X && pageChapitrePlan(slug));
+  const ligne = el("div", "annot-actions");
+  ligne.append(el("span", "mut petit", "partie"), partie, el("span", "mut petit", "statut"), statut);
+  const fiches = el("div", "pastilles");
+  fiches.append(...c.fiches.map((x) => puceFiche(x)));
+  page.replaceChildren(voisins, el("h1", null, `${i + 1}. ${c.title}`), await demandesPlan("chapitre", slug), zone_, ligne,
+    champPlanSyn("titre", c.title, (v) => opSynopsis({ op: "chapitre", slug, champs: { title: v } })),
+    champPlanSyn("période", c.periode, (v) => opSynopsis({ op: "chapitre", slug, champs: { periode: v } }), { aide: "facultatif : 13,8 Ga → 380 000 ans…" }),
+    champPlanSyn("question", c.question, (v) => opSynopsis({ op: "chapitre", slug, champs: { question: v } }), { aide: "la question à laquelle il répond, et qui ouvre la suivante" }),
+    champPlanSyn("synopsis", c.synopsis, (v) => opSynopsis({ op: "chapitre", slug, champs: { synopsis: v } }), { long: true, aide: "ce qui arrive, dans l'ordre" }),
+    el("h2", "oeuvre-section", `Fiches · ${c.fiches.length}`), fiches,
+    champPlanSyn("fiches (slugs, séparés par des virgules)", c.fiches.join(", "), (v) => opSynopsis({ op: "chapitre", slug, champs: { fiches: v } }).then((X) => X && pageChapitrePlan(slug))));
+  if (!c.a_texte) page.append(el("p", "mut petit", "Pas encore de texte. « Développer le chapitre » propose, en plus du synopsis, le déroulé de l'essai et ses assertions — " +
+    "et, si tu le retiens, amorce l'essai (un squelette, une section par étape) et son verrou."));
+  document.getElementById("fiche").replaceChildren(el("h4", null, "Chapitre"), el("p", "mut petit",
+    "Son synopsis, sa question, ses fiches. Il existe dès cette étape (chapters/" + slug + "/brief.yaml), avant tout texte."));
+  zone().scrollTo(0, 0);
+}
+
+// Le tiroir d'une proposition de plan : on retient élément par élément.
+async function tiroirPlan(t, d) {
+  const niv = d.cible.niveau;
+  t.replaceChildren(teteTiroir(d.titre ?? "Plan", () => historiqueFiches(t)));
+  if (d.etat === "en_cours") {
+    t.append(enDirect(d));
+    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    return piedTiroir(t, d);
+  }
+  if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
+  const R = d.resultat ?? {};
+  const P = await api("/plan").catch(() => etat.plan);
+  if (R.remarques) t.append(el("p", "annot-corps", R.remarques));
+  const prete = d.etat === "prete";
+  const coche = (lib, val = true) => {
+    const l = el("label", "dem-consulter");
+    const x = el("input");
+    x.type = "checkbox"; x.checked = val; x.disabled = !prete;
+    l.append(x, " " + lib);
+    return [l, x];
+  };
+  const sel = { livre: [], parties: {}, chapitres: {}, chapitre: [], amorce: false };
+  const lecteurs = [];
+  if (R.livre && niv === "livre") {
+    t.append(el("h5", null, "Le livre"));
+    for (const [k, lib] of [["idee", "idée maîtresse"], ["arc", "arc"], ["developpe", "synopsis développé"]]) {
+      if (!R.livre[k]) continue;
+      const [l, x] = coche(lib, !P.livre[k]);
+      const b = el("div", "piste piste-nouvelle");
+      b.append(l, el("p", "annot-corps", R.livre[k]));
+      if (P.livre[k]) b.append(el("p", "mut petit", "actuel : " + P.livre[k].slice(0, 300)));
+      t.append(b);
+      lecteurs.push(() => { if (x.checked) sel.livre.push(k); });
+    }
+  }
+  const tous = new Map(P.parties.flatMap((p) => p.chapitres.map((c) => [c.slug, c])));
+  (R.parties ?? []).forEach((p, i) => {
+    const b = el("div", "plan-partie proposee");
+    const [l, x] = coche(`${p.id ? "partie " + p.id + " (existante)" : "partie nouvelle"} — ${p.titre}`);
+    b.append(l, el("p", "plan-synopsis", p.sens ?? ""));
+    if (p.arc) b.append(el("p", "mut petit", "arc : " + p.arc));
+    if (p.question) b.append(el("p", "mut petit", "question : " + p.question));
+    lecteurs.push(() => { if (x.checked) sel.parties[String(i)] = ["titre", "sens", "arc", "question"]; });
+    (p.chapitres ?? []).forEach((c, j) => {
+      const exist = c.slug && tous.get(c.slug);
+      const [lc, xc] = coche(`${exist ? "existant" : "nouveau"} — ${c.titre}${c.periode ? " (" + c.periode + ")" : ""}`);
+      const cc = el("div", "plan-chapitre");
+      cc.append(lc, el("p", "plan-synopsis", c.synopsis ?? ""));
+      if (c.question) cc.append(el("p", "mut petit", "question : " + c.question));
+      if (c.fiches?.length) { const f = el("div", "pastilles"); f.append(...c.fiches.map((y) => puceFiche(y))); cc.append(f); }
+      if (exist?.synopsis) cc.append(el("p", "mut petit", "synopsis actuel : " + exist.synopsis.slice(0, 200)));
+      b.append(cc);
+      lecteurs.push(() => { if (xc.checked) sel.chapitres[`${i}.${j}`] = true; });
+    });
+    t.append(b);
+  });
+  const C = R.chapitre;
+  if (C && niv === "chapitre") {
+    const cur = tous.get(d.cible.chapitre) ?? {};
+    for (const [k, lib] of [["synopsis", "synopsis"], ["question", "question"]]) {
+      if (!C[k]) continue;
+      const [l, x] = coche(lib);
+      const b = el("div", "piste piste-nouvelle");
+      b.append(l, el("p", "annot-corps", C[k]));
+      if (cur[k]) b.append(el("p", "mut petit", "actuel : " + cur[k].slice(0, 300)));
+      t.append(b);
+      lecteurs.push(() => { if (x.checked) sel.chapitre.push(k); });
+    }
+    if (C.fiches?.length) {
+      const [l, x] = coche("fiches du chapitre");
+      const b = el("div", "piste piste-nouvelle");
+      b.append(l);
+      for (const f of C.fiches) { const p = el("p", "petit"); p.append(puceFiche(f.fiche), " " + f.raison); b.append(p); }
+      t.append(b);
+      lecteurs.push(() => { if (x.checked) sel.chapitre.push("fiches"); });
+    }
+    if (C.deroule?.length) {
+      t.append(el("h5", null, `Déroulé de l'essai · ${C.deroule.length} section(s)`));
+      const ol = el("ol", "petit");
+      for (const s of C.deroule) { const li = el("li"); li.append(el("strong", null, s.titre), " — " + s.contenu); ol.append(li); }
+      t.append(ol);
+    }
+    if (C.assertions?.length) {
+      t.append(el("h5", null, `Assertions · ${C.assertions.length}`));
+      const ol = el("ol", "petit");
+      for (const a of C.assertions) { const li = el("li", null, a.texte); if (a.fiche) li.append(" ", puceFiche(a.fiche)); ol.append(li); }
+      t.append(ol);
+    }
+    if (C.deroule?.length || C.assertions?.length) {
+      const [l, x] = coche("amorcer l'essai : le squelette (une section par étape du déroulé) et un premier verrou (les assertions)", !cur.a_texte);
+      if (cur.a_texte) { x.checked = false; x.disabled = true; l.append(el("span", "mut petit", " — le chapitre a déjà du texte")); }
+      t.append(l);
+      lecteurs.push(() => { sel.amorce = x.checked; });
+    }
+  }
+  if ((R.manques ?? []).length) {
+    t.append(el("h5", null, "Sujets sans fiche"));
+    for (const m of R.manques) {
+      const p = el("p", "petit");
+      const b = el("button", "pan-lien", "◇ créer une fiche…");
+      b.onclick = () => b.replaceWith(formFiche({ question: m }));
+      p.append(m + " ", b);
+      t.append(p);
+    }
+  }
+  if (d.decision) t.append(el("div", "dem-decision", d.decision.proposition ? "Retenue : " + (d.decision.faits ?? []).join(" · ") : "Rien retenu"));
+  if (prete) {
+    const faire = el("div", "que-faire");
+    faire.append(el("h5", null, "Que faire ?"), el("p", "mut petit",
+      "Décocher ce qu'on ne garde pas. Retenir écrit le plan (structure.yaml, synopsis.yaml, les briefs) — une partie ou un chapitre existant est mis à jour, un nouveau est créé ; les chapitres retenus prennent l'ordre proposé."));
+    const oui = el("button", "bouton", "retenir la sélection");
+    const non = el("button", "pan-lien", "ne rien retenir");
+    const envoie = async (corps) => {
+      const r = await fetch(`/api/chapitres/_kb/demandes/${d.id}/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+      if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+      etat.chapitres = await api("/chapitres").catch(() => etat.chapitres);
+      sommaire();
+      if (etat.enPlan) { etat.plan = await api("/plan"); vuePlanCourant(); }
+      tiroir(d.id);
+    };
+    oui.onclick = () => { lecteurs.forEach((f) => f()); oui.disabled = true; envoie({ action: "retenir", ...sel }); };
+    non.onclick = () => envoie({ action: "rejeter" });
+    const act = el("div", "annot-actions");
+    act.append(oui, non);
+    faire.append(act);
+    t.append(faire);
+  }
+  piedTiroir(t, d);
+}
+
 // ------------------------------------------------------------------ la page d'une œuvre
 
 const CONTROLE_CIT = { trouvee: ["trouvée", "statut-ok"], absente: ["absente du document", "hors"],
@@ -4529,7 +5081,7 @@ async function pageOeuvre(cle) {
   const rafraichit = async () => { await chargeOeuvres(true); pageOeuvre(cle); };
   // la barre : les actions sur l'œuvre
   const aO = el("span", "actions-barre");
-  aO.append(el("span", "etiq", "cette œuvre"));
+  aO.append(el("span", "etiq", "cette œuvre"), boutonRef("@oeuvre/" + cle, "b-versions"));
   const zoneForm = el("div", "actions-fiche");
   const ouvre = (n) => { zoneForm.replaceChildren(n); n.scrollIntoView({ block: "center" }); };
   if (B) {
@@ -6422,6 +6974,8 @@ async function pageFiche(slug, section, I) {
   });
   enrichit(corps);
   marqueConfiance(corps, f.confiance_par);
+  corps.querySelectorAll("h2[data-section], h3[data-section], h4[data-section]").forEach((h) =>
+    h.append(boutonRef(`@fiche/${f.slug}#${h.dataset.section}`, "pan-lien ref-copie ref-titre")));
   corps.querySelectorAll(".wiki-mort").forEach((s) => {
     s.onclick = () => {
       document.querySelector("#page .form-fiche")?.remove();
@@ -6466,7 +7020,7 @@ async function pageFiche(slug, section, I) {
   sup.title = "le ménage : la fiche va à la corbeille (récupérable) ; voir d'abord ce qui en dépend";
   sup.onclick = () => formSuppression(f).then(ouvre);
   const aFiche = el("span", "actions-barre");
-  aFiche.append(el("span", "etiq", "cette fiche"), creuser, sup);
+  aFiche.append(el("span", "etiq", "cette fiche"), boutonRef("@fiche/" + f.slug, "b-versions"), creuser, sup);
   barreFiches(null, aFiche);
   api(`/fiches/${f.slug}/renvois`).then((x) => {
     if (x.voisines?.length) { const b = boutonRenvois(f.slug, x.voisines); b.className = "b-versions"; sup.before(b); }
@@ -6616,6 +7170,7 @@ afficheTitre();
 document.getElementById("titre-livre").onclick = () => { location.hash = "livre"; };
 document.getElementById("b-demandes").onclick = () => tiroir(null);
 document.getElementById("b-annotations").onclick = () => tiroirAnnotations();
+document.getElementById("b-plan").onclick = () => { location.hash = "plan"; };
 document.getElementById("b-fiches").onclick = () => { location.hash = etat.ficheCourante ? `fiches/${etat.ficheCourante}` : "fiches"; };
 etat.chapitres = await api("/chapitres");
 api("/sources").then((s) => { etat.sources = s; }).catch(() => {});

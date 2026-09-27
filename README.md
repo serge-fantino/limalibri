@@ -247,6 +247,20 @@ pas de document) — une vérification retenue et une fiche créée y ajoutent l
 est citée (notes de l'essai, fiches, bibliographies de chapitre) ; les doublons possibles ; son
 historique (journal). Une vérification de référence lit d'abord le texte rangé dans le livre.
 
+Le **plan** (bouton « Plan » de l'en-tête, `atelier/plan.py`, `atelier/planif.py`) : le livre
+s'écrit de haut en bas. `#plan` — le livre : synopsis court (livre.yaml), idée maîtresse, arc,
+synopsis développé (`synopsis.yaml`), et la structure (parties et chapitres, rangés à la main :
+monter, descendre, changer de partie, ajouter, supprimer un chapitre sans texte). `#plan/p/<id>`
+— une partie : titre, sens, arc, question (synopsis.yaml), ses chapitres. `#plan/c/<slug>` — un
+chapitre : titre, période, statut, question, synopsis, fiches (dans son brief.yaml : le chapitre
+existe dès son synopsis, avant tout texte). À chaque niveau, **✦ une proposition de Claude**
+(lecture du plan et des fiches, sans web) : la structure du livre (idée, arc, parties, chapitres
+avec synopsis et fiches, sujets sans fiche), le développement d'une partie, celui d'un chapitre
+(synopsis, question, fiches lues, déroulé de l'essai, assertions). On retient élément par élément ;
+une partie ou un chapitre existant garde son identifiant. Pour un chapitre, **amorcer l'essai**
+écrit le squelette de l'essai (une section par étape du déroulé) et un premier verrou (les
+assertions, chacune avec sa fiche) : de quoi commencer la rédaction.
+
 Les **vérifications lisent les fiches d'abord** : la consigne leur donne les fiches du
 chapitre et l'index entier, avec la règle d'y chercher avant le web ; la réponse dit quelles
 fiches ont servi et à quoi (« fiches consultées »).
@@ -301,6 +315,20 @@ disait ; pour un fichier lu, sa taille). En direct, la dernière réflexion est 
 le déroulé complet se filtre (actions, réflexions, résultats), et chaque ligne se déplie. Le travail continue côté serveur si l'on change de vue ; une demande
 qui aboutit est signalée. Un redémarrage du serveur (dont le rechargement automatique quand le
 code change) interrompt les demandes en cours : elles sont marquées « interrompues ».
+
+Les **références** désignent un morceau du livre par une adresse courte. Le bouton ⧉ la copie :
+barre d'une fiche, d'une œuvre, d'un chapitre, d'une partie du plan ; titre d'une section de fiche
+(au survol) ; paragraphe, plan, assertion, annotation, note, garde-fou. Collée dans une consigne,
+une question, une annotation, elle donne à Claude **la partie visée** (l'extrait exact) et son
+fichier pour lire autour (`atelier/refs.py`, section « Les références données par l'auteur » du
+contexte). Sous un champ, l'atelier montre ce que Claude lira (✓) ou ce qui ne se résout pas (✗) ;
+dans une annotation ou une consigne affichée, une référence est un lien.
+
+```
+@fiche/luca   @fiche/luca#section   @oeuvre/coale2024   @partie/p1   @regle/recit/R11
+@chapitre/la-mer   @chapitre/la-mer/essai#section   @chapitre/la-mer/essai^b54b   @chapitre/la-mer/recit^c022
+@chapitre/la-mer/plan/A   …/assertion/1.9   …/note/<cle>   …/annotation/<id>
+```
 
 Le **storyboard** se recadre dans la vue Récit (mode storyboard) : double-clic sur un micro-récit,
 champs du plan dans son détail. Écrit dans `brief.yaml` (mise en forme gardée), noté au

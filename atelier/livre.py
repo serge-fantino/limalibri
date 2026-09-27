@@ -75,7 +75,7 @@ EDITABLES = ("titre", "sous_titre", "auteur", "langue", "synopsis", "quatrieme",
 CLAUDE_GENRES = {"verification": ("tours", "recherches", "pages", "modele"), "reecriture": ("tours", "modele"),
                  "fiche": ("tours", "recherches", "pages", "modele"), "pistes": ("tours", "modele"),
                  "reference": ("tours", "recherches", "pages", "modele"), "naive": ("modele",),
-                 "document": ("tours", "recherches", "pages", "modele")}
+                 "document": ("tours", "recherches", "pages", "modele"), "plan": ("tours", "modele")}
 NUMEROTATIONS = ("aucune", "sections", "paragraphes")
 
 
@@ -371,7 +371,9 @@ def atelier(slug):
     for s in verrou.get("sections", []):
         for a in s["assertions"]:
             assertions[a["id"]] = dict(a, section=s["id"])
-    links = lire("links.yaml")
+    links = lire("links.yaml") or {}
+    links.setdefault("recit", {})
+    links["recit"] = links["recit"] or {}
     # l'essai n'a pas de liens propres : ils vivent dans le verrou (assertion -> blocs),
     # on en dérive l'index inverse bloc -> assertions pour la lecture de l'essai
     essai = {}

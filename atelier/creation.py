@@ -143,6 +143,8 @@ def compile_contexte(d):
                  "déjà garde sa clé (Grep sur le titre ou le DOI pour la retrouver).")
     elif depot:
         L.append("\nBibliographie centrale (lecture seule, pour reprendre les clés) : %s" % (depot / h.get("bibliographie", "")))
+    from . import refs
+    L.append(refs.annexe(c.get("question"), d.get("consigne")))
     return systeme, "\n".join(x for x in L if x)
 
 

@@ -161,7 +161,7 @@ def demarre(ident):
         L.append("\n## Précision de l'auteur\n" + d["consigne"])
     d.update(etat="en_cours", lancee=livre._maintenant(),
              budget={"recherches": 0, "pages": 0, "limites": reecriture.limites("reference")},
-             contexte={"systeme": SYSTEME, "message": "\n".join(L)})
+             contexte={"systeme": SYSTEME, "message": "\n".join(L) + _refs(d)})
     d["cible"]["usages"] = [u["ou"] for u in U]
     reecriture._ecrit(SLUG_KB, d)
     import asyncio
@@ -169,6 +169,11 @@ def demarre(ident):
     reecriture._taches.add(t)
     t.add_done_callback(reecriture._taches.discard)
     return d
+
+
+def _refs(d):
+    from . import refs
+    return refs.annexe(d.get("consigne"))
 
 
 async def _execute(ident):

@@ -95,6 +95,8 @@ def cree(corps):
         L += ["%s- %s {#%s}" % ("  " * (s["niveau"] - 2), s["titre"], s["id"]) for s in kb._structure(cv)[1]]
     if d["consigne"]:
         L.append("\n## Précision de l'auteur\n" + d["consigne"])
+    from . import refs
+    L.append(refs.annexe(d["consigne"]))
     d["contexte"] = {"systeme": SYSTEME, "message": "\n".join(L)}
     reecriture._ecrit(SLUG_KB, d)
     import asyncio

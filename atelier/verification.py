@@ -154,6 +154,8 @@ def compile_contexte(slug, d):
                  " ; la bibliographie du livre : kb/sources/<cle>.yaml (une œuvre par fichier, sa clé est à garder)"
                  if (livre.LIVRE / "kb" / "sources").is_dir() else
                  " ; dépôt d'origine : %s — bibliographie centrale %s" % (depot, h.get("bibliographie", "")) if depot else ""))
+    from . import refs
+    L.append(refs.annexe(d.get("consigne"), ann.get("texte") if ann else ""))
     return systeme, "\n".join(L)
 
 

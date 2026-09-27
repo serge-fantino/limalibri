@@ -802,6 +802,33 @@ h2.oeuvre-section{font-size:1rem;font-family:var(--ui);text-transform:uppercase;
 .citation-oeuvre{margin:.5rem 0}
 .usage-oeuvre{margin:.5rem 0;border-left:3px solid var(--rule);padding-left:.6rem}
 .historique-oeuvre{padding-left:1rem}
+/* ---- le plan ---- */
+body[data-vue="plan"] #page{max-width:52rem}
+.champ-plan-syn{display:flex;flex-direction:column;margin:.6rem 0}
+.champ-plan-syn .nom{font-family:var(--ui);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}
+.champ-plan-syn .annot-texte,.champ-plan-syn .dem-motif{font-family:var(--pf);font-size:.95rem}
+.champ-plan-syn .enregistre{border-color:var(--acc)}
+.plan-partie{border-left:3px solid var(--acc);padding:.3rem .8rem;margin:1rem 0}
+.plan-partie.proposee{border-left-color:#7a6ad0}
+.plan-partie-tete{display:flex;align-items:baseline;gap:.6rem}
+.plan-partie-titre{font-size:1.15rem;color:var(--fg);text-decoration:none}
+.plan-partie-titre:hover{color:var(--acc)}
+.plan-chapitre{padding:.35rem 0 .35rem .8rem;border-left:1px solid var(--rule);margin:.3rem 0}
+.plan-chapitre-titre{color:var(--acc);text-decoration:none}
+.plan-synopsis{font-size:.9rem;margin:.2rem 0}
+.plan-outils{margin-left:auto;display:inline-flex;gap:.2rem;font-size:.8rem}
+.pf-ligne.actif{background:var(--bar);font-weight:600}
+#outils .lien-barre{text-decoration:none}
+/* ---- les références ---- */
+.ref-copie{font-size:.72rem;opacity:.45;padding:0 .2rem}
+.ref-copie:hover{opacity:1}
+#outils .ref-copie.b-versions,#outils .b-versions.ref-copie{opacity:1}
+.ref-titre{opacity:0;margin-left:.4rem}
+h2:hover > .ref-titre,h3:hover > .ref-titre,h4:hover > .ref-titre{opacity:.7}
+.ref-lien{font-family:var(--ui);font-size:.85em;color:var(--acc);background:var(--bar);border-radius:3px;padding:0 .2rem;text-decoration:none}
+.aide-refs{display:flex;flex-wrap:wrap;gap:.3rem .6rem;margin:.2rem 0 .4rem;font-family:var(--ui);font-size:.72rem}
+.ref-resolue.ok{color:#2f6f4f}
+.ref-resolue.ko{color:#c4525a}
 @media(max-width:1100px){#cadre{grid-template-columns:14rem minmax(0,1fr) 16rem}
  body[data-vue="storyboard"][data-panneau] #cadre{grid-template-columns:minmax(0,1fr) 22rem}
  body[data-vue="storyboard"][data-panneau] #gauche{display:none}}

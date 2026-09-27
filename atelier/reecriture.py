@@ -63,6 +63,7 @@ LIMITES = {"verification": {"tours": 25, "recherches": 6, "pages": 12},
            "reference": {"tours": 14, "recherches": 3, "pages": 4},
            "naive": {"tours": 3, "recherches": 0, "pages": 0},
            "document": {"tours": 12, "recherches": 3, "pages": 5},
+           "plan": {"tours": 24, "recherches": 0, "pages": 0},
            "reecriture": {"tours": 16, "recherches": 0, "pages": 0}}
 # Un message du CLI peut porter un gros résultat d'outil (un PDF lu d'un bloc) : 1 Mo par défaut
 # ne suffit pas. Et un PDF se lit par pages, jamais entier (voir le crochet).
@@ -195,6 +196,7 @@ def liste(slug):
                       "assertions": d["cible"].get("assertions") or [],
                       "chapitres": d["cible"].get("chapitres") or [], "question": d["cible"].get("question"),
                       "fiche": d["cible"].get("fiche"), "cle": d["cible"].get("cle"), "version": d["cible"].get("version"),
+                      "niveau": d["cible"].get("niveau"), "partie": d["cible"].get("partie"), "chapitre": d["cible"].get("chapitre"),
                       "plan": d["cible"].get("plan"), "decision": d.get("decision")})
     return sorted(out, key=lambda d: d["cree"], reverse=True)
 
@@ -231,6 +233,9 @@ def relance(slug, ident, consigne=None, modele_choisi=False):
     elif d.get("type") == "reference":
         from . import references
         n = references.cree({"cle": c["cle"], "consigne": consigne, "modele": mc})
+    elif d.get("type") == "plan":
+        from . import planif
+        n = planif.cree(dict(c, consigne=consigne, modele=mc))
     elif d.get("type") == "document":
         from . import documents
         n = documents.cree({"cle": c["cle"], "consigne": consigne, "modele": mc})
@@ -437,6 +442,9 @@ def titre_de(d):
         return naif.titre_de(d)
     if d.get("type") == "document":
         return "Texte original de %s" % d["cible"].get("cle")
+    if d.get("type") == "plan":
+        from . import planif
+        return planif.titre_de(d)
     if d.get("type") == "verification":
         morceaux = []
         for a in d["cible"].get("assertions", []):
@@ -578,6 +586,9 @@ def compile_contexte(slug, d):
                          depot, h.get("bibliographie", "")) if depot else ""))
     L.append("\n## Demande\n\nmode : %s\n%s" % (d["mode"], d.get("consigne") or
              "(pas de consigne : répondre aux annotations, et sinon améliorer selon les règles)"))
+    from . import refs                          # les références collées dans la consigne ou les annotations
+    L.append(refs.annexe(d.get("consigne"), *[a.get("texte") for a in livre.annotations(slug)
+                                              if a["id"] in (d["cible"].get("annotations") or [])]))
     return systeme, "\n".join(L)
 
 
@@ -780,6 +791,9 @@ def _genre(d):
     if d.get("type") == "document":
         from . import documents
         return "document", documents.SCHEMA, documents.conclut, None
+    if d.get("type") == "plan":
+        from . import planif
+        return "plan", planif.schema(d["cible"]["niveau"]), planif.conclut, None
     return "reecriture", SCHEMA, _conclut, None
 
 
