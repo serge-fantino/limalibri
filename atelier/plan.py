@@ -17,7 +17,7 @@ import shutil
 
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
-from . import livre
+from . import livre, avancement
 
 CHAMPS_LIVRE = ("idee", "developpe", "arc")
 CHAMPS_PARTIE = ("sens", "arc", "question")
@@ -102,7 +102,8 @@ def lit():
                         "status": c.get("status"), "versions": c.get("versions") or [],
                         "synopsis": br.get("synopsis"), "question": br.get("question"),
                         "fiches": [str(x) for x in br.get("fiches") or []],
-                        "a_texte": _a_du_texte(c["slug"]), "dossier": livre.dossier(c["slug"]).is_dir()})
+                        "a_texte": _a_du_texte(c["slug"]), "dossier": livre.dossier(c["slug"]).is_dir(),
+                        "avancement": avancement.tous(c)})
         parties.append({"id": p["id"], "title": p.get("title"), **{k: ps.get(k) for k in CHAMPS_PARTIE}, "chapitres": chs})
     return {"livre": {"titre": m.get("titre"), "synopsis": m.get("synopsis"),
                       **{k: syn["livre"].get(k) for k in CHAMPS_LIVRE}},

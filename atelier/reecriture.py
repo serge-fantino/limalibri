@@ -65,6 +65,7 @@ LIMITES = {"verification": {"tours": 25, "recherches": 6, "pages": 12},
            "document": {"tours": 12, "recherches": 3, "pages": 5},
            "plan": {"tours": 24, "recherches": 0, "pages": 0},
            "conversation": {"tours": 30, "recherches": 4, "pages": 6},
+           "redaction": {"tours": 40, "recherches": 0, "pages": 0},
            "reecriture": {"tours": 16, "recherches": 0, "pages": 0}}
 # Un message du CLI peut porter un gros résultat d'outil (un PDF lu d'un bloc) : 1 Mo par défaut
 # ne suffit pas. Et un PDF se lit par pages, jamais entier (voir le crochet).
@@ -443,6 +444,9 @@ def titre_de(d):
         return naif.titre_de(d)
     if d.get("type") == "document":
         return "Texte original de %s" % d["cible"].get("cle")
+    if d.get("type") == "redaction":
+        from . import redaction
+        return "redaction", redaction.SCHEMA, redaction.conclut, None
     if d.get("type") == "plan":
         from . import planif
         return planif.titre_de(d)

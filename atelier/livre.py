@@ -76,7 +76,7 @@ CLAUDE_GENRES = {"verification": ("tours", "recherches", "pages", "modele"), "re
                  "fiche": ("tours", "recherches", "pages", "modele"), "pistes": ("tours", "modele"),
                  "reference": ("tours", "recherches", "pages", "modele"), "naive": ("modele",),
                  "document": ("tours", "recherches", "pages", "modele"), "plan": ("tours", "modele"),
-                 "conversation": ("tours", "recherches", "pages", "modele")}
+                 "conversation": ("tours", "recherches", "pages", "modele"), "redaction": ("tours", "modele")}
 NUMEROTATIONS = ("aucune", "sections", "paragraphes")
 
 

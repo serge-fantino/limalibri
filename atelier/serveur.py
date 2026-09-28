@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -130,7 +130,9 @@ def structure():
 
 @app.get("/api/chapitres")
 def chapitres():
-    return livre.chapitres()
+    """Les chapitres dans l'ordre, avec leur avancement par version (vide … valide)."""
+    from . import avancement
+    return [dict(c, avancement=avancement.tous(c)) for c in livre.chapitres()]
 
 
 @app.get("/api/sources")
@@ -306,7 +308,7 @@ def modeles():
     """Les modèles qu'on peut choisir, et ceux que le livre retient par défaut."""
     return {"modeles": reecriture.MODELES,
             "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan")},
-            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan", "conversation")}}
+            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan", "conversation", "redaction")}}
 
 
 @app.get("/api/fiches")
@@ -368,6 +370,30 @@ def consommation_journal():
     if not f.exists():
         return PlainTextResponse("", media_type="application/x-ndjson")
     return FileResponse(f, media_type="application/x-ndjson", filename=consommation.NOM)
+
+
+@app.post("/api/redaction")
+async def redaction_cree(request: Request):
+    """Écrire l'essai d'un chapitre depuis son brief : {chapitre, consigne?, longueur?, modele?, poser?, remplacer?}."""
+    try:
+        return redaction.cree(await request.json())
+    except KeyError as e:
+        raise HTTPException(404, "chapitre inconnu : %s" % e)
+    except reecriture.Conflit as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/redaction/serie")
+async def redaction_serie(request: Request):
+    """Écrire l'essai de plusieurs chapitres, l'un après l'autre : {partie?, chapitres?, poser?, consigne?, longueur?, modele?}."""
+    try:
+        return redaction.serie(await request.json())
+    except reecriture.Conflit as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/conversations")
@@ -875,6 +901,8 @@ async def decide(slug: str, ident: str, request: Request):
             return documents.decide(ident, await request.json())
         if ident.startswith("s-"):
             return planif.decide(ident, await request.json())
+        if ident.startswith("e-"):
+            return redaction.decide(ident, await request.json())
         return reecriture.decide(slug, ident, await request.json())
     except KeyError as e:
         raise HTTPException(404, "inconnu : %s" % e)

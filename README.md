@@ -332,6 +332,22 @@ le déroulé complet se filtre (actions, réflexions, résultats), et chaque lig
 qui aboutit est signalée. Un redémarrage du serveur (dont le rechargement automatique quand le
 code change) interrompt les demandes en cours : elles sont marquées « interrompues ».
 
+L'**avancement** de chaque chapitre, par version, s'affiche dans le plan du livre (colonne de gauche,
+selon la version lue) et sur les pages du plan : vide, synopsis, brief (squelette ou verrou de l'essai,
+storyboard du récit), brouillon, relu, validé (`atelier/avancement.py`). Un chapitre sans texte dans
+la version lue montre ce qu'on sait de lui : synopsis, question, fiches — et de quoi l'écrire.
+
+**Écrire l'essai** (✎, `atelier/redaction.py`) : Claude rédige l'essai d'un chapitre depuis son brief
+(synopsis, question, fiches ; squelette et verrou s'il est amorcé), en lisant ses fiches et les chapitres
+déjà écrits — sans web. Il suit le squelette, cite en [@cle] les seules sources lues, renvoie en
+[chap:slug], met ses notes en [^slug-…] (préfixées au besoin). Ce que les fiches n'établissent pas, il
+ne l'écrit pas : il le rend en « manques » (une fiche à créer, une fiche à creuser), qu'on lance d'un
+clic. « Poser » écrit l'essai (ancres, intertitres identifiés, squelette remplacé, chapitre en
+brouillon) ; un essai déjà rédigé n'est jamais remplacé sans le dire. Depuis le plan du livre ou d'une
+partie, **une série** : une demande par chapitre qui n'a qu'un synopsis ou un brief, dans l'ordre du plan,
+chacune partant quand la précédente a fini ; « poser d'office » pour que chaque chapitre lise le précédent.
+Budget et modèle : `claude.redaction` (40 tours ; un chapitre prend quelques minutes avec Opus).
+
 Les **références** désignent un morceau du livre par une adresse courte. Le bouton ⧉ la copie :
 barre d'une fiche, d'une œuvre, d'un chapitre, d'une partie du plan ; titre d'une section de fiche
 (au survol) ; paragraphe, plan, assertion, annotation, note, garde-fou. Collée dans une consigne,

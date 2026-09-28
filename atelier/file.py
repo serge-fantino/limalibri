@@ -53,6 +53,9 @@ def lance(ident):
     if d.get("type") == "document":
         from . import documents
         return documents.demarre(ident)
+    if d.get("type") == "redaction":
+        from . import redaction
+        return redaction.demarre(ident)
     raise ValueError("type de demande sans file : %s" % d.get("type"))
 
 
@@ -67,6 +70,10 @@ def retire(ident):
 
 def suivante():
     """Si l'enchaînement est activé et qu'il reste de la place : lancer la plus ancienne en attente."""
+    from . import redaction
+    s = redaction.suivante_de_serie()             # une série d'écriture avance d'elle-même
+    if s:
+        return s
     r = reglage()
     if not r["auto"]:
         return None

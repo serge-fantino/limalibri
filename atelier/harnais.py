@@ -297,6 +297,9 @@ def rapport(slug, version):
     if version not in livre.VERSIONS:
         raise KeyError(version)
     livre.atelier(slug)
+    pv = livre.dossier(slug) / (version + ".md")
+    if not pv.exists() or not pv.read_text(encoding="utf-8").strip():     # rien d'écrit : rien à passer
+        return {"chapitre": slug, "version": version, "portes": [], "ok": False, "bloquantes": [], "a_revalider": {}, "absent": True}
     P = portes_recit(slug) if version == "recit" else portes_essai(slug)
     bloquantes = [p for p in P if p["niveau"] == "bloquant" and not p["ok"]]
     E = validation.etat(slug)
@@ -307,6 +310,8 @@ def rapport(slug, version):
 def valide(slug, version, motif=""):
     """Prendre l'état présent comme référence. Si une porte bloque, un motif est exigé."""
     R = rapport(slug, version)
+    if R.get("absent"):
+        raise ValueError("rien à valider : cette version n'est pas encore écrite")
     motif = (motif or "").strip()
     if not R["ok"] and not motif:
         raise ValueError("portes non passées (%s) : dire pourquoi valider quand même" % ", ".join(R["bloquantes"]))
