@@ -900,9 +900,51 @@ h2:hover > .ref-titre,h3:hover > .ref-titre,h4:hover > .ref-titre{opacity:.7}
 .sans-texte-synopsis{border-left:3px solid #c0622f;padding-left:.9rem}
 .sans-texte-question{font-style:italic}
 .sans-texte .annot-actions{margin-top:1.6rem}
-.banniere-squelette{font-family:var(--ui);font-size:.82rem;padding:.5rem .8rem;margin-bottom:1rem;border:1px solid #e8b64a88;background:#e8b64a18;border-radius:4px}
 .apercu-essai{font-family:var(--pf);font-size:.95rem;line-height:1.6;border-top:1px solid var(--rule);margin-top:.5rem;padding-top:.3rem}
 .apercu-essai h2{font-size:1.1rem;font-weight:normal;margin:1.2rem 0 .4rem}
+/* ---- le suivi ---- */
+:root{--seg-cadre:#c0622f;--seg-preparation:#e8b64a;--seg-texte:#8a5a2b;--seg-appareil:#7a6ad0;--seg-controles:#2d5f8a;--seg-relecture:#2f6f4f}
+.seg-cadre{background:var(--seg-cadre)}.seg-preparation{background:var(--seg-preparation)}.seg-texte{background:var(--seg-texte)}
+.seg-appareil{background:var(--seg-appareil)}.seg-controles{background:var(--seg-controles)}.seg-relecture{background:var(--seg-relecture)}
+.seg-demandes{background:var(--mut)}
+.barre-etapes{display:flex;gap:2px;height:.7rem;min-width:9rem;flex:1}
+.barre-etapes .seg{position:relative;background:var(--bar);border-radius:2px;overflow:hidden;flex-basis:0}
+.barre-etapes .seg-plein{position:absolute;left:0;top:0;bottom:0;border-radius:2px}
+.seg-pastille{display:inline-block;width:.6rem;height:.6rem;border-radius:2px;margin-right:.35rem;vertical-align:middle}
+.suivi-global{display:flex;gap:1.6rem;align-items:center;margin:1rem 0 1.6rem;font-family:var(--ui)}
+.suivi-score{display:flex;flex-direction:column;align-items:center;min-width:6rem}
+.suivi-score strong{font-size:2.4rem;font-weight:normal;line-height:1}
+.suivi-droite{flex:1;display:flex;flex-direction:column;gap:.5rem}
+.suivi-droite .barre-etapes{height:1rem}
+.suivi-etapes,.suivi-repartition{display:flex;flex-wrap:wrap;gap:.3rem .9rem;font-size:.75rem}
+.suivi-actions{font-family:var(--ui);font-size:.84rem}
+.groupe-suivi{margin:.3rem 0;padding:.3rem .5rem;border:1px solid var(--rule);border-radius:4px}
+.groupe-suivi summary{cursor:pointer}
+.groupe-suivi .pastilles{margin:.4rem 0 .2rem}
+.action-suivi{font:inherit;font-size:.72rem;background:none;border:1px solid var(--rule);border-left:3px solid var(--mut);border-radius:3px;color:var(--fg);padding:.05rem .4rem;cursor:pointer;margin:.1rem .25rem .1rem 0}
+.action-suivi:hover{background:var(--bar)}
+.action-suivi.etape-cadre{border-left-color:var(--seg-cadre)}.action-suivi.etape-preparation{border-left-color:var(--seg-preparation)}
+.action-suivi.etape-texte{border-left-color:var(--seg-texte)}.action-suivi.etape-appareil{border-left-color:var(--seg-appareil)}
+.action-suivi.etape-controles{border-left-color:var(--seg-controles)}.action-suivi.etape-relecture{border-left-color:var(--seg-relecture)}
+.suivi-chapitres{font-family:var(--ui);font-size:.84rem}
+.suivi-partie{font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);margin:1.2rem 0 .3rem;font-weight:normal}
+.suivi-ligne{display:grid;grid-template-columns:minmax(10rem,15rem) 5.2rem minmax(8rem,1fr) 3rem;gap:.3rem .7rem;align-items:center;padding:.35rem 0;border-bottom:1px solid var(--rule)}
+.suivi-titre{color:var(--fg);text-decoration:none}
+.suivi-titre:hover{color:var(--acc)}
+.suivi-pct{text-align:right;font-variant-numeric:tabular-nums}
+.suivi-acts{grid-column:1/-1;padding-left:.8rem}
+.suivi-ligne .av{justify-self:start}
+.legende-suivi{font-family:var(--ui);font-size:.8rem}
+.legende-ligne{display:grid;grid-template-columns:auto 1fr;gap:0 .2rem;margin:.5rem 0}
+.legende-ligne .mut{grid-column:2}
+body[data-vue="suivi"] #page{max-width:60rem}
+/* ---- la prochaine étape ---- */
+.bandeau-etape{font-family:var(--ui);font-size:.8rem;border:1px solid var(--rule);border-radius:6px;padding:.5rem .7rem;margin:0 0 1rem;background:var(--bar)}
+.bandeau-tete{display:flex;align-items:center;gap:.6rem}
+.bandeau-tete .barre-etapes{max-width:16rem;height:.55rem}
+.bandeau-tete .suivi-pct{color:var(--fg);text-decoration:none}
+.bandeau-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.2rem .3rem;margin-top:.45rem}
+.bandeau-actions .bouton{font-size:.8rem}
 @media(max-width:1100px){#cadre{grid-template-columns:14rem minmax(0,1fr) 16rem}
  body[data-vue="storyboard"][data-panneau] #cadre{grid-template-columns:minmax(0,1fr) 22rem}
  body[data-vue="storyboard"][data-panneau] #gauche{display:none}}

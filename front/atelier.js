@@ -67,6 +67,7 @@ const TITRE_AVANCEMENT = { vide: "ni synopsis ni texte", synopsis: "le synopsis 
 
 // La version dont le sommaire montre l'avancement : celle qu'on lit (le storyboard est du récit).
 function versionSommaire() {
+  if (etat.enSuivi && etat.suiviVersion) return etat.suiviVersion;
   return etat.version === "essai" ? "essai" : "recit";
 }
 
@@ -147,7 +148,7 @@ async function ouvre(slug) {
     } catch {
       await vueSansTexte(page, slug, vue);
     }
-    if (vue === "essai" && c?.avancement?.essai === "brief" && page.querySelector("[data-block]")) page.prepend(banniereSquelette(slug));
+    if ((vue === "essai" && etat.essaiMode === "texte") || vue === "recit") page.prepend(...bandeauEtape(slug, vue));
     marges();
     poseAnnotations();
     marquesDemandes();
@@ -4186,7 +4187,8 @@ function boutons() {
     b.classList.toggle("actif", b.dataset.v === "recit" ? recit : b.dataset.v === etat.version));
   document.body.dataset.recit = recit ? "1" : "";
   if (etat.wiki) document.querySelectorAll("#versions button[data-v]").forEach((b) => b.classList.remove("actif"));
-  document.getElementById("b-fiches").classList.toggle("actif", !!etat.wiki && !etat.enPlan);
+  document.getElementById("b-fiches").classList.toggle("actif", !!etat.wiki && !etat.enPlan && !etat.enSuivi);
+  document.getElementById("b-suivi").classList.toggle("actif", !!etat.enSuivi);
   document.getElementById("b-plan").classList.toggle("actif", !!etat.enPlan);
 }
 
@@ -4195,9 +4197,11 @@ function depuisAdresse() {
   const [slug, vue, mode] = decodeURIComponent(location.hash.slice(1)).split("/");
   if (slug.startsWith("fn")) return;
   etat.enPlan = slug === "plan";
-  etat.wiki = slug === "fiches" || slug === "biblio" || etat.enPlan;
+  etat.enSuivi = slug === "suivi";
+  etat.wiki = slug === "fiches" || slug === "biblio" || etat.enPlan || etat.enSuivi;
   boutons();
   if (etat.enPlan) { etat.accueil = false; return vuePlan(vue, mode); }
+  if (etat.enSuivi) { etat.accueil = false; return vueSuivi(vue); }
   if (slug === "biblio") { etat.accueil = false; return vue ? pageOeuvre(vue) : vueBiblioLivre(); }
   if (etat.wiki) { etat.accueil = false; return vueFiches(vue, mode); }
   if (!slug || slug === "livre") {
@@ -7795,13 +7799,6 @@ function boutonSerie(partie) {
   return b;
 }
 
-function banniereSquelette(slug) {
-  const d = el("div", "banniere-squelette");
-  const z = el("div", "actions-fiche");
-  d.append(el("span", null, "Squelette : les sections prévues, pas encore le texte. "), boutonEcrire(slug, "pan-lien"), z);
-  return d;
-}
-
 // Un chapitre sans texte dans cette version : ce qu'on sait déjà de lui, et de quoi l'écrire.
 async function vueSansTexte(page, slug, vue) {
   const c = etat.chapitres.find((x) => x.slug === slug) ?? {};
@@ -7827,7 +7824,6 @@ async function vueSansTexte(page, slug, vue) {
   if (!pc.synopsis && !pc.question) t.append(el("p", "mut", "Ni synopsis ni question pour l'instant : le développer d'abord dans le plan."));
   const act = el("div", "annot-actions");
   const z = el("div", "actions-fiche");
-  if (vue === "essai" && ["synopsis", "brief"].includes(niv)) act.append(boutonEcrire(slug, "bouton"));
   const plan = el("a", "pan-lien", "✦ le chapitre dans le plan (synopsis, fiches, amorcer)");
   plan.href = `#plan/c/${slug}`;
   act.append(plan);
@@ -7929,4 +7925,230 @@ async function tiroirRedaction(t, d) {
     t.append(det);
   }
   return piedTiroir(t, d);
+}
+
+// ------------------------------------------------------------------ le suivi
+//
+// Où en est chaque chapitre (une progression par étapes pondérées — ce qui a été fait, pas ce qui est
+// bon), où en est le livre, et ce qu'il reste à faire : chaque action mène au bon endroit.
+
+const LIB_GROUPES = { synopsis: "Écrire le synopsis et la question", fiches: "Choisir des fiches", amorcer: "Amorcer : squelette et verrou",
+  storyboard: "Écrire le storyboard", ecrire: "Écrire le texte", sources: "Citer les sources", notes: "Notes orphelines",
+  verrou: "Établir le verrou", appui: "Assertions sans appui", harnais: "Passer les portes du harnais", naif: "Lectures naïves",
+  annotations: "Traiter les annotations", statut: "Relire, puis valider", decider: "Demandes à décider", manques: "Manques signalés par les rédactions" };
+
+async function vueSuivi(version) {
+  version = ["recit", "essai"].includes(version) ? version : versionSommaire();
+  etat.suiviVersion = version;
+  document.body.dataset.vue = "suivi";
+  delete document.body.dataset.panneau;
+  document.getElementById("volet-chapitre").hidden = true;
+  sommaire();
+  const page = document.getElementById("page");
+  const o = document.getElementById("outils");
+  o.hidden = false;
+  const g = el("span", "groupe");
+  for (const [v, lib] of [["recit", "récit"], ["essai", "essai"]]) {
+    const b = el("button", v === version ? "actif" : null, lib);
+    b.onclick = () => { location.hash = "suivi/" + v; };
+    g.append(b);
+  }
+  const F = etat.filtreSuivi ??= "tout";
+  const g2 = el("span", "groupe filtres");
+  for (const [v, lib] of [["tout", "tous les chapitres"], ["afaire", "à faire"]]) {
+    const b = el("button", F === v ? "actif" : null, lib);
+    b.onclick = () => { etat.filtreSuivi = v; vueSuivi(version); };
+    g2.append(b);
+  }
+  o.replaceChildren(el("span", "etiq", "suivi"), g, g2);
+  document.getElementById("fiche").replaceChildren(legendeSuivi());
+  page.replaceChildren(el("h1", null, `Suivi — ${version === "essai" ? "l'essai" : "le récit"}`), el("p", "mut", "calcul…"));
+  const [S, P] = await Promise.all([api("/suivi/" + version).catch(() => null), api("/plan").catch(() => null)]);
+  if (P) etat.plan = P;
+  if (!S || etat.suiviVersion !== version || !etat.enSuivi) return;
+  page.replaceChildren(el("h1", null, `Suivi — ${version === "essai" ? "l'essai" : "le récit"}`), globalSuivi(S), actionsSuivi(S, version), chapitresSuivi(S, version, F));
+}
+
+function legendeSuivi() {
+  const d = el("div", "legende-suivi");
+  d.append(el("h4", null, "Le barème"), el("p", "mut petit",
+    "Une progression par étapes, lue dans les fichiers : ce qui a été fait, pas ce qui est bon. Un chapitre à 100 % peut rester faible."));
+  const L = [["cadre", "Cadre", 10, "synopsis + question"], ["preparation", "Préparation", 15, "essai : fiches (≥ 2) + un plan (verrou ou squelette) · récit : storyboard"],
+    ["texte", "Texte", 30, "rédigé (au prorata des sections ou des plans)"], ["appareil", "Appareil", 15, "essai : sources connues, notes, assertions appuyées · récit : assertions portées"],
+    ["controles", "Contrôles", 15, "portes bloquantes du harnais"], ["relecture", "Relecture", 15, "lecture naïve à jour, annotations traitées, statut relu ou validé"]];
+  for (const [k, t, p, x] of L) {
+    const l = el("div", "legende-ligne");
+    l.append(el("span", "seg-pastille seg-" + k), el("strong", null, `${t} · ${p}`), el("span", "mut petit", x));
+    d.append(l);
+  }
+  return d;
+}
+
+function barreEtapes(E, bareme) {
+  const b = el("div", "barre-etapes");
+  for (const { id, titre, max } of bareme) {
+    const e = E[id] ?? { points: 0, max };
+    const s = el("span", "seg");
+    s.style.flexGrow = max;
+    const f = el("span", "seg-plein seg-" + id);
+    f.style.width = Math.round(100 * (e.points ?? e.moyenne ?? 0) / max) + "%";
+    s.append(f);
+    s.title = `${titre} : ${e.points ?? e.moyenne}/${max}${e.detail ? " — " + e.detail : ""}`;
+    b.append(s);
+  }
+  return b;
+}
+
+function globalSuivi(S) {
+  const d = el("section", "suivi-global");
+  const n = el("div", "suivi-score");
+  n.append(el("strong", null, S.score + " %"), el("span", "mut petit", `sur ${S.chapitres.length} chapitres`));
+  const E = Object.fromEntries(Object.entries(S.etapes).map(([k, e]) => [k, { points: e.moyenne, max: e.max, detail: `${e.complets} chapitre(s) complets` }]));
+  const droite = el("div", "suivi-droite");
+  droite.append(barreEtapes(E, S.bareme));
+  const et = el("div", "suivi-etapes");
+  for (const b of S.bareme) {
+    const e = S.etapes[b.id];
+    const x = el("span", "suivi-etape");
+    x.append(el("span", "seg-pastille seg-" + b.id), `${b.titre} ${Math.round(100 * e.moyenne / e.max)} %`);
+    x.title = `${e.complets}/${S.chapitres.length} chapitres complets sur cette étape`;
+    et.append(x);
+  }
+  const rep = el("div", "suivi-repartition");
+  for (const [v, k] of Object.entries(S.repartition)) {
+    if (!k) continue;
+    const s = el("span", "st av av-" + v, `${LIB_AVANCEMENT[v]} · ${k}`);
+    s.title = TITRE_AVANCEMENT[v];
+    rep.append(s);
+  }
+  droite.append(et, rep);
+  d.append(n, droite);
+  return d;
+}
+
+// Aller à une action : la vue, puis le tiroir qui convient quand le chapitre est chargé.
+async function allerAction(a, slug) {
+  location.hash = a.vue;
+  if (!a.tiroir) return;
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 150));
+    if (etat.slug === slug && etat.atelier && !etat.wiki && !etat.accueil) break;
+  }
+  if (a.tiroir === "harnais") return tiroirHarnais(versionVue());
+  if (a.tiroir === "annotations") return tiroirAnnotations();
+  return tiroir(a.tiroir);
+}
+
+function puceAction(a, slug, avecChapitre = false) {
+  const b = el("button", "action-suivi etape-" + a.etape, (avecChapitre && a.numero ? a.numero + ". " : "") + (avecChapitre ? a.titre : a.libelle));
+  b.title = avecChapitre ? a.libelle : `${LIB_GROUPES[a.type] ?? a.type}${a.gain ? ` · +${a.gain} pts` : ""}`;
+  b.onclick = () => allerAction(a, slug);
+  return b;
+}
+
+function actionsSuivi(S, version) {
+  const d = el("section", "suivi-actions");
+  d.append(el("h2", "oeuvre-section", "Ce qu'il reste à faire"));
+  if (!S.groupes.length) { d.append(el("p", "mut", "Rien : toutes les étapes sont faites.")); return d; }
+  const z = el("div", "actions-fiche");
+  for (const g of S.groupes) {
+    const b = el("details", "groupe-suivi");
+    const s = el("summary");
+    s.append(el("span", "seg-pastille seg-" + g.etape), el("strong", null, LIB_GROUPES[g.type] ?? g.type),
+      el("span", "mut petit", ` · ${g.chapitres.length} chapitre(s)${g.gain ? ` · +${g.gain} pts sur le livre` : ""}`));
+    b.append(s);
+    if (g.type === "ecrire" && version === "essai") {
+      const x = el("button", "pan-lien", "✎ écrire la série…");
+      x.onclick = (e) => { e.preventDefault(); formRedaction(z, { partie: null }); };
+      s.append(" ", x);
+    }
+    const L = el("div", "pastilles");
+    L.append(...g.chapitres.map((c) => puceAction(c, c.slug, true)));
+    b.append(L);
+    d.append(b);
+  }
+  d.append(z);
+  return d;
+}
+
+function chapitresSuivi(S, version, F) {
+  const d = el("section", "suivi-chapitres");
+  d.append(el("h2", "oeuvre-section", "Chapitre par chapitre"));
+  let partie;
+  for (const c of S.chapitres) {
+    if (F === "afaire" && !c.actions.length) continue;
+    if (c.partie !== partie) {
+      partie = c.partie;
+      d.append(el("h3", "suivi-partie", c.partie_titre ?? "Ouverture"));
+    }
+    const l = el("div", "suivi-ligne");
+    const a = el("a", "suivi-titre", `${c.numero ?? "—"}. ${c.titre}`);
+    a.href = `#${c.slug}/${version === "essai" ? "essai/texte" : "recit/texte"}`;
+    const st = el("span", "st av av-" + c.niveau, LIB_AVANCEMENT[c.niveau]);
+    st.title = TITRE_AVANCEMENT[c.niveau];
+    const sc = el("span", "suivi-pct", c.score + " %");
+    const acts = el("div", "suivi-acts");
+    acts.append(...c.actions.slice(0, 4).map((x) => puceAction(x, c.slug)));
+    if (c.actions.length > 4) {
+      const plus = el("button", "pan-lien", `+${c.actions.length - 4}`);
+      plus.onclick = () => { plus.replaceWith(...c.actions.slice(4).map((x) => puceAction(x, c.slug))); };
+      acts.append(plus);
+    }
+    l.append(a, st, barreEtapes(c.etapes, S.bareme), sc, acts);
+    d.append(l);
+  }
+  return d;
+}
+
+document.getElementById("b-suivi").onclick = () => { location.hash = "suivi/" + versionSommaire(); };
+
+// ------------------------------------------------------------------ la prochaine étape d'un chapitre
+//
+// En tête du chapitre (essai, récit) : son statut, sa note, et l'action que le statut appelle —
+// développer le brief (synopsis), écrire le chapitre (brief), puis ce que le suivi demande (harnais,
+// lecture naïve, annotations, relecture). Les autres actions suivent.
+
+function bandeauEtape(slug, vue) {
+  const version = vue === "essai" ? "essai" : "recit";
+  const b = el("div", "bandeau-etape");
+  const zone = el("div", "actions-fiche");               // les formulaires (brief, écriture) s'ouvrent ici
+  b.append(el("span", "mut petit", "…"));
+  api(`/suivi/${version}/${slug}`).then((C) => {
+    if (etat.slug !== slug) return;
+    const tete = el("div", "bandeau-tete");
+    const st = el("span", "st av av-" + C.niveau, LIB_AVANCEMENT[C.niveau]);
+    st.title = TITRE_AVANCEMENT[C.niveau];
+    const lien = el("a", "suivi-pct", C.score + " %");
+    lien.href = "#suivi/" + version;
+    lien.title = "le suivi " + (version === "essai" ? "de l'essai" : "du récit");
+    tete.append(el("span", "etiq", "prochaine étape"), st, barreEtapes(C.etapes, C.bareme), lien);
+    const act = el("div", "bandeau-actions");
+    let reste = C.actions;
+    if (version === "essai" && ["vide", "synopsis"].includes(C.niveau)) {
+      const p = boutonPropose("chapitre", slug, "✦ développer le brief…");
+      p.className = "bouton";
+      p.title = "Claude lit le plan et les fiches, et propose le synopsis, la question, les fiches et le déroulé du chapitre — " +
+        "« amorcer l'essai » en fait le squelette et le verrou, prêts pour l'écriture";
+      act.append(p);
+      reste = reste.filter((a) => !["synopsis", "fiches", "amorcer", "ecrire"].includes(a.type));
+    } else if (version === "essai" && C.niveau === "brief") {
+      act.append(boutonEcrire(slug, "bouton"));
+      reste = reste.filter((a) => a.type !== "ecrire");
+    } else if (C.niveau === "valide") {
+      act.append(el("span", "av av-valide", "✓ validé"));
+    } else {
+      // le texte existe : l'action la plus utile d'abord (pas le synopsis, qui peut attendre)
+      const prem = reste.find((a) => !["cadre", "demandes"].includes(a.etape)) ?? reste[0];
+      if (prem) {
+        const p = puceAction(prem, slug);
+        p.className = "bouton";
+        p.textContent = prem.libelle;
+        act.append(p);
+        reste = reste.filter((a) => a !== prem);
+      }
+    }
+    for (const a of reste) act.append(puceAction(a, slug));
+    b.replaceChildren(tete, act);
+  }).catch(() => b.remove());
+  return [b, zone];
 }

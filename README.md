@@ -337,6 +337,17 @@ selon la version lue) et sur les pages du plan : vide, synopsis, brief (squelett
 storyboard du récit), brouillon, relu, validé (`atelier/avancement.py`). Un chapitre sans texte dans
 la version lue montre ce qu'on sait de lui : synopsis, question, fiches — et de quoi l'écrire.
 
+Le **suivi** (en-tête, `#suivi/recit`, `#suivi/essai` ; `atelier/suivi.py`) : où en est chaque
+chapitre, où en est le livre, ce qu'il reste à faire. La note est une progression par étapes pondérées,
+lue dans les fichiers — ce qui a été fait, pas ce qui est bon : cadre 10 (synopsis, question),
+préparation 15 (essai : fiches et un plan, verrou ou squelette ; récit : storyboard), texte 30 (au
+prorata des sections ou des plans), appareil 15 (essai : sources connues, notes complètes, assertions
+appuyées ; récit : assertions portées), contrôles 15 (portes bloquantes du harnais), relecture 15
+(lecture naïve à jour, annotations traitées, statut relu ou validé). Chaque manque devient une action
+qui mène au bon endroit (la vue, et le tiroir : harnais, annotations, demande) ; les actions se
+regroupent pour le livre, avec ce que chacune ferait gagner. Le rapport du harnais est gardé en cache
+tant que les fichiers du chapitre n'ont pas changé.
+
 **Écrire l'essai** (✎, `atelier/redaction.py`) : Claude rédige l'essai d'un chapitre depuis son brief
 (synopsis, question, fiches ; squelette et verrou s'il est amorcé), en lisant ses fiches et les chapitres
 déjà écrits — sans web. Il suit le squelette, cite en [@cle] les seules sources lues, renvoie en

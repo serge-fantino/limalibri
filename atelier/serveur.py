@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction, suivi
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -370,6 +370,24 @@ def consommation_journal():
     if not f.exists():
         return PlainTextResponse("", media_type="application/x-ndjson")
     return FileResponse(f, media_type="application/x-ndjson", filename=consommation.NOM)
+
+
+@app.get("/api/suivi/{version}")
+def suivi_version(version: str):
+    """Le suivi d'une version : chaque chapitre noté par étapes, le livre, et ce qu'il reste à faire."""
+    try:
+        return suivi.suivi(version)
+    except KeyError:
+        raise HTTPException(404, "version inconnue : %s" % version)
+
+
+@app.get("/api/suivi/{version}/{slug}")
+def suivi_chapitre(version: str, slug: str):
+    """Le suivi d'un chapitre : sa note par étapes et ses prochaines actions."""
+    try:
+        return suivi.un(version, slug)
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
 
 
 @app.post("/api/redaction")
