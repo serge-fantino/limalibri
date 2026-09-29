@@ -135,10 +135,10 @@ def serie(corps):
           and c["slug"] not in ouverts and avancement.niveau(c, "essai") in ("synopsis", "brief")]
     if not cs:
         raise ValueError("aucun chapitre à écrire (il faut un synopsis ou un brief, et pas encore de texte)")
-    sid = "serie-" + time.strftime("%Y%m%d-%H%M%S")
-    ds = [cree(dict(corps, chapitre=c["slug"], serie=sid, _rang=i), lancer=False) for i, c in enumerate(cs)]
-    demarre(ds[0]["id"])
-    return {"serie": sid, "demandes": [x["id"] for x in ds], "chapitres": [c["slug"] for c in cs]}
+    from . import serie as S
+    s = S.cree(dict(corps, chapitres=[c["slug"] for c in cs], actions=["ecrire"]))
+    return {"serie": s["id"], "demandes": [e["demande"] for e in s["etapes"] if e.get("demande")],
+            "chapitres": [c["slug"] for c in cs]}
 
 
 def suivante_de_serie():

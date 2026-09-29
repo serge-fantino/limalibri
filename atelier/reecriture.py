@@ -750,6 +750,11 @@ async def _lance(slug, d, options, prompt, conclut, reprise=False, apres=None):
     if apres:
         apres(slug, d)
     _ecrit(slug, d)
+    from . import serie                          # les séries avancent à la fin de chaque demande
+    try:
+        serie.avance()
+    except Exception as e:                       # noqa: BLE001 — une série ne doit pas casser la demande finie
+        print("atelier : série —", e)
     if slug == "_kb":                            # la file : la suivante, si l'enchaînement est activé
         from . import file
         try:

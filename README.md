@@ -337,6 +337,20 @@ selon la version lue) et sur les pages du plan : vide, synopsis, brief (squelett
 storyboard du récit), brouillon, relu, validé (`atelier/avancement.py`). Un chapitre sans texte dans
 la version lue montre ce qu'on sait de lui : synopsis, question, fiches — et de quoi l'écrire.
 
+Les **séries** (`atelier/serie.py`, `kb/series/`) enchaînent des actions sur plusieurs chapitres :
+développer le brief, écrire l'essai, lecture naïve. Depuis le suivi, un groupe d'actions lançable
+(« Développer le brief », « Écrire le texte », « Lectures naïves ») a une case par chapitre et « ▶ lancer
+pour la sélection… ». Les étapes vont chapitre par chapitre (le brief du premier, son texte, puis le
+suivant), chacune partant quand la précédente a fini : chaque chapitre lit le précédent déjà écrit. Le
+brief est retenu d'office (fiches — celles déjà choisies restent —, squelette, verrou ; le synopsis et
+la question seulement s'ils manquent) ; l'essai est posé d'office ; les relevés de lecture naïve restent
+à décider. Une étape sans objet est sautée, une erreur arrête la série (reprendre, ou abandonner) ; un
+redémarrage du serveur arrête proprement une série dont l'étape tournait.
+
+Le bouton **⟳** de l'en-tête relit le livre (chapitres et statuts, plan, textes) et redessine la vue
+courante à la même place, tiroir ouvert. Il part aussi de lui-même après une décision sur une demande
+de la base (poser un essai, retenir un plan, créer une fiche) et quand une demande pose d'office.
+
 Le **suivi** (en-tête, `#suivi/recit`, `#suivi/essai` ; `atelier/suivi.py`) : où en est chaque
 chapitre, où en est le livre, ce qu'il reste à faire. La note est une progression par étapes pondérées,
 lue dans les fichiers — ce qui a été fait, pas ce qui est bon : cadre 10 (synopsis, question),

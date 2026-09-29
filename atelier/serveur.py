@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction, suivi
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction, suivi, serie
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -33,6 +33,10 @@ async def _reprend_la_file():
         file.suivante()
     except Exception as e:                      # noqa: BLE001
         print("atelier : file d'attente —", e)
+    try:
+        serie.avance()                          # une série dont l'étape a été interrompue s'arrête, et le dit
+    except Exception as e:                      # noqa: BLE001
+        print("atelier : séries —", e)
 
 
 def _meta(m):
@@ -379,6 +383,32 @@ def suivi_version(version: str):
         return suivi.suivi(version)
     except KeyError:
         raise HTTPException(404, "version inconnue : %s" % version)
+
+
+@app.get("/api/series")
+def series():
+    return serie.liste()
+
+
+@app.post("/api/series")
+async def serie_cree(request: Request):
+    """Enchaîner des actions sur des chapitres : {chapitres, actions: [brief, ecrire, naif], version?, consigne?, longueur?, modele?}."""
+    try:
+        return serie.cree(await request.json())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/series/{ident}/{op}")
+def serie_op(ident: str, op: str):
+    try:
+        if op == "arreter":
+            return serie.arrete(ident)
+        if op == "reprendre":
+            return serie.reprend(ident)
+    except KeyError:
+        raise HTTPException(404, "série inconnue")
+    raise HTTPException(404, "opération inconnue")
 
 
 @app.get("/api/suivi/{version}/{slug}")

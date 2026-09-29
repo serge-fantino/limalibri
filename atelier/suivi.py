@@ -205,6 +205,14 @@ def chapitre(c, version, demandes):
         if niv == "brouillon":
             A.append(_action("relecture", "passer en relu, puis en validé", plan_c, type_="statut", poids=5))
 
+    # un chapitre qui n'a qu'un synopsis : une seule action, développer le brief (synopsis et question s'ils
+    # manquent, fiches, déroulé, squelette et verrou) — c'est ce que fait la proposition de Claude
+    if version == "essai" and niv in ("vide", "synopsis"):
+        faits = [a for a in A if a["type"] in ("synopsis", "fiches", "amorcer")]
+        if faits:
+            A = [_action("preparation", "développer le brief", plan_c, type_="brief",
+                         poids=round(sum(a.get("gain") or 0 for a in faits), 1))] + [a for a in A if a not in faits]
+
     # les demandes du chapitre qui attendent l'auteur
     for x in demandes.get(slug, []):
         if x.get("etat") == "prete" and (x.get("version") in (None, version) or x.get("type") == "redaction" and version == "essai"):

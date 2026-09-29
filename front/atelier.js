@@ -26,17 +26,27 @@ const el = (tag, cls, texte) => {
 function sommaire() {
   const nav = document.getElementById("sommaire");
   nav.replaceChildren();
-  const pres = el("a", "lien-livre" + (etat.accueil ? " actif" : ""), etat.livre?.titre || "Le livre");
-  pres.href = "#livre";
+  // en mode Plan, le sommaire mène aux pages du plan (le livre, ses parties, ses chapitres) ;
+  // ailleurs, aux textes
+  const plan = !!etat.enPlan;
+  const cible = etat.planCible ?? {};
+  const pres = el("a", "lien-livre" + ((plan ? cible.niveau === "livre" : etat.accueil) ? " actif" : ""), etat.livre?.titre || "Le livre");
+  pres.href = plan ? "#plan" : "#livre";
   nav.append(pres);
   let partie;
   for (const c of etat.chapitres) {
     if (c.partie !== partie) {
       partie = c.partie;
-      nav.append(el("h3", null, c.partie_titre ?? "Ouverture"));
+      const h = el("h3", null);
+      if (plan && c.partie) {
+        const l = el("a", "lien-partie" + (cible.niveau === "partie" && cible.cible === c.partie ? " actif" : ""), c.partie_titre);
+        l.href = `#plan/p/${c.partie}`;
+        h.append(l);
+      } else h.textContent = c.partie_titre ?? "Ouverture";
+      nav.append(h);
     }
     const a = el("a");
-    a.href = "#" + adresse(c.slug);
+    a.href = "#" + (plan ? `plan/c/${c.slug}` : adresse(c.slug));
     a.dataset.slug = c.slug;
     const niv = c.avancement?.[versionSommaire()] ?? (c.atelier ? "brouillon" : "vide");
     const st = el("span", "st av av-" + niv, LIB_AVANCEMENT[niv] ?? niv);
@@ -52,9 +62,9 @@ function sommaire() {
       n.title = `${c.annotations} annotation(s) ouverte(s)`;
       a.lastChild.before(n);
     }
-    const dispo = etat.version === "storyboard" ? c.atelier : c.versions.includes(etat.version);
+    const dispo = plan || (etat.version === "storyboard" ? c.atelier : c.versions.includes(etat.version));
     if (!dispo) a.classList.add("mut");
-    if (c.slug === etat.slug) a.classList.add("actif");
+    if (plan ? cible.niveau === "chapitre" && cible.cible === c.slug : c.slug === etat.slug) a.classList.add("actif");
     nav.append(a);
   }
 }
@@ -1239,7 +1249,7 @@ function editeRecit(span, pid, rang, bloc) {
     // le texte ne suit pas encore : proposer de le réécrire selon ce nouveau cadre
     if (bloc) {
       const sugg = el("button", "pan-lien sb-suggestion", "↻ réécrire ce paragraphe selon ce micro-récit");
-      sugg.onclick = (e) => { e.stopPropagation(); sugg.replaceWith(formDemande({ portee: "paragraphe", blocs: [bloc] })); };
+      sugg.onclick = (e) => { e.stopPropagation(); enModale("Réécrire le paragraphe", porteeBlocs([bloc]), formDemande({ portee: "paragraphe", blocs: [bloc] })); };
       span.after(sugg);
     }
   };
@@ -1579,7 +1589,7 @@ async function panneauAssertion(id) {
   const plus = el("button", "pan-lien", "＋ assertion après");
   plus.onclick = () => outils.replaceWith(formNouvelleAssertion(id));
   const ver = el("button", "pan-lien", "🔎 vérifier…");
-  ver.onclick = () => outils.replaceWith(formVerif({ assertions: [id] }));
+  ver.onclick = () => enModale("Vérifier une assertion", porteeAssertions([id]), formVerif({ assertions: [id] }));
   outils.append(mod, plus, ver);
   f.append(outils);
 
@@ -1800,7 +1810,7 @@ async function panneauPlan(pid) {
   plusA.onclick = () => plusA.replaceWith(derniere ? formNouvelleAssertion(derniere) : formAssertionPlan(pid));
   f.append(plusA);
   const re = el("button", "pan-lien", "↻ réécrire le plan…");
-  re.onclick = () => re.replaceWith(formDemande({ portee: "plan", plan: pid }));
+  re.onclick = () => enModale(`Réécrire le plan ${pid}`, porteePlan(pid), formDemande({ portee: "plan", plan: pid }));
   f.append(re);
 }
 
@@ -1840,7 +1850,7 @@ function ficheBase(id) {
     for (const [k, v] of Object.entries(br.tenue ?? {})) champ(f, k.replace(/_/g, " "), v);
     const fc = blocFiches("Fiches du chapitre", br.fiches ?? [], "Aucune fiche listée dans le brief.");
     const nf = el("button", "pan-lien", "◇ il manque une fiche…");
-    nf.onclick = () => nf.replaceWith(formFiche({ chapitres: [etat.slug] }));
+    nf.onclick = () => enModale("Nouvelle fiche", porteeChapitre(etat.slug), formFiche({ chapitres: [etat.slug] }));
     fc.append(nf);
     f.append(fc);
     f.append(el("p", "mut petit",
@@ -2154,7 +2164,7 @@ function panneauBloc(bloc, saisie = null) {
     pied.append(plus);
     if (versionVue() === "recit") {
       const re = el("button", "pan-lien", "↻ réécrire le paragraphe…");
-      re.onclick = () => { pied.replaceWith(formDemande({ portee: "paragraphe", blocs: [bloc] })); };
+      re.onclick = () => enModale("Réécrire le paragraphe", porteeBlocs([bloc]), formDemande({ portee: "paragraphe", blocs: [bloc] }));
       pied.append(re);
     }
     pan.append(pied);
@@ -2324,7 +2334,7 @@ function carteAnnotation(a, avecLieu = false) {
     () => changeAnnotation(a, { etat: a.etat === "resolue" ? "ouverte" : "resolue" }));
   bouton("modifier", () => compose(a, a));
   if (a.etat === "ouverte") {
-    bouton("🔎 vérifier", () => { const fv = formVerif({ annotation: a.id }); act.after(fv); });
+    bouton("🔎 vérifier", () => enModale("Vérifier l'annotation", porteeAnnotation(a), formVerif({ annotation: a.id })));
   }
   if (a.version === "recit" && a.etat === "ouverte") {
     bouton("↻ réécrire", () => lanceDemande({ portee: "annotation", annotation: a.id, mode: "retouche" }));
@@ -2646,6 +2656,7 @@ function retiensTiroir(ident) {
 }
 
 async function tiroir(ident) {
+  fermeModale();
   clearTimeout(suivi);
   etat.tiroirMontre = ident ?? null;
   retiensTiroir(ident);
@@ -2788,7 +2799,7 @@ async function tiroirVerif(t, d) {
   if (d.etat !== "en_cours") {
     const ff = el("button", "pan-lien", "◇ en faire une fiche…");
     ff.title = "Une fiche nouvelle sur ce sujet, qui part des sources trouvées ici";
-    ff.onclick = () => ff.replaceWith(formFiche({
+    ff.onclick = () => enModale("Une fiche depuis cette recherche", porteeChapitre(etat.slug), formFiche({
       question: d.cible.assertions.map((a) => etat.atelier.assertions[a]?.texte ?? a).join(" ; "),
       chapitres: [etat.slug], depuis: d.id,
       sources_initiales: (R.hypotheses ?? []).flatMap((h) => h.sources ?? []) }));
@@ -2903,7 +2914,7 @@ async function tiroirVerif(t, d) {
       el("p", "mut petit", "Le récit dit encore l'ancienne version. À faire après l'étape 1 : la réécriture lira le verrou " +
         "corrigé et le nouvel appui de l'essai. Elle rendra des propositions, rien n'est remplacé sans ton choix."));
     const re = el("button", d.decision?.proposition ? "bouton" : "pan-lien", "↻ réécrire le récit…");
-    re.onclick = () => re.replaceWith(formDemande({ portee: "paragraphe", blocs: blocsRecit }));
+    re.onclick = () => enModale(blocsRecit.length > 1 ? "Réécrire les paragraphes" : "Réécrire le paragraphe", porteeBlocs(blocsRecit), formDemande({ portee: "paragraphe", blocs: blocsRecit }));
     c2.append(re);
     etape2.append(c2);
     faire.append(etape2);
@@ -2986,6 +2997,7 @@ async function rafraichitDirect(ident) {
   const d = await api(`/chapitres/${slugDe(ident)}/demandes/${ident}`).catch(() => null);
   const z = document.getElementById("dem-direct");
   if (etat.tiroirMontre !== ident) return;                           // le tiroir montre autre chose : on arrête
+  if (d?.decision?.d_office) rafraichitVue();                        // posé d'office : le livre a changé
   if (!d || d.etat !== "en_cours" || !z) return tiroir(ident);       // fini : tout redessiner
   remplitDirect(z, d);
   suivi = setTimeout(() => rafraichitDirect(ident), 2000);
@@ -3170,10 +3182,12 @@ function piedTiroir(t, d) {
     if (bu) ex.append(el("br"), bu);
     t.append(ex);
   }
-  const ctx = el("details", "replie");
-  ctx.append(el("summary", null, "ce que Claude a reçu"),
-    el("pre", "dem-contexte", d.contexte.message), el("pre", "dem-contexte", d.contexte.systeme));
-  t.append(ctx);
+  if (d.contexte) {
+    const ctx = el("details", "replie");
+    ctx.append(el("summary", null, "ce que Claude a reçu"),
+      el("pre", "dem-contexte", d.contexte.message ?? ""), el("pre", "dem-contexte", d.contexte.systeme ?? ""));
+    t.append(ctx);
+  }
   const h = el("button", "pan-lien", "← toutes les demandes du chapitre");
   h.onclick = () => tiroir(null);
   t.append(h);
@@ -4177,7 +4191,11 @@ function bascule(v) {
   }
   if (v === "storyboard") etat.recitMode = "storyboard";
   else if (v === "recit") etat.recitMode = "texte";
-  if (etat.slug) location.hash = adresse(etat.slug, v);   // -> hashchange -> depuisAdresse
+  // depuis le plan (ou le suivi, les fiches) : le texte du chapitre qu'on regardait, sinon du dernier ouvert,
+  // sinon du premier — on quitte le mode, et le sommaire mène de nouveau aux textes
+  const slug = (etat.enPlan && etat.planCible?.niveau === "chapitre" && etat.planCible.cible) || etat.slug
+    || etat.chapitres?.find((c) => c.atelier)?.slug;
+  if (slug) location.hash = adresse(slug, v);   // -> hashchange -> depuisAdresse
   else { etat.version = v; boutons(); sommaire(); }
 }
 
@@ -4193,6 +4211,7 @@ function boutons() {
 }
 
 function depuisAdresse() {
+  fermeModale();
   quitte();
   const [slug, vue, mode] = decodeURIComponent(location.hash.slice(1)).split("/");
   if (slug.startsWith("fn")) return;
@@ -4456,7 +4475,7 @@ async function apercuOeuvre(cle) {
   if (o.centrale) {
     const ver = el("button", "bouton", "🔎 vérifier la référence…");
     ver.title = "Claude la retrouve (éditeur, PubMed, arXiv…), cherche un doublon, et contrôle ce que chaque endroit lui fait dire";
-    ver.onclick = () => ver.replaceWith(formVerifReference(cle));
+    ver.onclick = () => enModale("Vérifier la référence", porteeOeuvre(cle), formVerifReference(cle));
     const mod = el("button", "pan-lien", "✎ modifier");
     mod.onclick = () => { box.querySelector(".form-oeuvre")?.remove(); act.after(formOeuvre(o)); };
     act.append(ver, mod);
@@ -4842,9 +4861,9 @@ function boutonPropose(niveau, cible, lib) {
     non.onclick = () => f.remove();
     const act = el("div", "annot-actions");
     act.append(go, non);
-    f.append(el("span", "appui-lieu", lib.replace("…", "") + " — une lecture du plan et des fiches, sans web ; rien n'est écrit sans toi"), cons, mod.noeud, act);
-    z.replaceChildren(f);
-    f.scrollIntoView({ block: "center" });
+    f.append(el("span", "appui-lieu", "une lecture du plan et des fiches, sans web ; rien n'est écrit sans toi"), cons, mod.noeud, act);
+    enModale(lib.replace("…", "").replace(/^✦\s*/, "").replace(/^./, (x) => x.toUpperCase()),
+      niveau === "chapitre" ? porteeChapitre(cible) : niveau === "partie" ? porteePartie(cible) : "le livre entier : sa structure, ses parties, ses chapitres", f);
   };
   return b;
 }
@@ -4881,24 +4900,10 @@ async function demandesPlan(niveau, cible) {
 }
 
 function colonnePlanSyn(niveau, cible) {
-  const volet = document.getElementById("volet-chapitre");
-  volet.hidden = false;
-  volet.querySelector(".volet-titre").textContent = "Plan";
-  const col = document.getElementById("plan-col");
-  const r = el("div", "plan-fiche");
-  const lien = (lib, h, actif, niv) => {
-    const a = el("a", "pf-ligne" + (actif ? " actif" : ""), lib);
-    a.href = "#" + h;
-    a.style.paddingLeft = (niv * .9 + .6) + "rem";
-    r.append(a);
-  };
-  lien(etat.plan.livre.titre || "Le livre", "plan", niveau === "livre", 0);
-  let n = 0;
-  for (const p of etat.plan.parties) {
-    lien(p.title, `plan/p/${p.id}`, niveau === "partie" && cible === p.id, 1);
-    for (const c of p.chapitres) lien(`${++n}. ${c.title}`, `plan/c/${c.slug}`, niveau === "chapitre" && cible === c.slug, 2);
-  }
-  col.replaceChildren(r);
+  // une seule liste : le sommaire, dont les liens mènent au plan en mode Plan
+  document.getElementById("volet-chapitre").hidden = true;
+  etat.planCible = { niveau, cible };
+  sommaire();
 }
 
 async function vuePlan(vue, id) {
@@ -5169,7 +5174,7 @@ async function tiroirPlan(t, d) {
     for (const m of R.manques) {
       const p = el("p", "petit");
       const b = el("button", "pan-lien", "◇ créer une fiche…");
-      b.onclick = () => b.replaceWith(formFiche({ question: m }));
+      b.onclick = () => enModale("Nouvelle fiche", "un manque signalé par la proposition de plan", formFiche({ question: m }));
       p.append(m + " ", b);
       t.append(p);
     }
@@ -5227,10 +5232,10 @@ async function pageOeuvre(cle) {
   const ouvre = (n) => { zoneForm.replaceChildren(n); n.scrollIntoView({ block: "center" }); };
   if (B) {
     const ver = el("button", "b-versions", "🔎 vérifier…");
-    ver.onclick = () => ouvre(formVerifReference(cle));
+    ver.onclick = () => enModale("Vérifier la référence", porteeOeuvre(cle), formVerifReference(cle));
     const ori = el("button", "b-versions", "⤓ texte original…");
     ori.title = "Claude cherche une version en accès libre ; tu choisis, le serveur la range dans le livre";
-    ori.onclick = () => ouvre(formOriginal(cle));
+    ori.onclick = () => enModale("Chercher le texte original", porteeOeuvre(cle), formOriginal(cle));
     const mod = el("button", "b-versions", "✎ modifier");
     mod.onclick = () => ouvre(formOeuvre(Object.assign({}, B, { cle })));
     aO.append(ver, ori, mod);
@@ -6591,11 +6596,7 @@ function barreFiches(actif, actionsPage = null) {
   const nouvelle = el("button", "b-versions", "◇ nouvelle…");
   nouvelle.title = "nouvelle fiche : une question ; Claude lit les fiches voisines, cherche, et propose une fiche";
   nouvelle.onclick = () => {
-    const page = document.getElementById("page");
-    page.querySelector(":scope > .form-fiche")?.remove();
-    const f = formFiche({});
-    (page.querySelector(":scope > h1") ?? page.firstChild)?.after(f);
-    f.scrollIntoView({ block: "center" });
+    enModale("Nouvelle fiche", "la base de connaissance du livre", formFiche({}));
   };
   const [pdf, imp] = boutonsPdf("kb", "⎙ PDF", "base-de-connaissance.pdf",
     "toutes les fiches en un PDF : couverture (synopsis, date), sommaire par cluster, liens internes gardés, bibliographie — pour une relecture par un tiers");
@@ -7085,11 +7086,8 @@ async function pageFiche(slug, section, I) {
     h.append(boutonRef(`@fiche/${f.slug}#${h.dataset.section}`, "pan-lien ref-copie ref-titre")));
   corps.querySelectorAll(".wiki-mort").forEach((s) => {
     s.onclick = () => {
-      document.querySelector("#page .form-fiche")?.remove();
-      const fm = formFiche({ slug: s.dataset.cible, chapitres: f.chapitres.map((c) => c.slug),
-        question: `Fiche « ${s.dataset.cible} », citée par [[${f.slug}]] : ` });
-      corps.before(fm);
-      fm.scrollIntoView({ block: "center" });
+      enModale("Créer la fiche citée", `« ${s.dataset.cible} », lien mort dans la fiche ${f.slug}`,
+        formFiche({ slug: s.dataset.cible, chapitres: f.chapitres.map((c) => c.slug), question: `Fiche « ${s.dataset.cible} », citée par [[${f.slug}]] : ` }));
     };
   });
   page.replaceChildren(fil, el("h1", null, f.titre));
@@ -7122,7 +7120,7 @@ async function pageFiche(slug, section, I) {
   const ouvre = (noeud) => { actions.replaceChildren(noeud); noeud.scrollIntoView({ block: "center" }); };
   const creuser = el("button", "b-versions", "◇ creuser…");
   creuser.title = "Claude lit la fiche et propose des fiches complémentaires, après avoir vérifié qu'elles ne sont pas déjà couvertes";
-  creuser.onclick = () => ouvre(formPistes(f.slug));
+  creuser.onclick = () => enModale("Creuser la fiche", `fiche « ${f.titre ?? f.slug} » (${f.slug})`, formPistes(f.slug));
   const sup = el("button", "b-versions danger", "supprimer…");
   sup.title = "le ménage : la fiche va à la corbeille (récupérable) ; voir d'abord ce qui en dépend";
   sup.onclick = () => formSuppression(f).then(ouvre);
@@ -7277,7 +7275,10 @@ afficheTitre();
 document.getElementById("titre-livre").onclick = () => { location.hash = "livre"; };
 document.getElementById("b-demandes").onclick = () => tiroir(null);
 document.getElementById("b-annotations").onclick = () => tiroirAnnotations();
-document.getElementById("b-plan").onclick = () => { location.hash = "plan"; };
+// « Plan » depuis un chapitre : la page de plan de ce chapitre ; sinon, le plan du livre
+document.getElementById("b-plan").onclick = () => {
+  location.hash = etat.slug && !etat.wiki && !etat.accueil ? `plan/c/${etat.slug}` : "plan";
+};
 document.getElementById("b-fiches").onclick = () => { location.hash = etat.ficheCourante ? `fiches/${etat.ficheCourante}` : "fiches"; };
 etat.chapitres = await api("/chapitres");
 api("/sources").then((s) => { etat.sources = s; }).catch(() => {});
@@ -7304,7 +7305,7 @@ majCompteFiches();
 // deviennent des demandes ordinaires. « ici » : la référence de ce que l'auteur regarde, jointe à la
 // question (décochable).
 
-let suiviDialogue = null;
+var suiviDialogue;
 
 const poste = (chemin, corps, methode = "POST") =>
   fetch("/api" + chemin, { method: methode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps ?? {}) })
@@ -7781,8 +7782,8 @@ function formRedaction(zone, { slug = null, partie = undefined } = {}) {
     : "Écrire l'essai de ce chapitre";
   f.append(el("span", "appui-lieu", lieu + " — depuis les fiches et les chapitres déjà écrits, sans web ; ce qui manque est signalé"),
     ...(sel ? [sel] : []), cons, lon, mod.noeud, pl, act);
-  zone.replaceChildren(f);
-  f.scrollIntoView({ block: "center" });
+  enModale(serie ? "Écrire l'essai — une série" : "Écrire l'essai du chapitre",
+    serie ? (partie ? porteePartie(partie) : "les chapitres qui n'ont qu'un synopsis ou un brief (le choix de la partie est ci-dessous)") : porteeChapitre(slug), f);
 }
 
 function boutonEcrire(slug, classe = "b-versions") {
@@ -7932,7 +7933,7 @@ async function tiroirRedaction(t, d) {
 // Où en est chaque chapitre (une progression par étapes pondérées — ce qui a été fait, pas ce qui est
 // bon), où en est le livre, et ce qu'il reste à faire : chaque action mène au bon endroit.
 
-const LIB_GROUPES = { synopsis: "Écrire le synopsis et la question", fiches: "Choisir des fiches", amorcer: "Amorcer : squelette et verrou",
+const LIB_GROUPES = { brief: "Développer le brief", synopsis: "Écrire le synopsis et la question", fiches: "Choisir des fiches", amorcer: "Amorcer : squelette et verrou",
   storyboard: "Écrire le storyboard", ecrire: "Écrire le texte", sources: "Citer les sources", notes: "Notes orphelines",
   verrou: "Établir le verrou", appui: "Assertions sans appui", harnais: "Passer les portes du harnais", naif: "Lectures naïves",
   annotations: "Traiter les annotations", statut: "Relire, puis valider", decider: "Demandes à décider", manques: "Manques signalés par les rédactions" };
@@ -7966,7 +7967,8 @@ async function vueSuivi(version) {
   const [S, P] = await Promise.all([api("/suivi/" + version).catch(() => null), api("/plan").catch(() => null)]);
   if (P) etat.plan = P;
   if (!S || etat.suiviVersion !== version || !etat.enSuivi) return;
-  page.replaceChildren(el("h1", null, `Suivi — ${version === "essai" ? "l'essai" : "le récit"}`), globalSuivi(S), actionsSuivi(S, version), chapitresSuivi(S, version, F));
+  page.replaceChildren(el("h1", null, `Suivi — ${version === "essai" ? "l'essai" : "le récit"}`), globalSuivi(S), blocSeries(version),
+    actionsSuivi(S, version), chapitresSuivi(S, version, F));
 }
 
 function legendeSuivi() {
@@ -8057,13 +8059,30 @@ function actionsSuivi(S, version) {
     s.append(el("span", "seg-pastille seg-" + g.etape), el("strong", null, LIB_GROUPES[g.type] ?? g.type),
       el("span", "mut petit", ` · ${g.chapitres.length} chapitre(s)${g.gain ? ` · +${g.gain} pts sur le livre` : ""}`));
     b.append(s);
-    if (g.type === "ecrire" && version === "essai") {
-      const x = el("button", "pan-lien", "✎ écrire la série…");
-      x.onclick = (e) => { e.preventDefault(); formRedaction(z, { partie: null }); };
-      s.append(" ", x);
-    }
+    const action = { brief: version === "essai" && "brief", ecrire: version === "essai" && "ecrire", naif: "naif" }[g.type];
     const L = el("div", "pastilles");
-    L.append(...g.chapitres.map((c) => puceAction(c, c.slug, true)));
+    if (action) {
+      // lançable : on choisit les chapitres, puis ce qu'on enchaîne
+      const cases = [];
+      for (const c of g.chapitres) {
+        const l = el("label", "case-chapitre");
+        const x = el("input");
+        x.type = "checkbox";
+        x.checked = true;
+        x.value = c.slug;
+        cases.push(x);
+        l.append(x, puceAction(c, c.slug, true));
+        L.append(l);
+      }
+      const tout = el("button", "pan-lien", "tout / rien");
+      tout.onclick = (e) => { e.preventDefault(); const v = !cases.every((x) => x.checked); cases.forEach((x) => { x.checked = v; }); };
+      const go = el("button", "pan-lien", "▶ lancer pour la sélection…");
+      go.onclick = (e) => { e.preventDefault(); formSerie(z, cases.filter((x) => x.checked).map((x) => x.value), action, version); };
+      s.append(" ", go, " ", tout);
+      b.open = b.open || false;
+    } else {
+      L.append(...g.chapitres.map((c) => puceAction(c, c.slug, true)));
+    }
     b.append(L);
     d.append(b);
   }
@@ -8151,4 +8170,253 @@ function bandeauEtape(slug, vue) {
     b.replaceChildren(tete, act);
   }).catch(() => b.remove());
   return [b, zone];
+}
+
+// ------------------------------------------------------------------ rafraîchir
+//
+// Relire le livre (chapitres et statuts, plan, textes) et redessiner la vue courante, à la même
+// place ; le tiroir reste ouvert. Le bouton ⟳ de l'en-tête, et d'office après une décision sur une
+// demande de la base (poser un essai, retenir un plan, créer une fiche…) : les décisions sur les
+// demandes d'un chapitre rechargent déjà le chapitre.
+
+var rafraichissement;
+
+function rafraichitVue() {
+  clearTimeout(rafraichissement);
+  rafraichissement = setTimeout(rafraichitMaintenant, 150);           // plusieurs déclencheurs : un seul rafraîchissement
+}
+
+async function rafraichitMaintenant() {
+  const b = document.getElementById("b-rafraichir");
+  b.classList.add("tourne");
+  const y = zone().scrollTop;
+  try {
+    etat.chapitres = await api("/chapitres").catch(() => etat.chapitres);
+    etat.docs = {};
+    etat.garde = null;
+    if (etat.enPlan) { etat.plan = await api("/plan").catch(() => etat.plan); sommaire(); await vuePlanCourant(); }
+    else if (etat.enSuivi) await vueSuivi(etat.suiviVersion);
+    else if (etat.accueil) await accueil();
+    else if (etat.wiki) await depuisAdresse();
+    else if (etat.slug) { await rechargeAnnotations(); await ouvre(etat.slug); }
+    zone().scrollTo(0, y);
+  } finally {
+    b.classList.remove("tourne");
+  }
+}
+
+document.getElementById("b-rafraichir").onclick = () => rafraichitMaintenant();
+
+// Une décision retenue sur une demande de la base change le livre : on rafraîchit la vue.
+{
+  const fetchOrigine = window.fetch.bind(window);
+  window.fetch = async (url, opts) => {
+    const r = await fetchOrigine(url, opts);
+    if (r.ok && (opts?.method ?? "GET") === "POST" && /^\/api\/chapitres\/_kb\/demandes\/[^/]+\/decision$/.test(String(url))) rafraichitVue();
+    return r;
+  };
+}
+
+// ------------------------------------------------------------------ les séries
+//
+// Enchaîner des actions sur plusieurs chapitres, chapitre par chapitre (le brief du premier, son texte,
+// puis le suivant) : chaque chapitre lit le précédent déjà écrit. Le brief est retenu d'office (fiches,
+// squelette, verrou ; synopsis et question seulement s'ils manquent), l'essai posé d'office.
+
+const LIB_SERIE = { brief: "développer le brief", ecrire: "écrire l'essai", naif: "lecture naïve" };
+
+function formSerie(zone, chapitres, action, version) {
+  if (!chapitres.length) { alert("aucun chapitre coché"); return; }
+  const f = el("div", "form-demande");
+  const choix = {};
+  const acts = el("div", "annot-actions");
+  const possibles = version === "essai" ? ["brief", "ecrire", "naif"] : ["naif"];
+  for (const a of possibles) {
+    const l = el("label", "dem-consulter");
+    const x = el("input");
+    x.type = "checkbox";
+    x.checked = a === action || (action === "brief" && a === "ecrire");
+    choix[a] = x;
+    l.append(x, " " + LIB_SERIE[a]);
+    acts.append(l);
+  }
+  const cons = el("textarea", "annot-texte petit-texte");
+  cons.placeholder = "Précision (facultatif), pour toutes les étapes : l'angle, le ton, une référence (@fiche/…)…";
+  const lon = el("select", "livre-select");
+  for (const [v, lib] of [["courte", "essai court (1 500–2 500 mots)"], ["moyenne", "essai moyen (3 000–4 500 mots)"], ["longue", "essai long (5 000–7 000 mots)"]]) {
+    lon.append(new Option(lib, v, false, v === "moyenne"));
+  }
+  const mod = choixModele("redaction");
+  const go = el("button", "bouton", "▶ lancer la série");
+  const err = el("span", "err petit");
+  go.onclick = async () => {
+    const actions = possibles.filter((a) => choix[a].checked);
+    if (!actions.length) { err.textContent = "au moins une action"; return; }
+    go.disabled = true;
+    try {
+      await poste("/series", { chapitres, actions, version, consigne: cons.value, longueur: lon.value, modele: mod.valeur() });
+      f.remove();
+      vueSuivi(version);
+    } catch (e) { err.textContent = String(e); go.disabled = false; }
+  };
+  const non = el("button", "pan-lien", "annuler");
+  non.onclick = () => f.remove();
+  const bas = el("div", "annot-actions");
+  bas.append(go, non, err);
+  f.append(el("span", "appui-lieu", `${chapitres.length} chapitre(s), dans l'ordre du livre — pour chacun, dans l'ordre :`), acts,
+    el("p", "mut petit", "Le brief est retenu d'office (fiches, squelette, verrou ; le synopsis et la question seulement s'ils manquent) ; " +
+      "l'essai est posé d'office, pour que le chapitre suivant le lise ; les relevés de lecture naïve restent à décider. " +
+      "Une étape sans objet est sautée ; une erreur arrête la série."),
+    cons, lon, mod.noeud, bas);
+  enModale(`Enchaîner sur ${chapitres.length} chapitre${chapitres.length > 1 ? "s" : ""}`, porteeSerie(chapitres), f);
+}
+
+var suiviSeries;
+
+function blocSeries(version) {
+  const d = el("section", "suivi-series");
+  const remplit = async () => {
+    clearTimeout(suiviSeries);
+    const L = (await api("/series").catch(() => [])).filter((s) => s.etat !== "abandonnee" || Date.now() - Date.parse(s.modifie) < 864e5);
+    const vivantes = L.filter((s) => ["en_cours", "arretee"].includes(s.etat) || Date.now() - Date.parse(s.modifie) < 864e5);
+    d.replaceChildren();
+    if (!vivantes.length) return;
+    d.append(el("h2", "oeuvre-section", "Séries"));
+    for (const s of vivantes.slice(0, 5)) {
+      const faites = s.etapes.filter((e) => ["faite", "sautee"].includes(e.etat)).length;
+      const cur = s.etapes.find((e) => e.etat === "en_cours");
+      const l = el("div", "serie-ligne serie-" + s.etat);
+      const bar = el("span", "serie-barre");
+      const plein = el("span", "serie-plein");
+      plein.style.width = Math.round(100 * faites / s.etapes.length) + "%";
+      bar.append(plein);
+      const lib = el("span", null, `${s.actions.map((a) => LIB_SERIE[a]).join(" → ")} · ${faites}/${s.etapes.length} étapes · ` +
+        ({ en_cours: cur ? `en cours : ${LIB_SERIE[cur.action]}, ${cur.chapitre}` : "en cours", arretee: "arrêtée — " + (s.erreur ?? ""),
+          finie: "finie", abandonnee: "abandonnée" }[s.etat] ?? s.etat));
+      l.append(bar, lib);
+      if (cur?.demande) {
+        const o = el("button", "pan-lien", "ouvrir");
+        o.onclick = () => ouvreDemande(["brief", "ecrire"].includes(cur.action) ? "_kb" : cur.chapitre, cur.demande);
+        l.append(o);
+      }
+      const op = (quoi, texte) => { const b = el("button", "pan-lien", texte); b.onclick = async () => { await poste(`/series/${s.id}/${quoi}`, {}); remplit(); }; l.append(b); };
+      if (s.etat === "en_cours") op("arreter", "arrêter");
+      if (s.etat === "arretee" || s.etat === "abandonnee") op("reprendre", "reprendre");
+      const det = el("details", "serie-etapes");
+      det.append(el("summary", "mut petit", "étapes"), ...s.etapes.map((e) => el("div", "mut petit", `${e.chapitre} · ${LIB_SERIE[e.action]} · ${e.etat}${e.erreur ? " — " + e.erreur : ""}`)));
+      l.append(det);
+      d.append(l);
+    }
+    // une étape a fini depuis le dernier passage : le livre a changé, tout le suivi se recalcule
+    const faites = L.reduce((n, s) => n + s.etapes.filter((e) => e.etat !== "a_faire" && e.etat !== "en_cours").length, 0);
+    if (etat.etapesVues != null && faites > etat.etapesVues && etat.enSuivi) { etat.etapesVues = faites; return rafraichitVue(); }
+    etat.etapesVues = faites;
+    if (vivantes.some((s) => s.etat === "en_cours") && etat.enSuivi) suiviSeries = setTimeout(remplit, 10000);
+  };
+  remplit();
+  return d;
+}
+
+// ------------------------------------------------------------------ la modale
+//
+// Les formulaires qui lancent Claude s'ouvrent dans une modale : un titre qui dit l'action, la portée
+// en entier (le paragraphe, les assertions, le chapitre, la liste des chapitres d'une série), puis le
+// formulaire. Elle se ferme d'elle-même quand le formulaire se retire (annuler, ou lancé), quand un
+// tiroir s'ouvre, quand on navigue ; Échap ou un clic à côté la ferment aussi.
+
+var fermeModaleCourante;          // var : lue dès la première navigation, avant la fin du module
+
+function fermeModale() {
+  fermeModaleCourante?.();
+}
+
+function enModale(titre, portee, f) {
+  fermeModale();
+  const fond = el("div", "modale-fond");
+  const m = el("div", "modale");
+  m.setAttribute("role", "dialog");
+  m.setAttribute("aria-modal", "true");
+  const tete = el("div", "modale-tete");
+  const x = el("button", "fermer", "×");
+  x.title = "fermer (Échap)";
+  tete.append(el("h3", null, titre), x);
+  m.append(tete);
+  if (portee && (!Array.isArray(portee) || portee.length)) {
+    const p = el("div", "modale-portee");
+    p.append(el("span", "etiq", "portée"));
+    if (Array.isArray(portee)) {
+      const ul = el("ul");
+      for (const l of portee) { const li = el("li"); li.append(l); ul.append(li); }
+      p.append(ul);
+    } else p.append(typeof portee === "string" ? el("span", null, portee) : portee);
+    m.append(p);
+  }
+  const corps = el("div", "modale-corps");
+  corps.append(f);
+  m.append(corps);
+  fond.append(m);
+  document.body.append(fond);
+  const esc = (e) => { if (e.key === "Escape") fermer(); };
+  const obs = new MutationObserver(() => { if (!corps.childElementCount) fermer(); });
+  const fermer = () => {
+    obs.disconnect();
+    document.removeEventListener("keydown", esc);
+    fond.remove();
+    if (fermeModaleCourante === fermer) fermeModaleCourante = null;
+  };
+  obs.observe(corps, { childList: true });
+  document.addEventListener("keydown", esc);
+  fond.addEventListener("mousedown", (e) => { if (e.target === fond) fermer(); });
+  x.onclick = fermer;
+  fermeModaleCourante = fermer;
+  setTimeout(() => m.querySelector("textarea, input:not([type=checkbox]), select")?.focus(), 0);
+  return fermer;
+}
+
+// Les portées : ce sur quoi l'action porte, dit en entier.
+function nomChapitre(slug) {
+  const c = etat.chapitres?.find((x) => x.slug === slug);
+  return c ? `${c.numero ? c.numero + ". " : ""}${c.title}` : slug;
+}
+
+function porteeChapitre(slug) {
+  const c = etat.chapitres?.find((x) => x.slug === slug);
+  return `chapitre ${nomChapitre(slug)}${c?.periode ? " — " + c.periode : ""}`;
+}
+
+function porteePartie(pid) {
+  const p = etat.plan?.parties?.find((x) => x.id === pid);
+  const chs = etat.chapitres?.filter((c) => c.partie === pid) ?? [];
+  return [`partie « ${p?.title ?? pid} » — ${chs.length} chapitre(s) :`, ...chs.map((c) => nomChapitre(c.slug))];
+}
+
+function porteeSerie(slugs) {
+  return slugs.map((s) => nomChapitre(s));
+}
+
+function porteeBlocs(blocs) {
+  const debut = (b) => {
+    const t = (blocEl(b)?.textContent ?? "").replace(/\s+/g, " ").trim();
+    return t.length > 110 ? t.slice(0, 110) + "…" : t;
+  };
+  return [porteeChapitre(etat.slug) + ` · ${versionVue() === "essai" ? "essai" : "récit"}`, ...blocs.map((b) => `^${b} — ${debut(b)}`)];
+}
+
+function porteePlan(pid) {
+  const b = (etat.atelier?.brief?.beats ?? []).find((x) => x.id === pid);
+  const n = Object.values(etat.atelier?.links?.recit ?? {}).filter((l) => l?.plan === pid).length;
+  return [porteeChapitre(etat.slug) + " · récit", `plan ${pid}${b?.title ? " — " + b.title : ""} : ${n} paragraphe(s)`];
+}
+
+function porteeAssertions(ids) {
+  return [porteeChapitre(etat.slug), ...ids.map((i) => `${i} — ${etat.atelier?.assertions?.[i]?.texte ?? ""}`)];
+}
+
+function porteeAnnotation(a) {
+  return [porteeChapitre(etat.slug) + ` · ${a.version === "essai" ? "essai" : "récit"} · ^${a.bloc}`,
+    `« ${(a.citation ?? "").slice(0, 120)} »`, a.texte ? `annotation : ${a.texte.slice(0, 200)}` : null].filter(Boolean);
+}
+
+function porteeOeuvre(cle) {
+  return `œuvre ${cle}`;
 }
