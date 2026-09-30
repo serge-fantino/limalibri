@@ -154,6 +154,21 @@ chapitres servis ; on coche, on retouche la question, et chaque piste cochée la
 création de fiche — qui revérifie le doublon avant d'écrire. Les demandes de pistes d'une
 fiche sont listées dans sa colonne de droite.
 
+**Créer une fiche** met aussi en file, par défaut, une **vérification de référence** pour chaque source que
+Claude n'a pas pu lire (page payante ou bloquée, budget épuisé). Les **liens retour** qu'il propose (depuis les
+fiches voisines) s'écrivent à la **validation** de la fiche (« ✓ marquer comme relue », case cochée par
+défaut) : une ligne « - [[fiche]] — raison » dans la section « Voir aussi » de chaque voisine, créée au besoin
+avant les sources ; le texte de la voisine n'est pas touché. Les paragraphes
+sans source [@…] sont signalés en marge ; « 🔎 sourcer les paragraphes signalés » relance la recherche dans
+la même session, sur ces paragraphes.
+
+Le **fil des événements** (`atelier/evenements.py`, `/api/evenements`, Server-Sent Events) : le serveur
+prévient les pages ouvertes quand une demande est créée, change d'état ou avance, quand une série avance,
+quand une conversation change ; la page redessine ce qui est concerné (le tiroir d'une demande en cours, la
+liste des demandes, le bloc des séries, la conversation, les compteurs) — plus de sondage. Le navigateur se
+reconnecte seul ; pendant une coupure, un sondage lent prend le relais. Les flux se ferment dès le signal
+d'arrêt, pour ne pas retenir le rechargement automatique du serveur.
+
 La **file d'attente** (`atelier/file.py`) : les fiches retenues depuis « creuser » ne partent
 pas toutes seules, elles sont **en attente**. On les lance à la main (▶, dans Fiches › En création
 ou dans leur tiroir), ou on les retire. L'**enchaînement automatique** est une option
@@ -337,6 +352,13 @@ selon la version lue) et sur les pages du plan : vide, synopsis, brief (squelett
 storyboard du récit), brouillon, relu, validé (`atelier/avancement.py`). Un chapitre sans texte dans
 la version lue montre ce qu'on sait de lui : synopsis, question, fiches — et de quoi l'écrire.
 
+La **file d'attente** (`atelier/file.py`) vaut pour toutes les demandes, de la base comme des chapitres :
+une seule tourne à la fois (`claude.file.simultanees`, 1 par défaut), les suivantes passent « en attente »
+dans l'ordre d'arrivée. Quand une demande finit, la suivante d'une série part toujours ; les autres partent
+si l'enchaînement est activé (`claude.file.auto`), sinon elles attendent leur ▶. Le tiroir d'une demande en
+attente dit sa place, et « ▶ lancer maintenant » la fait partir en parallèle de ce qui tourne. L'assistant
+et la lecture de confiance d'une fiche restent hors de la file.
+
 Les **séries** (`atelier/serie.py`, `kb/series/`) enchaînent des actions sur plusieurs chapitres :
 développer le brief, écrire l'essai, lecture naïve. Depuis le suivi, un groupe d'actions lançable
 (« Développer le brief », « Écrire le texte », « Lectures naïves ») a une case par chapitre et « ▶ lancer
@@ -350,6 +372,22 @@ redémarrage du serveur arrête proprement une série dont l'étape tournait.
 Le bouton **⟳** de l'en-tête relit le livre (chapitres et statuts, plan, textes) et redessine la vue
 courante à la même place, tiroir ouvert. Il part aussi de lui-même après une décision sur une demande
 de la base (poser un essai, retenir un plan, créer une fiche) et quand une demande pose d'office.
+
+**Réviser l'essai** d'un chapitre déjà écrit (« ✎ réviser l'essai… » dans le bandeau ; action `revision` de
+l'assistant ; étape « réviser » d'une série) : Claude relit le chapitre en entier et le retravaille selon une
+consigne (couper, resserrer, recentrer) et une longueur visée, depuis les fiches, sans web. Il garde l'ancre
+^id de chaque paragraphe gardé ou modifié — annotations et appuis du verrou suivent — et dit ce qu'il a
+coupé ou fondu, paragraphe par paragraphe. On relit, puis on pose (ou pose d'office). L'**historique**
+(« 🕘 historique » dans la barre de l'essai) : chaque pose — écriture, révision, restauration — archive la
+version qu'elle remplace dans `chapters/<slug>/historique/` et le note au journal du chapitre, avec la
+consigne et les mots avant et après ; on relit une version, on la restaure (la présente est archivée à son
+tour). Les corrections à la main restent dans git (⎇ versions).
+
+L'en-tête : **Livre** (onglets présentation — titre, auteur, couverture, synopsis, idée, arc, synopsis
+développé, quatrième —, versions et numérotation, garde-fous de chaque version), **Suivi**, **Plan** (la
+structure seule : parties et chapitres), Récit, Essai, Fiches, puis Annotations, **Demandes** — la liste (le
+tiroir), et deux pages : **Paramétrage des demandes à Claude** (modèle, tours, recherches, pages par sorte de
+demande ; la file) et **Consommation** —, ⟳, le thème et l'assistant.
 
 Le **suivi** (en-tête, `#suivi/recit`, `#suivi/essai` ; `atelier/suivi.py`) : où en est chaque
 chapitre, où en est le livre, ce qu'il reste à faire. La note est une progression par étapes pondérées,

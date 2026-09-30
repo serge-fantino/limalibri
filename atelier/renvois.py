@@ -99,11 +99,8 @@ def cree(corps):
     L.append(refs.annexe(d["consigne"]))
     d["contexte"] = {"systeme": SYSTEME, "message": "\n".join(L)}
     reecriture._ecrit(SLUG_KB, d)
-    import asyncio
-    t = asyncio.get_running_loop().create_task(_execute(d["id"]))
-    reecriture._taches.add(t)
-    t.add_done_callback(reecriture._taches.discard)
-    return d
+    from . import file
+    return file.part(SLUG_KB, d, "renvois", "_execute", d["id"])
 
 
 def titre_de(d):
@@ -247,8 +244,28 @@ def decide(ident, corps):
 
 # ------------------------------------------------------------------ relue
 
-def marque_relue(slug):
-    """Une fiche écrite par Claude, relue par l'auteur : « etat: brouillon » -> « etat: relue »."""
+def liens_proposes(slug):
+    """Les liens retour que Claude a proposés en créant la fiche (sa demande), moins les voisines qui la
+    citent déjà."""
+    p = kb.dossier() / (slug + ".md")
+    m = re.search(r"^demande:\s*(\S+)", p.read_text(encoding="utf-8")[:2000], re.M)
+    if not m:
+        return []
+    try:
+        d = reecriture.lit(SLUG_KB, m.group(1))
+    except Exception:                              # noqa: BLE001 — une demande effacée : rien à proposer
+        return []
+    out = []
+    for l in (d.get("resultat") or {}).get("liens") or []:
+        v = kb.dossier() / ((l.get("fiche") or "") + ".md")
+        if v.exists() and "[[%s]]" % slug not in v.read_text(encoding="utf-8") and "[[%s|" % slug not in v.read_text(encoding="utf-8"):
+            out.append({"fiche": l["fiche"], "raison": l.get("raison") or "", "demande": d["id"]})
+    return out
+
+
+def marque_relue(slug, liens_retour=False):
+    """Une fiche écrite par Claude, relue par l'auteur : « etat: brouillon » -> « etat: relue ». Avec
+    liens_retour : le lien retour est écrit dans les fiches voisines que Claude avait proposées."""
     p = kb.dossier() / (slug + ".md")
     md = p.read_text(encoding="utf-8")
     m = re.match(r"^---\n(.*?)\n---\n", md, re.S)
@@ -264,4 +281,9 @@ def marque_relue(slug):
     p.write_text("---\n%s\n---\n" % tete + md[m.end():], encoding="utf-8")
     with (livre.LIVRE / "kb" / "journal.jsonl").open("a", encoding="utf-8") as f:
         f.write(json.dumps({"type": "relue", "fiche": slug, "date": livre._maintenant()}, ensure_ascii=False) + "\n")
-    return {"fiche": slug, "etat": "relue", "voisines_sans_renvoi": voisines(slug)}
+    ecrits = []
+    if liens_retour:
+        from . import creation
+        L = liens_proposes(slug)
+        ecrits = creation._liens_retour(slug, L, L[0]["demande"] if L else None)
+    return {"fiche": slug, "etat": "relue", "liens_retour": ecrits, "voisines_sans_renvoi": voisines(slug)}

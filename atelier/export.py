@@ -297,6 +297,9 @@ CSS_ESSAI = """
 .chapitre .footnote{font-size:8.5pt;border-top:1px solid #ddd6c8;margin-top:1.5em}
 .chapitre .footnote hr{display:none}
 sup a{color:#8a5a2b}
+.renvoi-chap{color:#8a5a2b;border-bottom:1px dotted #8a5a2b;white-space:nowrap}
+.renvoi-ptr{white-space:nowrap}
+.renvoi-mort{color:#c4525a}
 """
 
 
@@ -357,7 +360,8 @@ def _chapitre_html(c, version="essai"):
     h = re.sub(r'id="sec-([\w-]+)"', r'id="sec-%s--\1"' % s, h)
     h = re.sub(r'href="#sec-([\w-]+)"', r'href="#sec-%s--\1"' % s, h)
     h = re.sub(r'(id|href)="#?fn(ref)?:', lambda m: '%s="%sfn%s:%s-' % (m.group(1), "#" if m.group(1) == "href" else "", m.group(2) or "", s), h)
-    h = re.sub(r' data-(block|sec|section)="[^"]*"', "", h)
+    h = re.sub(r'<a class="renvoi-chap" href="#([\w-]+)/essai/texte"', r'<a class="renvoi-chap" href="#chap-\1"', h)
+    h = re.sub(r' data-(block|sec|section|chap)="[^"]*"', "", h)
     return re.sub(r'<cite data-cle="([\w-]+)">[^<]*</cite>',
                   lambda m: '<cite><a href="#oeuvre-%s">%s</a></cite>' % (m.group(1), html.escape(_courte(m.group(1)))), h)
 

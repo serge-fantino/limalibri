@@ -158,11 +158,8 @@ def cree(corps):
     L.append(refs.annexe(d["consigne"]))
     d["contexte"] = {"systeme": systeme, "message": "\n".join(L)}
     reecriture._ecrit(SLUG_KB, d)
-    import asyncio
-    t = asyncio.get_running_loop().create_task(_execute(d["id"]))
-    reecriture._taches.add(t)
-    t.add_done_callback(reecriture._taches.discard)
-    return d
+    from . import file
+    return file.part(SLUG_KB, d, "planif", "_execute", d["id"])
 
 
 def titre_de(d):

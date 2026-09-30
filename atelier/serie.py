@@ -24,8 +24,8 @@ import secrets
 from . import livre, reecriture, avancement
 
 SLUG_KB = "_kb"
-ACTIONS = ("brief", "ecrire", "naif")
-LIB = {"brief": "développer le brief", "ecrire": "écrire l'essai", "naif": "lecture naïve"}
+ACTIONS = ("brief", "ecrire", "reviser", "naif")
+LIB = {"brief": "développer le brief", "ecrire": "écrire l'essai", "reviser": "réviser l'essai", "naif": "lecture naïve"}
 
 
 def _dossier():
@@ -44,6 +44,8 @@ def lit(ident):
 def _ecrit(s):
     s["modifie"] = livre._maintenant()
     (_dossier() / (s["id"] + ".json")).write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")
+    from . import evenements
+    evenements.publie("serie", id=s["id"], etat=s["etat"])
 
 
 def liste():
@@ -60,7 +62,7 @@ def cree(corps):
         raise ValueError("des chapitres et au moins une action")
     s = {"id": "serie-" + time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2), "cree": livre._maintenant(),
          "etat": "en_cours", "actions": acts, "version": corps.get("version") or "essai",
-         "options": {k: corps.get(k) for k in ("consigne", "longueur", "modele")},
+         "options": {k: corps.get(k) for k in ("consigne", "longueur", "modele", "mots")},
          "etapes": [{"chapitre": c, "action": a, "etat": "a_faire"} for c in chs for a in acts]}
     _ecrit(s)
     avance(s["id"])
@@ -98,7 +100,7 @@ def _chapitre(slug):
 
 
 def _demande(e):
-    slug = SLUG_KB if e["action"] in ("brief", "ecrire") else e["chapitre"]
+    slug = SLUG_KB if e["action"] in ("brief", "ecrire", "reviser") else e["chapitre"]
     try:
         return reecriture.lit(slug, e["demande"])
     except Exception:                                 # noqa: BLE001
@@ -137,11 +139,20 @@ def _lance(s, e):
         from . import redaction
         d = redaction.cree({"chapitre": c["slug"], "poser": True, "consigne": o.get("consigne") or "",
                             "longueur": o.get("longueur"), "modele": o.get("modele"), "serie": s["id"]})
+    elif e["action"] == "reviser":
+        if avancement.niveau(c, "essai") not in ("brouillon", "relu", "valide"):
+            return False
+        from . import redaction
+        d = redaction.cree({"chapitre": c["slug"], "revision": True, "poser": True, "consigne": o.get("consigne") or "",
+                            "mots": o.get("mots"), "modele": o.get("modele"), "serie": s["id"]})
     else:
         if avancement.niveau(c, s["version"]) not in ("brouillon", "relu", "valide"):
             return False
         from . import naif
         d = naif.cree(c["slug"], {"version": s["version"], "modele": o.get("modele")})
+    if d.get("etat") == "en_attente" and not d.get("serie"):   # en file : marquée de la série, elle partira d'elle-même
+        d["serie"] = s["id"]
+        reecriture._ecrit(SLUG_KB if e["action"] in ("brief", "ecrire", "reviser") else e["chapitre"], d)
     e.update(etat="en_cours", demande=d["id"], lancee=livre._maintenant())
     return True
 
@@ -168,7 +179,7 @@ def avance(ident=None):
                         cur.update(etat="erreur", erreur="brief non retenu : %s" % x)
                         s.update(etat="arretee", erreur=cur["erreur"])
                         break
-                if cur["action"] == "ecrire" and d.get("erreur_pose"):
+                if cur["action"] in ("ecrire", "reviser") and d.get("erreur_pose"):
                     cur.update(etat="erreur", erreur=d["erreur_pose"])
                     s.update(etat="arretee", erreur="essai non posé (%s) : %s" % (cur["chapitre"], d["erreur_pose"]))
                     break

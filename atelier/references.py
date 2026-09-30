@@ -124,7 +124,10 @@ def cree(corps, lancer=True):
          "etat": "en_attente", "cree": livre._maintenant(), "rang": time.time()}
     d["titre"] = titre_de(d)
     reecriture._ecrit(SLUG_KB, d)
-    return demarre(d["id"]) if lancer else d
+    if not lancer:
+        return d
+    from . import file
+    return file.part(SLUG_KB, d, "references", "demarre", d["id"])
 
 
 def titre_de(d):

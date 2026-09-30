@@ -73,7 +73,10 @@ def cree(corps, lancer=True):
          "etat": "en_attente", "cree": livre._maintenant(), "rang": time.time()}
     d["titre"] = "Texte original de %s" % cle
     reecriture._ecrit(SLUG_KB, d)
-    return demarre(d["id"]) if lancer else d
+    if not lancer:
+        return d
+    from . import file
+    return file.part(SLUG_KB, d, "documents", "demarre", d["id"])
 
 
 def demarre(ident):

@@ -15,6 +15,12 @@ Poser écrit chapters/<slug>/essai.md (un ^id par paragraphe, un {#id} par inter
 squelette s'il y en avait un, et passe le chapitre en brouillon. Un essai déjà rédigé n'est jamais
 remplacé sans le dire (remplacer: true).
 
+La révision (revision: true) : un chapitre déjà écrit, que Claude relit et retravaille selon une
+consigne (couper, resserrer, recentrer) et une longueur visée ; il garde l'ancre ^id de chaque
+paragraphe gardé ou modifié, pour que les annotations et les appuis du verrou suivent. Avant chaque
+pose (écriture ou révision), la version précédente est archivée dans chapters/<slug>/historique/ et
+notée au journal du chapitre : on la relit, on la restaure.
+
 La série : une demande par chapitre, dans l'ordre du plan, chacune partant quand la précédente a
 fini (sans dépendre de l'enchaînement automatique de la file) ; « poser d'office » écrit chaque
 chapitre dès sa réponse, pour que le suivant puisse le lire.
@@ -70,7 +76,10 @@ traiter ; ou une fiche existante à creuser). Mieux vaut une section plus courte
   N'invente jamais une clé.
 - Les notes : [^{slug}-mot] dans le texte, définies à la fin sous « ## Notes » ([^{slug}-mot]: …).
 - Un renvoi à un autre chapitre : [chap:<slug>] (la liste des chapitres est dans le message), jamais
-  « chapitre 3 » en dur — le numéro est calculé à l'assemblage.
+  « chapitre 3 » en dur — le numéro est calculé à l'assemblage. Écris-le dans la phrase, là où l'on
+  dirait le numéro : « comme on l'a vu au chapitre [chap:<slug>] », « le chapitre [chap:<slug>] l'a
+  établi ». Un renvoi posé seul en fin de phrase s'affichera « (→ chap. N) » : à réserver aux simples
+  pointeurs, avec mesure — pas plus d'un ou deux par section.
 - Une section « Ce qu'on ne sait pas » (ce qui reste incertain, avec son degré) et une section
   finale « Ce que ce chapitre démontre », comme les chapitres déjà écrits, si le chapitre s'y prête.
 - Longueur visée : {longueur}.
@@ -89,6 +98,34 @@ traiter ; ou une fiche existante à creuser). Mieux vaut une section plus courte
 
 # ------------------------------------------------------------------ créer, lancer
 
+REVISION = """
+
+## Tu RÉVISES un chapitre déjà écrit
+Le texte actuel est dans le message. Garde ce qui tient ; coupe les redites, les digressions, ce qui sort
+du périmètre du livre ; resserre ; applique la consigne de l'auteur, qui prime. Ne rajoute aucun fait que
+les fiches n'établissent pas (vérifie-les au besoin). Garde les sources ([@cle]) des passages gardés.
+Chaque paragraphe que tu gardes ou modifies GARDE son ancre en fin de paragraphe (« ^a1b2 ») ; un
+paragraphe nouveau n'en a pas ; une ancre ne sert qu'une fois. Les intertitres gardent leur {#id}.
+Dans « remarques » : ce que tu as coupé, déplacé ou changé, et pourquoi, en quelques lignes."""
+
+
+def _mots(texte):
+    return len(re.sub(r"\^[a-z0-9]+|\[\^[^\]]+\]|\[@[\w-]+\]|\{#[\w-]+\}", "", texte).split())
+
+
+def _apercu(slug, texte):
+    """Le texte rendu comme dans l'atelier : intertitres numérotés, renvois résolus, citations courtes."""
+    from . import export
+    C = livre.chapitres()
+    numeros = {c["slug"]: c["numero"] for c in C if c.get("numero")}
+    num = next((c.get("numero") for c in C if c["slug"] == slug), None)
+    try:
+        h = livre.rendu(texte, numeros, livre.numerotation(texte, num if num is not None else "P"))
+    except Exception:                               # noqa: BLE001 — un aperçu dégradé plutôt qu'aucun
+        h = livre.rendu(texte, numeros)
+    return re.sub(r'<cite data-cle="([\w-]+)">[^<]*</cite>', lambda m: "<cite>%s</cite>" % export._courte(m.group(1)), h)
+
+
 def _chapitre(slug):
     c = next((x for x in livre.chapitres() if x["slug"] == slug), None)
     if not c:
@@ -100,7 +137,10 @@ def cree(corps, lancer=True):
     slug = (corps.get("chapitre") or "").strip()
     c = _chapitre(slug)
     niv = avancement.niveau(c, "essai")
-    if niv in ("brouillon", "relu", "valide") and not corps.get("remplacer"):
+    revision = bool(corps.get("revision"))
+    if revision and niv not in ("brouillon", "relu", "valide"):
+        raise ValueError("« %s » n'a pas encore d'essai à réviser : l'écrire d'abord" % c["title"])
+    if niv in ("brouillon", "relu", "valide") and not corps.get("remplacer") and not revision:
         raise ValueError("l'essai de « %s » est déjà rédigé (%s) : le réécrire depuis ses paragraphes, "
                          "ou demander explicitement de le remplacer" % (c["title"], niv))
     if niv == "vide":
@@ -111,17 +151,23 @@ def cree(corps, lancer=True):
         raise reecriture.Conflit("une rédaction de « %s » est déjà %s : %s" % (
             c["title"], {"en_cours": "en cours", "en_attente": "en attente", "prete": "à décider"}[ouverte["etat"]], ouverte["id"]))
     d = {"id": "e-" + time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2),
-         "type": "redaction", "portee": "chapitre", "mode": "ecriture",
+         "type": "redaction", "portee": "chapitre", "mode": "revision" if revision else "ecriture",
          "consigne": (corps.get("consigne") or "").strip(),
          "longueur": corps.get("longueur") if corps.get("longueur") in LONGUEURS else "moyenne",
          "modele_choisi": reecriture._choix_modele(corps),
-         "poser": bool(corps.get("poser")), "remplacer": bool(corps.get("remplacer")),
+         "poser": bool(corps.get("poser")), "remplacer": bool(corps.get("remplacer")) or revision,
+         "mots": int(corps["mots"]) if str(corps.get("mots") or "").strip().isdigit() and int(corps["mots"]) > 0 else None,
          "serie": corps.get("serie"),
          "cible": {"chapitre": slug, "version": "essai", "niveau": niv},
          "etat": "en_attente", "cree": livre._maintenant(), "rang": time.time() + corps.get("_rang", 0) * 1e-3}
-    d["titre"] = "Écrire l'essai — %s%s" % ("%s. " % c["numero"] if c.get("numero") else "", c["title"])
+    if revision:
+        d["cible"]["mots_avant"] = _mots((livre.dossier(slug) / "essai.md").read_text(encoding="utf-8"))
+    d["titre"] = "%s l'essai — %s%s" % ("Réviser" if revision else "Écrire", "%s. " % c["numero"] if c.get("numero") else "", c["title"])
     reecriture._ecrit(SLUG_KB, d)
-    return demarre(d["id"]) if lancer else d
+    if not lancer:
+        return d
+    from . import file
+    return file.part(SLUG_KB, d, "redaction", "demarre", d["id"])
 
 
 def serie(corps):
@@ -180,8 +226,15 @@ def compile_contexte(d):
     slug = d["cible"]["chapitre"]
     m = livre.meta()
     P = plan.lit()
-    systeme = SYSTEME.format(titre=m.get("titre", ""), slug=slug, longueur=LONGUEURS[d["longueur"]],
-                             regles=reecriture._regles("essai"))
+    revision = d.get("mode") == "revision"
+    if revision:
+        avant = d["cible"].get("mots_avant") or 0
+        longueur = ("environ %d mots (le texte actuel en a %d)" % (d["mots"], avant)) if d.get("mots") else \
+            "pas plus que le texte actuel (%d mots) ; plus court si la consigne le demande" % avant
+    else:
+        longueur = LONGUEURS[d["longueur"]]
+    systeme = SYSTEME.format(titre=m.get("titre", ""), slug=slug, longueur=longueur,
+                             regles=reecriture._regles("essai")) + (REVISION if revision else "")
     ordre = [c for p in P["parties"] for c in p["chapitres"]]
     i = next(k for k, c in enumerate(ordre) if c["slug"] == slug)
     c = ordre[i]
@@ -205,6 +258,9 @@ def compile_contexte(d):
     if pe.exists() and avancement.squelette(pe.read_text(encoding="utf-8")):
         L += ["", "## Son squelette (les sections prévues, chacune avec ce qu'elle doit établir) — à suivre",
               re.sub(r"[ \t]\^[a-z0-9]+[ \t]*$", "", pe.read_text(encoding="utf-8"), flags=re.M).strip()]
+    elif pe.exists() and revision:
+        L += ["", "## Le texte actuel, à réviser (%d mots) — les ancres ^id sont à garder" % (d["cible"].get("mots_avant") or 0),
+              pe.read_text(encoding="utf-8").strip()]
     elif pe.exists() and d.get("remplacer"):
         L += ["", "## L'essai actuel (à remplacer) : chapters/%s/essai.md — lis-le avant d'écrire" % slug]
     V = [a for s in _yaml(livre.dossier(slug) / "verrou.yaml").get("sections") or [] for a in s.get("assertions") or []
@@ -245,18 +301,32 @@ async def _execute(ident):
 
 # ------------------------------------------------------------------ la réponse
 
-def _normalise(texte, slug):
+def _normalise(texte, slug, garder=None):
+    """garder : les ancres du texte révisé qu'on reprend (celles du texte d'avant, une fois chacune)."""
     t = texte.replace("\r\n", "\n").strip()
     # les clés de notes portent le slug du chapitre (invariant du livre) : on les préfixe s'il le faut
     t = re.sub(r"\[\^(?!%s-)([^\]]+)\]" % re.escape(slug), lambda m: "[^%s-%s]" % (slug, m.group(1)), t)
     t = re.sub(r"\A#\s+[^\n]*\n+", "", t)                         # pas de titre de chapitre
-    t = re.sub(r"[ \t]\^[a-z0-9]+[ \t]*$", "", t, flags=re.M)      # les ancres, c'est nous qui les posons
+    vues = set()
+
+    def ancre(m):                                                  # les ancres, c'est nous qui les posons —
+        i = m.group(1)                                             # sauf celles d'un paragraphe révisé
+        if garder and i in garder and i not in vues:
+            vues.add(i)
+            return " ^" + i
+        return ""
+    t = re.sub(r"[ \t]\^([a-z0-9]+)[ \t]*$", ancre, t, flags=re.M)
     return t.strip() + "\n"
 
 
 def conclut(d, sortie):
     from . import sources
-    t = _normalise(sortie.get("texte") or "", d["cible"]["chapitre"])
+    revision = d.get("mode") == "revision"
+    garder = None
+    if revision:
+        pe = livre.dossier(d["cible"]["chapitre"]) / "essai.md"
+        garder = set(re.findall(r"\^([a-z0-9]+)\s*$", pe.read_text(encoding="utf-8"), re.M)) if pe.exists() else set()
+    t = _normalise(sortie.get("texte") or "", d["cible"]["chapitre"], garder)
     if len(t.split()) < 150:
         raise ValueError("texte trop court (%d mots)" % len(t.split()))
     connues = set(sources.toutes()) if sources.existe() else set(livre.sources())
@@ -269,11 +339,14 @@ def conclut(d, sortie):
          "notes_orphelines": sorted((appels - defs) | (defs - appels)),
          "manques": [m for m in sortie.get("manques") or [] if m.get("question")],
          "fiches_lues": sortie.get("fiches_lues") or [], "remarques": sortie.get("remarques") or "",
-         "html": livre.rendu(t, {})}
+         "html": _apercu(d["cible"]["chapitre"], t)}
+    if revision:
+        R.update(mots_avant=d["cible"].get("mots_avant"), paragraphes_gardes=len(re.findall(r"\^[a-z0-9]+\s*$", t, re.M)),
+                 paragraphes_avant=len(garder or ()))
     d.update(etat="prete", resultat=R)
     if d.get("poser"):
         try:
-            pose(d["cible"]["chapitre"], t, remplacer=d.get("remplacer"), demande=d["id"])
+            pose(d["cible"]["chapitre"], t, remplacer=d.get("remplacer"), demande=d["id"], mode=d.get("mode"), consigne=d.get("consigne"))
             d.update(etat="decidee", decision={"proposition": "posee", "d_office": True, "date": livre._maintenant()})
         except Exception as e:                    # noqa: BLE001 — la proposition reste à décider
             d["erreur_pose"] = "%s" % e
@@ -288,10 +361,12 @@ def _ancre(slug, texte):
         p = livre.dossier(slug) / (v + ".md")
         if p.exists() and v != "essai":
             pris |= set(re.findall(r"\^([a-z0-9]+)\s*$", p.read_text(encoding="utf-8"), re.M))
+    pris |= set(re.findall(r"\^([a-z0-9]+)\s*$", texte, re.M))       # les ancres gardées d'une révision
     out = []
     for b in re.split(r"\n[ \t]*\n", texte.strip("\n")):
         tete = b.lstrip()
-        if tete.startswith(("#", "[^", "|", "```", "<!--")) or re.fullmatch(r"-{3,}|\*{3,}", tete.strip()):
+        if tete.startswith(("#", "[^", "|", "```", "<!--")) or re.fullmatch(r"-{3,}|\*{3,}", tete.strip()) \
+                or re.search(r"[ \t]\^[a-z0-9]+[ \t]*$", b):
             out.append(b)
             continue
         while True:
@@ -303,7 +378,18 @@ def _ancre(slug, texte):
     return "\n\n".join(out) + "\n"
 
 
-def pose(slug, texte, remplacer=False, demande=None):
+def _archive(slug, texte):
+    """La version d'avant, rangée dans chapters/<slug>/historique/ ; rend son nom."""
+    h = livre.dossier(slug) / "historique"
+    h.mkdir(exist_ok=True)
+    nom = "essai-%s.md" % time.strftime("%Y%m%d-%H%M%S")
+    while (h / nom).exists():
+        nom = nom[:-3] + "b.md"
+    (h / nom).write_text(texte, encoding="utf-8")
+    return nom
+
+
+def pose(slug, texte, remplacer=False, demande=None, mode="ecriture", consigne=""):
     from . import essai, plan
     c = _chapitre(slug)
     d = livre.dossier(slug)
@@ -312,6 +398,7 @@ def pose(slug, texte, remplacer=False, demande=None):
     ancien = pe.read_text(encoding="utf-8") if pe.exists() else ""
     if ancien.strip() and not avancement.squelette(ancien) and not remplacer:
         raise reecriture.Conflit("l'essai a été rédigé entre-temps : rien n'est remplacé")
+    archive = _archive(slug, ancien) if ancien.strip() else None
     pe.write_text(_ancre(slug, texte), encoding="utf-8")
     n = essai.pose_identifiants(slug)
     y, doc = plan._lit_structure()
@@ -322,7 +409,9 @@ def pose(slug, texte, remplacer=False, demande=None):
     if (x.get("status") or "outline") == "outline":
         x["status"] = "draft"
     plan._ecrit_structure(y, doc)
-    e = {"type": "essai_redige", "chapitre": slug, "demande": demande, "mots": len(texte.split()),
+    e = {"type": "essai_revise" if mode == "revision" else "essai_redige", "chapitre": slug, "demande": demande,
+         "mots": _mots(texte), "mots_avant": _mots(ancien) if ancien.strip() else 0, "consigne": consigne or None,
+         "archive": archive,
          "remplace": "squelette" if ancien.strip() and avancement.squelette(ancien) else ("texte" if ancien.strip() else None)}
     plan.journal(e)
     with (d / "journal.jsonl").open("a", encoding="utf-8") as f:
@@ -337,7 +426,61 @@ def decide(ident, corps):
     if corps.get("action") == "rejeter":
         d.update(etat="decidee", decision={"proposition": None, "motif": corps.get("motif", ""), "date": livre._maintenant()})
     else:
-        r = pose(d["cible"]["chapitre"], d["resultat"]["texte"], remplacer=d.get("remplacer") or corps.get("remplacer"), demande=ident)
+        r = pose(d["cible"]["chapitre"], d["resultat"]["texte"], remplacer=d.get("remplacer") or corps.get("remplacer"), demande=ident,
+                 mode=d.get("mode"), consigne=d.get("consigne"))
         d.update(etat="decidee", decision={"proposition": "posee", "date": livre._maintenant(), **r})
     reecriture._ecrit(SLUG_KB, d)
     return d
+
+
+# ------------------------------------------------------------------ l'historique
+
+def historique(slug):
+    """Les versions de l'essai, de la plus récente à la plus ancienne : chaque pose (écriture, révision,
+    restauration) et la version qu'elle a remplacée, archivée."""
+    j = livre.dossier(slug) / "journal.jsonl"
+    E = []
+    if j.exists():
+        for l in j.read_text(encoding="utf-8").splitlines():
+            try:
+                e = json.loads(l)
+            except ValueError:
+                continue
+            if e.get("type") in ("essai_redige", "essai_revise", "essai_restaure"):
+                if e.get("archive") and not (livre.dossier(slug) / "historique" / e["archive"]).exists():
+                    e["archive_perdue"] = True
+                E.append(e)
+    pe = livre.dossier(slug) / "essai.md"
+    return {"chapitre": slug, "actuel": {"mots": _mots(pe.read_text(encoding="utf-8")) if pe.exists() else 0},
+            "entrees": list(reversed(E))}
+
+
+def _fichier_archive(slug, nom):
+    if not re.fullmatch(r"essai-[\w-]+\.md", nom or ""):
+        raise KeyError(nom)
+    p = livre.dossier(slug) / "historique" / nom
+    if not p.exists():
+        raise KeyError(nom)
+    return p
+
+
+def version_archivee(slug, nom):
+    t = _fichier_archive(slug, nom).read_text(encoding="utf-8")
+    return {"chapitre": slug, "archive": nom, "mots": _mots(t), "html": _apercu(slug, t)}
+
+
+def restaure(slug, nom):
+    """Remettre une version archivée ; la version présente est archivée à son tour."""
+    from . import essai, plan
+    t = _fichier_archive(slug, nom).read_text(encoding="utf-8")
+    pe = livre.dossier(slug) / "essai.md"
+    actuel = pe.read_text(encoding="utf-8") if pe.exists() else ""
+    archive = _archive(slug, actuel) if actuel.strip() else None
+    pe.write_text(t, encoding="utf-8")
+    essai.pose_identifiants(slug)
+    e = {"type": "essai_restaure", "chapitre": slug, "depuis": nom, "archive": archive, "mots": _mots(t),
+         "mots_avant": _mots(actuel) if actuel else 0}
+    plan.journal(e)
+    with (livre.dossier(slug) / "journal.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps(dict(e, date=livre._maintenant()), ensure_ascii=False) + "\n")
+    return historique(slug)

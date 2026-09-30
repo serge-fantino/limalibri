@@ -218,11 +218,8 @@ def cree(slug, corps):
     d["titre"] = reecriture.titre_de(d)
     d.pop("_slug")
     reecriture._ecrit(slug, d)
-    import asyncio
-    t = asyncio.get_running_loop().create_task(_execute(slug, d["id"]))
-    reecriture._taches.add(t)
-    t.add_done_callback(reecriture._taches.discard)
-    return d
+    from . import file
+    return file.part(slug, d, "verification", "_execute", slug, d["id"])
 
 
 async def _execute(slug, ident):

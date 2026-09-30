@@ -20,6 +20,7 @@ import pathlib
 import functools
 import yaml
 import markdown
+import html as html_lib
 from ruamel.yaml import YAML
 from ruamel.yaml.constructor import RoundTripConstructor
 from ruamel.yaml.scalarstring import LiteralScalarString
@@ -296,13 +297,54 @@ def numerotation(brut, chapitre):
     return sections, blocs
 
 
+# Les renvois à un autre chapitre, [chap:<slug>] : un vrai lien, et une forme qui se lit.
+#   « au chapitre [chap:x] »          -> au chapitre 12              (le numéro seul, après « chapitre »)
+#   « dans [chap:x] », « de [chap:x] » -> dans le chapitre 12, du chapitre 12
+#   « …au fer [chap:x]. »              -> …au fer (→ chap. 12).      (un renvoi posé seul, comme une citation)
+# Le titre du chapitre est au survol ; le lien mène au chapitre (dans le PDF, à sa page). Le texte source
+# n'est pas touché : la forme se décide au rendu.
+PREPOSITIONS = {"dans": "dans le chapitre", "de": "du chapitre", "à": "au chapitre", "par": "par le chapitre",
+                "sur": "sur le chapitre", "avec": "avec le chapitre", "voir": "voir le chapitre", "après": "après le chapitre",
+                "avant": "avant le chapitre", "depuis": "depuis le chapitre", "cf.": "cf. chapitre", "en": "au chapitre"}
+
+
+def _titres_chapitres():
+    s = structure()
+    return {c["slug"]: c.get("title") or c["slug"] for c in (s.get("prefaces") or []) + [x for p in s["parts"] for x in p.get("chapters") or []]}
+
+
+def renvois_chapitres(md, numeros, titres=None):
+    if "[chap:" not in md:
+        return md
+    titres = titres if titres is not None else _titres_chapitres()
+
+    def lien(slug, texte):
+        if slug not in numeros:
+            return '<span class="renvoi-mort" title="chapitre inconnu : %s">[chap:%s]</span>' % (slug, slug)
+        return '<a class="renvoi-chap" href="#%s/essai/texte" data-chap="%s" title="%s">%s</a>' % (
+            slug, slug, html_lib.escape(titres.get(slug, slug), quote=True), texte)
+
+    def prep(m):                                   # « dans [chap:x] » -> « dans le chapitre [chap:x] »
+        mot = m.group(1)
+        dit = PREPOSITIONS[mot.lower()]
+        return (dit[0].upper() + dit[1:] if mot[0].isupper() else dit) + m.group(2)
+    md = re.sub(r"(?<![\w'’])(dans|de|à|par|sur|avec|voir|après|avant|depuis|cf\.|en)(\s+)(?=\[chap:)", prep, md, flags=re.I)
+    # après « chapitre(s) » : le numéro seul (et « chapitres [chap:a] et [chap:b] »)
+    md = re.sub(r"(chapitres?|chap\.)(\s+)((?:\[chap:[a-z0-9-]+\](?:\s*(?:,|et|à|-)\s*)?)+)",
+                lambda m: m.group(1) + m.group(2) + RENVOI.sub(lambda r: lien(r.group(1), str(numeros.get(r.group(1), "?"))), m.group(3)),
+                md, flags=re.I)
+    # seul : un renvoi explicite, entre parenthèses
+    return RENVOI.sub(lambda r: '<span class="renvoi-ptr">(→ %s)</span>' % lien(r.group(1), "chap. %s" % numeros.get(r.group(1), "?"))
+                      if r.group(1) in numeros else lien(r.group(1), ""), md)
+
+
 def rendu(md, numeros, structure=None):
     """Markdown -> HTML. Chaque ^id devient data-block sur son <p> ou son <li>.
 
     `structure` (essai) : (sections, blocs) numérotés — les intertitres reçoivent
     data-section et data-num, les paragraphes data-num, et [sec:id] devient un renvoi."""
     md = ANCRE.sub(lambda m: " §blk:%s§" % m.group(1), md)
-    md = RENVOI.sub(lambda m: str(numeros.get(m.group(1), m.group(0))), md)
+    md = renvois_chapitres(md, numeros)
     sections, nums = structure or ({}, {})
     mode = meta().get("numerotation_essai") or "aucune"
 

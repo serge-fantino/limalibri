@@ -171,7 +171,10 @@ def cree(corps, lancer=True):
          "etat": "en_attente", "cree": livre._maintenant(), "rang": time.time()}
     d["titre"] = titre_de(d)
     reecriture._ecrit(SLUG_KB, d)
-    return demarre(d["id"]) if lancer else d
+    if not lancer:
+        return d
+    from . import file
+    return file.part(SLUG_KB, d, "creation", "demarre", d["id"])
 
 
 def demarre(ident):
@@ -298,8 +301,10 @@ def decide(ident, corps):
         raise ValueError("la fiche « %s » existe déjà : choisir un autre slug" % slug)
     _ecrit_fiche(d, R, slug, (corps.get("titre") or "").strip() or R["titre"], "brouillon")
     relies = _relie(slug, corps.get("chapitres") or [], ident)
-    d.update(etat="decidee", decision={"proposition": slug, "fiche": slug, "chapitres": relies,
-                                       "motif": motif, "date": livre._maintenant()})
+    retours = _liens_retour(slug, R.get("liens") or [], ident) if corps.get("liens_retour") else []   # d'ordinaire : à la validation
+    verifs = _verifie_sources(R.get("sources") or []) if corps.get("verifier_sources", True) else []
+    d.update(etat="decidee", decision={"proposition": slug, "fiche": slug, "chapitres": relies, "liens_retour": retours,
+                                       "verifications": verifs, "motif": motif, "date": livre._maintenant()})
     reecriture._ecrit(SLUG_KB, d)
     return d
 
@@ -342,6 +347,55 @@ def _ecrit_fiche(d, R, slug, titre, etat):
                 sources.ajoute_citation(cle, s["extrait"], usage="fiche %s" % slug, origine="fiche %s (demande %s)" % (slug, ident))
             except (ValueError, KeyError):
                 pass
+
+
+def _liens_retour(slug, liens, ident):
+    """Le lien retour, écrit dans chaque fiche voisine : une ligne « - [[slug]] — raison » dans sa section
+    « Voir aussi » (créée au besoin, avant les sources). Une voisine qui cite déjà la fiche n'est pas touchée ;
+    son texte ne l'est jamais."""
+    faits = []
+    for l in liens:
+        v = (l.get("fiche") or "").strip()
+        p = kb.dossier() / (v + ".md")
+        if not v or v == slug or not p.exists():
+            continue
+        t = p.read_text(encoding="utf-8")
+        if "[[%s]]" % slug in t or "[[%s|" % slug in t:
+            continue
+        ligne = "- [[%s]] — %s" % (slug, " ".join((l.get("raison") or "").split()))
+        m = re.search(r"^##\s+Voir aussi.*$", t, re.M)
+        if m:                                        # à la fin de la section « Voir aussi »
+            fin = re.search(r"^##\s", t[m.end():], re.M)
+            i = m.end() + (fin.start() if fin else len(t) - m.end())
+            t = t[:i].rstrip("\n") + "\n" + ligne + "\n\n" + t[i:].lstrip("\n")
+        else:                                        # une section neuve, avant les sources s'il y en a
+            s = re.search(r"^##\s+(\d+\.\s*)?Sources\b.*$", t, re.M)
+            bloc = "## Voir aussi {#voir-aussi}\n\n" + ligne + "\n\n"
+            t = (t[:s.start()] + bloc + t[s.start():]) if s else (t.rstrip("\n") + "\n\n" + bloc)
+        p.write_text(t.rstrip("\n") + "\n", encoding="utf-8")
+        with (livre.LIVRE / "kb" / "journal.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "lien_retour", "fiche": v, "vers": slug, "demande": ident,
+                                "date": livre._maintenant()}, ensure_ascii=False) + "\n")
+        faits.append(v)
+    return faits
+
+
+def _verifie_sources(S):
+    """Une vérification de référence, mise en file, pour chaque source que Claude n'a pas lue."""
+    from . import references
+    ouvertes = {x.get("cle") for x in reecriture.liste(SLUG_KB)
+                if x.get("type") == "reference" and x.get("etat") in ("en_cours", "en_attente", "prete")}
+    faits = []
+    for s in S:
+        cle = _slug(s.get("cle") or "")
+        if s.get("verifie") or not cle or cle in ouvertes:
+            continue
+        try:
+            references.cree({"cle": cle, "consigne": "source d'une fiche nouvelle, que Claude n'a pas pu lire à l'écriture"})
+            faits.append(cle)
+        except Exception:                          # noqa: BLE001 — une œuvre illisible n'empêche pas la fiche
+            pass
+    return faits
 
 
 def _relie(slug, chapitres, ident):

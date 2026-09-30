@@ -9,10 +9,10 @@ import sys
 import pathlib
 import subprocess
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction, suivi, serie
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction, suivi, serie, evenements
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -24,6 +24,28 @@ for nom in livre.initialise() + regles.initialise():
 if reecriture.interrompues():
     print("atelier : des demandes en cours ont été interrompues par le redémarrage (marquées en erreur)")
 conversation.interrompues()
+
+
+@app.on_event("startup")
+async def _branche_les_evenements():
+    import asyncio
+    evenements.branche(asyncio.get_running_loop())
+    try:
+        evenements.sur_les_signaux()            # les flux se ferment dès le signal d'arrêt
+    except ValueError:                          # hors du fil principal (tests) : sans objet
+        pass
+
+
+@app.on_event("shutdown")
+async def _ferme_les_evenements():
+    evenements.ferme()                          # les flux ouverts ne retiennent pas le redémarrage
+
+
+@app.get("/api/evenements")
+async def fil_evenements(request: Request):
+    """Le fil des événements (Server-Sent Events) : demandes, progrès, séries, conversations."""
+    return StreamingResponse(evenements.flux(request), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.on_event("startup")
@@ -431,6 +453,29 @@ async def redaction_cree(request: Request):
         raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/api/chapitres/{slug}/historique")
+def historique_essai(slug: str):
+    """Les versions de l'essai d'un chapitre : écritures, révisions, restaurations, et ce qu'elles ont remplacé."""
+    return redaction.historique(slug)
+
+
+@app.get("/api/chapitres/{slug}/historique/{nom}")
+def historique_version(slug: str, nom: str):
+    try:
+        return redaction.version_archivee(slug, nom)
+    except KeyError:
+        raise HTTPException(404, "version inconnue")
+
+
+@app.post("/api/chapitres/{slug}/historique/{nom}/restaurer")
+def historique_restaure(slug: str, nom: str):
+    """Remettre une version archivée (la présente est archivée à son tour)."""
+    try:
+        return redaction.restaure(slug, nom)
+    except KeyError:
+        raise HTTPException(404, "version inconnue")
 
 
 @app.post("/api/redaction/serie")
@@ -843,11 +888,25 @@ async def supprime_fiche(slug: str, request: Request):
         raise HTTPException(404, "fiche inconnue : %s" % slug)
 
 
-@app.post("/api/fiches/{slug}/relue")
-def marque_relue(slug: str):
-    """Une fiche écrite par Claude, relue : son état passe de brouillon à relue."""
+@app.get("/api/fiches/{slug}/liens-proposes")
+def liens_proposes(slug: str):
+    """Les liens retour proposés par Claude à la création de la fiche, pas encore écrits."""
     try:
-        return renvois.marque_relue(slug)
+        return renvois.liens_proposes(slug)
+    except FileNotFoundError:
+        raise HTTPException(404, "fiche inconnue : %s" % slug)
+
+
+@app.post("/api/fiches/{slug}/relue")
+async def marque_relue(slug: str, request: Request):
+    """Une fiche écrite par Claude, relue : son état passe de brouillon à relue ; {liens_retour: true}
+    écrit aussi le lien retour dans les fiches voisines proposées à la création."""
+    try:
+        corps = await request.json()
+    except Exception:                               # noqa: BLE001 — un appel sans corps
+        corps = {}
+    try:
+        return renvois.marque_relue(slug, bool(corps.get("liens_retour")))
     except KeyError:
         raise HTTPException(404, "fiche inconnue : %s" % slug)
     except ValueError as e:

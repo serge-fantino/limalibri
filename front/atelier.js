@@ -343,6 +343,10 @@ function barreOutils() {
     o.append(g);
     o.append(el("span", "espace"));
     o.append(boutonsPdf("essai", "⎙ PDF", "essai.pdf", titrePdf("essai"))[0]);
+    const bh = el("button", "b-versions", "🕘 historique");
+    bh.title = "les versions de l'essai de ce chapitre : écritures, révisions, restaurations — relire, restaurer";
+    bh.onclick = () => modaleHistorique(etat.slug);
+    o.append(bh);
     o.append(el("span", "etiq", "numérotation"));
     const sel = el("select");
     for (const [val, lib] of [["aucune", "aucune"], ["sections", "sections"], ["paragraphes", "sections + §"]]) {
@@ -2414,7 +2418,7 @@ function choixModele(genre, valeur = "") {
     sel.append(o);
   }
   l.append(sel);
-  l.title = "Pour cette demande seulement. Le défaut se règle sur la page du livre (section Claude).";
+  l.title = "Pour cette demande seulement. Le défaut se règle dans Demandes › paramétrage.";
   return { noeud: l, valeur: () => sel.value || null };
 }
 
@@ -2552,7 +2556,10 @@ function avise(d) {
 }
 function etiquetteDemande(d) {
   if (d.type === "naive" && d.etat === "decidee") return "close";
-  return d.etat === "decidee" ? (d.decision?.proposition ? "retenue" + (d.type === "verification" ? "" : " " + d.decision.proposition) : "rejetée")
+  const prop = d.decision?.proposition;
+  if (d.etat === "decidee" && prop === "posee") return d.decision?.d_office ? "posée d'office" : "posée";
+  if (d.etat === "decidee" && prop === "retenue") return "retenue";
+  return d.etat === "decidee" ? (prop ? "retenue" + (d.type === "verification" ? "" : " " + prop) : "rejetée")
     : ETIQ_DEM[d.etat] ?? d.etat;
 }
 
@@ -2671,6 +2678,11 @@ async function tiroir(ident) {
   }
   if (!ident) return historique(t);
   const d = await api(`/chapitres/${slugDe(ident)}/demandes/${ident}`);
+  if (["en_attente", "retiree"].includes(d.etat) && !["fiche", "reference", "document"].includes(d.type)) {
+    t.replaceChildren(teteTiroir(d.titre ?? "Demande en attente", () => historique(t, slugDe(d.id) === "_kb" ? "fiches" : null)));
+    if (d.consigne) t.append(el("p", "annot-corps", "« " + d.consigne + " »"));
+    return t.append(blocAttente(d));
+  }
   if (d.type === "verification") return tiroirVerif(t, d);
   if (d.type === "fiche") return tiroirFiche(t, d);
   if (d.type === "pistes") return tiroirPistes(t, d);
@@ -2695,7 +2707,7 @@ async function tiroir(ident) {
   if (avant !== d.etat) chargeDemandes().then(marquesDemandes);      // l'état a bougé : badges à jour
   if (d.etat === "en_cours") {
     t.append(enDirect(d));
-    suivi = setTimeout(() => rafraichitDirect(ident), 1500);
+    suivreDemande(ident);
   } else if (d.etat === "erreur") {
     t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur));
   } else {
@@ -2761,7 +2773,7 @@ async function tiroirVerif(t, d) {
   if (avant !== d.etat) chargeDemandes().then(marquesDemandes);
   if (d.etat === "en_cours") {
     t.append(enDirect(d));
-    suivi = setTimeout(() => rafraichitDirect(ident), 2000);
+    suivreDemande(ident);
     return piedTiroir(t, d);
   }
   if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
@@ -3000,7 +3012,7 @@ async function rafraichitDirect(ident) {
   if (d?.decision?.d_office) rafraichitVue();                        // posé d'office : le livre a changé
   if (!d || d.etat !== "en_cours" || !z) return tiroir(ident);       // fini : tout redessiner
   remplitDirect(z, d);
-  suivi = setTimeout(() => rafraichitDirect(ident), 2000);
+  suivreDemande(ident);
 }
 
 // Le déroulé complet d'une demande finie : les recherches, les pages lues, ce que Claude
@@ -3218,7 +3230,11 @@ function teteTiroir(titre, retour = null) {
   }
   const x = el("button", "fermer", "×");
   x.onclick = () => { clearTimeout(suivi); retiensTiroir(null); document.getElementById("tiroir").hidden = true; delete document.body.dataset.tiroir; };
-  h.append(el("h4", null, titre), x);
+  const plein = document.body.dataset.tiroirPlein === "1";
+  const pe = el("button", "pan-lien tiroir-plein", plein ? "⤡" : "⤢");
+  pe.title = plein ? "revenir au tiroir (Échap)" : "plein écran";
+  pe.onclick = () => pleinEcranTiroir(document.body.dataset.tiroirPlein !== "1");
+  h.append(el("h4", null, titre), pe, x);
   return h;
 }
 
@@ -3254,6 +3270,8 @@ function periodeDe(d, F) {
 
 // La liste des demandes : ce chapitre, tout le livre, ou les fiches (la base) ; filtres par type,
 // statut, période et texte. Les filtres sont retenus pour la session.
+var suiviListe;
+
 async function historique(t, portee = null) {
   clearTimeout(suivi);
   etat.tiroirMontre = null;
@@ -3265,6 +3283,30 @@ async function historique(t, portee = null) {
     : F.portee === "fiches" ? (await api("/fiches/demandes").catch(() => [])).map((d) => ({ ...d, chapitre: "_kb" }))
     : (await api(`/chapitres/${etat.slug}/demandes`).catch(() => [])).map((d) => ({ ...d, chapitre: etat.slug }));
   t.replaceChildren(teteTiroir({ livre: "Demandes du livre", fiches: "Demandes des fiches", chapitre: "Demandes du chapitre" }[F.portee]));
+  const maj = el("button", "pan-lien liste-maj", "⟳");
+  maj.title = "rafraîchir la liste (elle se met à jour d'elle-même quand une demande change)";
+  maj.onclick = () => historique(t);
+  t.querySelector(".pan-tete h4")?.after(maj);
+  const conso = el("a", "pan-lien liste-conso", "consommation ↗");
+  conso.href = "#consommation";
+  conso.title = "ce que Claude a consommé : jetons, cache, coût — par type, modèle, chapitre, jour";
+  const param = el("a", "pan-lien liste-conso", "paramétrage ↗");
+  param.href = "#parametrage";
+  param.title = "le paramétrage des demandes à Claude : modèle, tours, recherches, pages, file d'attente";
+  conso.className = param.className = "pilule";
+  conso.textContent = "📈 consommation";
+  param.textContent = "⚙ paramétrage";
+  const liens = el("span", "tiroir-liens");
+  liens.append(param, conso);
+  t.querySelector(".pan-tete .tiroir-plein")?.before(liens);
+  clearTimeout(suiviListe);
+  if (!etat.evenements && ds.some((d) => ["en_cours", "en_attente"].includes(d.etat))) {
+    suiviListe = setTimeout(() => {
+      const ici = !t.hidden && etat.tiroirMontre == null && t.querySelector(".dem-filtres");
+      const tape = document.activeElement && t.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+      if (ici && !tape) historique(t);
+    }, 10000);
+  }
   const redessine = () => historique(t);
   const boutons = (cle, options) => {
     const g = el("span", "groupe filtres");
@@ -3308,7 +3350,10 @@ async function historique(t, portee = null) {
   const efface = el("button", "pan-lien", "effacer les filtres");
   efface.onclick = () => { Object.assign(F, { type: "tout", statut: "tout", periode: "tout", depuis: "", texte: "" }); redessine(); };
   if (F.type !== "tout" || F.statut !== "tout" || F.periode !== "tout" || F.texte) sel.append(efface);
-  t.append(barre, sel);
+  const cf = commandeFile(t);
+  const lt = el("div", "liste-tete");                  // reste en haut quand on fait défiler la liste
+  lt.append(t.firstChild, barre, cf, sel);
+  t.prepend(lt);
   const mots = F.texte.trim().toLowerCase();
   const garde = ds.filter((d) => (F.type === "tout" || (d.type ?? "reecriture") === F.type) && statutDe(d, F.statut) && periodeDe(d, F)
     && (!mots || `${d.titre ?? ""} ${d.consigne ?? ""} ${d.question ?? ""}`.toLowerCase().includes(mots)));
@@ -3723,14 +3768,13 @@ function barreLivre() {
     if (titre) x.title = titre;
     g.append(x);
   };
-  b("présentation", etat.ongletLivre === "presentation" || !etat.ongletLivre, "livre", "titre, auteur, synopsis, couverture, versions, structure");
+  b("présentation", etat.ongletLivre === "presentation" || !etat.ongletLivre, "livre", "titre, auteur, couverture ; synopsis, idée, arc, quatrième");
+  b("versions", etat.ongletLivre === "versions", "livre/versions", "les versions du livre (récit, essai) et la numérotation de l'essai");
   for (const v of Object.keys(etat.regles ?? {})) {
     const n = etat.regles[v].elements.filter((e) => e.type === "regle").length;
     b(`garde-fous · ${(etat.livre.versions?.[v]?.titre ?? v).toLowerCase()} (${n})`, etat.ongletLivre === "regles" && etat.reglesVue === v,
       `livre/regles/${v}`, "les règles d'écriture de cette version, et leurs contrôles");
   }
-  b("claude", etat.ongletLivre === "claude", "livre/claude", "le modèle et le budget de chaque demande, la file d'attente");
-  b("consommation", etat.ongletLivre === "consommation", "livre/consommation", "ce que Claude a consommé : jetons, cache, coût, par type, modèle, chapitre, jour");
   o.append(el("span", "etiq", "livre"), g, el("span", "espace"));
   for (const v of ["recit", "essai"].filter((x) => etat.livre.versions?.[x])) {
     const [pdf, imp] = boutonsPdf(v, `⎙ ${(etat.livre.versions[v].titre ?? v).toLowerCase()} PDF`, v + ".pdf", titrePdf(v));
@@ -3757,17 +3801,8 @@ async function accueil() {
   sommaire();
   const L = etat.livre;
   const page = document.getElementById("page");
-  if (etat.ongletLivre === "consommation") {
-    page.replaceChildren(ongletsLivre(), el("h1", null, "Consommation"), await sectionConsommation());
-    colonneLivre();
-    zone().scrollTo(0, 0);
-    return;
-  }
-  if (etat.ongletLivre === "claude") {
-    page.replaceChildren(ongletsLivre(), el("h1", null, "Claude"),
-      el("p", "mut", "Ce que Claude peut faire pour chaque sorte de demande : le modèle, le nombre de tours, de recherches web et de " +
-        "pages lues. Au-delà du budget, l'outil est refusé et Claude rend sa réponse avec ce qu'il a. Chaque demande peut aussi " +
-        "choisir son modèle, pour elle seule."), sectionClaude(L));
+  if (etat.ongletLivre === "versions") {
+    page.replaceChildren(ongletsLivre(), el("h1", null, "Versions"), blocVersions(L));
     colonneLivre();
     zone().scrollTo(0, 0);
     return;
@@ -3809,61 +3844,24 @@ async function accueil() {
   const corps = el("div", "livre-corps");
   for (const ch of CHAMPS_LIVRE.filter((c) => c.long)) corps.append(champEdit(ch, L[ch.k]));
 
-  // ce qui ne s'édite pas ici : les versions (et l'héritage, dans la colonne)
-  const versions = el("section", "livre-bloc");
-  versions.append(el("h3", null, "Versions"));
-  for (const [k, v] of Object.entries(L.versions ?? {})) {
-    const d = el("p");
-    d.append(el("strong", null, v.titre ?? k), document.createTextNode(v.role ? " — " + v.role : ""));
-    versions.append(d);
-  }
+  // le livre en quelques champs : idée, arc, synopsis développé (synopsis.yaml, que le plan développe)
+  etat.plan = await api("/plan").catch(() => etat.plan);
+  const Pl = etat.plan?.livre ?? {};
+  const fond = el("section", "livre-bloc");
+  fond.append(el("h3", null, "Le livre, en quelques lignes"),
+    champPlanSyn("idée maîtresse", Pl.idee, (v) => opSynopsis({ op: "livre", champs: { idee: v } }), { long: true, aide: "une phrase : ce que le livre démontre" }),
+    champPlanSyn("arc", Pl.arc, (v) => opSynopsis({ op: "livre", champs: { arc: v } }), { long: true, aide: "le mouvement d'ensemble, du début à la fin" }),
+    champPlanSyn("synopsis développé", Pl.developpe, (v) => opSynopsis({ op: "livre", champs: { developpe: v } }), { long: true, aide: "quelques paragraphes" }));
 
-  // la numérotation de l'essai : calculée à l'affichage, jamais stockée dans le texte
-  if (L.versions?.essai) {
-    const nd = el("label", "champ-edit ed-court");
-    nd.append(el("span", "nom", "Numérotation de l'essai"));
-    const sel = el("select", "livre-select");
-    for (const [v, lib] of [["aucune", "aucune"], ["sections", "sections (1.2.3)"], ["paragraphes", "sections et paragraphes (§1.23)"]]) {
-      const o = el("option", null, lib);
-      o.value = v;
-      if ((L.numerotation_essai ?? "aucune") === v) o.selected = true;
-      sel.append(o);
-    }
-    sel.onchange = () => enregistre({ numerotation_essai: sel.value });
-    nd.append(sel);
-    versions.append(nd);
-  }
-
-  // Claude : le modèle par défaut et le budget de chaque demande
-
-  // la structure, en un coup d'œil
-  const st = el("section", "livre-bloc");
+  // la structure est dans le Plan
   const nChap = etat.chapitres.filter((c) => c.numero).length;
-  const nMig = etat.chapitres.filter((c) => c.atelier).length;
   const parties = [...new Set(etat.chapitres.filter((c) => c.partie).map((c) => c.partie))];
-  st.append(el("h3", null, "Structure"),
-    el("p", "mut", `${parties.length} parties · ${nChap} chapitres · ${nMig} dans l'atelier`));
-  const grille = el("div", "livre-parties");
-  for (const pid of parties) {
-    const chs = etat.chapitres.filter((c) => c.partie === pid);
-    const col = el("div");
-    col.append(el("h4", null, chs[0].partie_titre));
-    const ol = el("ol");
-    ol.start = chs[0].numero;
-    for (const c of chs) {
-      const a = el("a", c.atelier ? "migre" : null, c.title);
-      a.href = `#${c.slug}/recit`;          // le récit, dans son mode retenu
-      const li = el("li");
-      li.append(a);
-      ol.append(li);
-    }
-    col.append(ol);
-    grille.append(col);
-  }
-  if (!parties.length) grille.append(el("p", "mut", "Aucun chapitre : structure.yaml est vide."));
-  st.append(grille);
+  const st = el("p", "mut petit");
+  const lp = el("a", null, "le Plan →");
+  lp.href = "#plan";
+  st.append(`Structure : ${parties.length} parties · ${nChap} chapitres — elle se lit et se modifie dans `, lp);
 
-  page.replaceChildren(ongletsLivre(), tete, corps, versions, st);
+  page.replaceChildren(ongletsLivre(), tete, corps, fond, st);
   page.querySelectorAll("textarea").forEach(ajuste);
   colonneLivre();
   zone().scrollTo(0, 0);
@@ -3922,8 +3920,9 @@ function sectionClaude(L) {
   s.append(ligne("Modèle du livre", selModele(C.modele, "défaut de Claude Code", (v) => apres({ modele: v }))));
   const fileBox = el("div", "claude-genre");
   fileBox.append(el("strong", null, "File d'attente"));
-  api("/file").then((F) => fileBox.append(reglageFile(F, () => accueil()),
-    el("span", "mut petit", `${F.en_attente.length} en attente · désactivé : chaque demande se lance à la main`))).catch(() => {});
+  api("/file").then((F) => fileBox.append(reglageFile(F, () => pageParametrage()),
+    el("span", "mut petit", `une demande à la fois, les autres en file · ${F.en_cours.length} en cours · ${F.en_attente.length} en attente` +
+      (F.reglage.auto ? "" : " · désactivé : chacune attend son ▶ (les séries enchaînent toujours)")))).catch(() => {});
   s.append(fileBox);
   const LIB = { verification: "Vérification", reecriture: "Réécriture", fiche: "Fiche nouvelle", pistes: "Creuser", reference: "Référence",
     naive: "Lecture naïve", document: "Texte original", plan: "Plan", conversation: "Conversation", redaction: "Rédaction de l'essai" };
@@ -4200,13 +4199,18 @@ function bascule(v) {
 }
 
 function boutons() {
+  // la vue se lit dans l'adresse : l'état (accueil…) n'est fixé qu'après ce premier dessin
+  const [tete] = decodeURIComponent(location.hash.slice(1)).split("/");
+  const livre = !tete || tete === "livre", conso = tete === "consommation" || tete === "parametrage", fiches = tete === "fiches" || tete === "biblio";
   const recit = etat.version === "recit" || etat.version === "storyboard";
   document.querySelectorAll("#versions button[data-v]").forEach((b) =>
     b.classList.toggle("actif", b.dataset.v === "recit" ? recit : b.dataset.v === etat.version));
   document.body.dataset.recit = recit ? "1" : "";
-  if (etat.wiki) document.querySelectorAll("#versions button[data-v]").forEach((b) => b.classList.remove("actif"));
-  document.getElementById("b-fiches").classList.toggle("actif", !!etat.wiki && !etat.enPlan && !etat.enSuivi);
+  if (etat.wiki || livre || conso) document.querySelectorAll("#versions button[data-v]").forEach((b) => b.classList.remove("actif"));
+  document.getElementById("b-fiches").classList.toggle("actif", fiches);
   document.getElementById("b-suivi").classList.toggle("actif", !!etat.enSuivi);
+  document.getElementById("b-livre").classList.toggle("actif", livre);
+  document.getElementById("b-demandes").classList.toggle("actif", conso);
   document.getElementById("b-plan").classList.toggle("actif", !!etat.enPlan);
 }
 
@@ -4217,15 +4221,19 @@ function depuisAdresse() {
   if (slug.startsWith("fn")) return;
   etat.enPlan = slug === "plan";
   etat.enSuivi = slug === "suivi";
-  etat.wiki = slug === "fiches" || slug === "biblio" || etat.enPlan || etat.enSuivi;
+  etat.wiki = slug === "fiches" || slug === "biblio" || etat.enPlan || etat.enSuivi || slug === "consommation" || slug === "parametrage";
   boutons();
   if (etat.enPlan) { etat.accueil = false; return vuePlan(vue, mode); }
   if (etat.enSuivi) { etat.accueil = false; return vueSuivi(vue); }
+  if (slug === "consommation") { etat.accueil = false; return pageConsommation(); }
+  if (slug === "parametrage") { etat.accueil = false; return pageParametrage(); }
   if (slug === "biblio") { etat.accueil = false; return vue ? pageOeuvre(vue) : vueBiblioLivre(); }
   if (etat.wiki) { etat.accueil = false; return vueFiches(vue, mode); }
   if (!slug || slug === "livre") {
     etat.accueil = true;
-    etat.ongletLivre = ["regles", "claude", "consommation"].includes(vue) ? vue : "presentation";
+    if (vue === "consommation") { location.replace("#consommation"); return; }        // les anciennes adresses
+    if (vue === "claude") { location.replace("#parametrage"); return; }
+    etat.ongletLivre = ["regles", "versions"].includes(vue) ? vue : "presentation";
     if (vue === "regles") { etat.reglesVue = mode ?? etat.reglesVue; etat.regleCible = decodeURIComponent(location.hash).split("/")[3]; }
     return accueil();
   }
@@ -4616,7 +4624,7 @@ async function tiroirReference(t, d) {
   if (d.etat === "en_attente" || d.etat === "retiree") return t.append(blocAttente(d));
   if (d.etat === "en_cours") {
     t.append(enDirect(d));
-    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    suivreDemande(d.id);
     return piedTiroir(t, d);
   }
   if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
@@ -4966,11 +4974,11 @@ async function pageLivrePlan() {
   barrePlan("livre", null, actions);
   colonnePlanSyn("livre");
   const zone_ = el("div", "actions-fiche");
-  page.replaceChildren(el("h1", null, L.titre || "Le livre"), await demandesPlan("livre"), zone_,
-    champPlanSyn("synopsis court", L.synopsis, (v) => opSynopsis({ op: "livre", champs: { synopsis: v } }), { long: true, aide: "le livre en un paragraphe (celui de la couverture)" }),
-    champPlanSyn("idée maîtresse", L.idee, (v) => opSynopsis({ op: "livre", champs: { idee: v } }), { long: true, aide: "une phrase : ce que le livre démontre" }),
-    champPlanSyn("arc", L.arc, (v) => opSynopsis({ op: "livre", champs: { arc: v } }), { long: true, aide: "le mouvement d'ensemble, du début à la fin" }),
-    champPlanSyn("synopsis développé", L.developpe, (v) => opSynopsis({ op: "livre", champs: { developpe: v } }), { long: true, aide: "quelques paragraphes" }));
+  const versLivre = el("p", "mut petit");
+  const ll = el("a", null, "Livre › présentation");
+  ll.href = "#livre";
+  versLivre.append(L.idee ? "« " + L.idee + " » — " : "", "le synopsis, l'idée et l'arc du livre se modifient dans ", ll, ".");
+  page.replaceChildren(el("h1", null, L.titre || "Le livre"), versLivre, await demandesPlan("livre"), zone_);
   page.append(el("h2", "oeuvre-section", `Structure · ${P.parties.length} partie(s) · ${P.parties.reduce((s, p) => s + p.chapitres.length, 0)} chapitre(s)`));
   P.parties.forEach((p, i) => {
     const c = el("div", "plan-partie");
@@ -5080,7 +5088,7 @@ async function tiroirPlan(t, d) {
   t.replaceChildren(teteTiroir(d.titre ?? "Plan", () => historiqueFiches(t)));
   if (d.etat === "en_cours") {
     t.append(enDirect(d));
-    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    suivreDemande(d.id);
     return piedTiroir(t, d);
   }
   if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
@@ -5484,7 +5492,7 @@ async function tiroirDocument(t, d) {
   if (d.etat === "en_attente" || d.etat === "retiree") return t.append(blocAttente(d));
   if (d.etat === "en_cours") {
     t.append(enDirect(d));
-    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    suivreDemande(d.id);
     return piedTiroir(t, d);
   }
   if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
@@ -5867,7 +5875,7 @@ async function tiroirNaif(t, d) {
   t.replaceChildren(teteTiroir(`Lecture naïve — ${version === "essai" ? "essai" : "récit"}`, () => tiroirHarnais(version)));
   if (d.etat === "en_cours") {
     t.append(enDirect(d));
-    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    suivreDemande(d.id);
     return piedTiroir(t, d);
   }
   if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
@@ -5939,23 +5947,26 @@ function blocAttente(d) {
   }
   const lim = etat.modeles?.limites?.fiche;
   b.append(el("h5", null, "En attente"), el("p", "mut petit",
-    "Pas encore lancée. Son contexte (les fiches existantes, le carnet) sera compilé au lancement : elle verra les fiches " +
-    "créées d'ici là. " + (lim ? `Budget : ${lim.tours} tours, ${lim.recherches} recherches, ${lim.pages} pages.` : "")));
+    "Pas encore lancée : une autre demande tourne, et la file les fait passer l'une après l'autre. " +
+    (["fiche", "reference", "document", "redaction"].includes(d.type) ? "Son contexte sera compilé au lancement : elle verra ce qui a été créé d'ici là. " : "") +
+    (lim ? `Budget : ${lim.tours} tours, ${lim.recherches} recherches, ${lim.pages} pages.` : "")));
   const act = el("div", "annot-actions");
   act.append(boutonLancer(d.id, () => tiroir(d.id)), boutonRetirer(d.id, () => tiroir(d.id)));
   b.append(act);
   api("/file").then((F) => {
     const rang = F.en_attente.findIndex((x) => x.id === d.id) + 1;
-    b.append(el("p", "mut petit", `Position dans la file : ${rang} sur ${F.en_attente.length}. ` +
-      (F.reglage.auto ? `Enchaînement automatique activé (${F.reglage.simultanees} à la fois) : elle partira d'elle-même.`
-        : "Enchaînement automatique désactivé : elle attend que tu la lances (réglage dans Fiches › En création).")));
+    b.append(el("p", "mut petit", `Position dans la file : ${rang} sur ${F.en_attente.length} · ${F.en_cours.length} en cours. ` +
+      (d.serie ? "Elle fait partie d'une série : elle partira d'elle-même."
+        : F.reglage.auto ? `Enchaînement automatique activé (${F.reglage.simultanees} à la fois) : elle partira d'elle-même.`
+        : "Enchaînement automatique désactivé : elle attend que tu la lances (réglage : Demandes › paramétrage). ") +
+      (F.en_cours.length ? " « ▶ lancer maintenant » la fait partir tout de suite, en parallèle de ce qui tourne." : "")));
   }).catch(() => {});
   return b;
 }
 
 function boutonLancer(id, apres) {
-  const b = el("button", "bouton", "▶ lancer");
-  b.title = "lancer cette demande maintenant";
+  const b = el("button", "bouton", "▶ lancer maintenant");
+  b.title = "lancer cette demande tout de suite — en parallèle de ce qui tourne, s'il y en a";
   b.onclick = async (e) => {
     e.stopPropagation();
     b.disabled = true;
@@ -5991,8 +6002,9 @@ function reglageFile(F, apres) {
     await fetch("/api/file", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auto: c.checked }) });
     apres?.();
   };
-  l.append(c, ` enchaîner automatiquement, ${F.reglage.simultanees} à la fois`);
-  l.title = "désactivé : chaque demande en attente se lance à la main (▶)";
+  l.append(c, ` enchaîner automatiquement la file, ${F.reglage.simultanees} à la fois`);
+  l.title = "une seule demande tourne à la fois ; les suivantes attendent. Activé : elles partent l'une après l'autre. " +
+    "Désactivé : chacune attend son ▶ (les séries, elles, enchaînent toujours)";
   const l2 = el("label", "graphe-coche file-auto");
   const c2 = el("input");
   c2.type = "checkbox";
@@ -6050,7 +6062,7 @@ async function tiroirPistes(t, d) {
   t.append(cible);
   if (d.etat === "en_cours") {
     t.append(enDirect(d));
-    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    suivreDemande(d.id);
     return piedTiroir(t, d);
   }
   if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
@@ -6196,7 +6208,7 @@ async function tiroirRenvois(t, d) {
   t.append(cible);
   if (d.etat === "en_cours") {
     t.append(enDirect(d));
-    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    suivreDemande(d.id);
     return piedTiroir(t, d);
   }
   if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
@@ -6330,7 +6342,7 @@ async function tiroirFiche(t, d) {
   if (d.etat === "en_attente" || d.etat === "retiree") return t.append(blocAttente(d));
   if (d.etat === "en_cours") {
     t.append(enDirect(d));
-    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    suivreDemande(d.id);
     return piedTiroir(t, d);
   }
   if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
@@ -6380,8 +6392,25 @@ async function tiroirFiche(t, d) {
       a.onclick = (e) => { e.preventDefault(); apercuFiche(cible); };
     });
     const nv = (R.sources ?? []).filter((s) => !s.verifie).length;
-    ap.append(el("p", sans || nv ? "fiche-alerte petit" : "mut petit",
-      `${(R.sources ?? []).length} source(s), dont ${nv} non vérifiée(s) · ${sans} paragraphe(s) sans source signalé(s) en marge`));
+    const bilan = el("p", sans || nv ? "fiche-alerte petit" : "mut petit",
+      `${(R.sources ?? []).length} source(s), dont ${nv} non lue(s) par Claude · ${sans} paragraphe(s) sans source [@…] signalé(s) en marge`);
+    bilan.title = "« lue » : Claude a ouvert la page et y a lu l'extrait. Une source non lue : page payante ou bloquée, ou budget épuisé. " +
+      "Un paragraphe sans source : une transition, un fait tiré d'une fiche voisine ([[lien]]), ou un fait à sourcer.";
+    ap.append(bilan);
+    if (sans && d.session_id && d.etat === "prete") {
+      const debuts = [...corps.querySelectorAll("p.sans-source")].map((x) => "« " + x.textContent.replace(/\s+/g, " ").trim().slice(0, 90) + "… »");
+      const so = el("button", "pan-lien", `🔎 sourcer les ${sans} paragraphe(s) signalé(s)…`);
+      so.title = "relance la recherche dans la même session (Claude garde ce qu'il a lu), avec un budget neuf, sur ces paragraphes";
+      so.onclick = async () => {
+        if (!confirm(`Relancer la recherche pour sourcer ${sans} paragraphe(s) ? Claude garde ce qu'il a déjà lu ; la fiche rendue remplacera celle-ci.`)) return;
+        so.disabled = true;
+        const r = await fetch(`/api/chapitres/_kb/demandes/${d.id}/encore`, { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ consigne: "Sourcer ces paragraphes, ou les retirer s'ils affirment un fait que tu ne peux pas sourcer (une transition peut rester sans source) : " + debuts.join(" ; ") }) });
+        if (!r.ok) { so.disabled = false; alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+        tiroir(d.id);
+      };
+      ap.append(so);
+    }
     const morts = d.apercu?.liens_morts ?? [], inconnues = d.apercu?.cles_inconnues ?? [];
     if (morts.length) ap.append(el("p", "fiche-alerte petit", "liens vers des fiches inexistantes : " + morts.map((x) => `[[${x}]]`).join(", ")));
     if (inconnues.length) ap.append(el("p", "fiche-alerte petit", "clés citées absentes des sources : " + inconnues.join(", ")));
@@ -6393,7 +6422,8 @@ async function tiroirFiche(t, d) {
     const faire = el("div", "que-faire");
     faire.append(el("h5", null, "Que faire ?"), el("p", "mut petit",
       "Relire la fiche. « Créer » l'écrit dans kb/fiches/ (origine claude, état brouillon) et l'ajoute aux fiches des " +
-      "chapitres cochés. Les liens depuis les fiches voisines sont proposés ci-dessous, pas écrits."));
+      "chapitres cochés, et met en file la vérification des sources non lues (case ci-dessous). Les liens retour s'écrivent à la " +
+      "validation de la fiche (« marquer comme relue »)."));
     const slug = el("input", "dem-motif");
     slug.value = R.slug;
     if (R.slug_propose_par) faire.append(el("p", "fiche-alerte petit",
@@ -6424,16 +6454,25 @@ async function tiroirFiche(t, d) {
       if (etat.atelier) etat.atelier = await api(`/chapitres/${etat.slug}/atelier`).catch(() => etat.atelier);
       tiroir(d.id);
     };
-    oui.onclick = () => envoie({ action: "creer", slug: slug.value, titre: titre.value, chapitres: cases.filter((x) => x.checked).map((x) => x.value) });
+    const coche = (lib, titre) => { const l = el("label", "dem-consulter"); const x = el("input"); x.type = "checkbox"; x.checked = true; l.append(x, " " + lib); l.title = titre; return [l, x]; };
+    const nvl = (R.sources ?? []).filter((x) => !x.verifie).length;
+    const [lv, xv] = coche(`vérifier les ${nvl} source(s) non lue(s) (mises en file)`, "une vérification de référence par source, dans la file d'attente");
+    const options = el("div", "choix-assertions");
+    if (nvl) options.append(lv);
+    oui.onclick = () => envoie({ action: "creer", slug: slug.value, titre: titre.value, chapitres: cases.filter((x) => x.checked).map((x) => x.value),
+      verifier_sources: xv.checked });
     non.onclick = () => envoie({ action: "rejeter", motif: motif.value });
     const act = el("div", "annot-actions");
     act.append(oui, non);
     faire.append(el("span", "appui-lieu", "slug"), slug, el("span", "appui-lieu", "titre"), titre,
-      el("span", "appui-lieu", "ajouter aux fiches des chapitres"), chs, motif, act);
+      el("span", "appui-lieu", "ajouter aux fiches des chapitres"), chs,
+      ...(options.childElementCount ? [el("span", "appui-lieu", "à la création"), options] : []), motif, act);
     t.append(faire);
   }
   if ((R.liens ?? []).length) {
-    t.append(el("h5", null, "Liens proposés (depuis les fiches voisines — à écrire à la main)"));
+    const dec = d.decision ?? {};
+    t.append(el("h5", null, dec.liens_retour?.length ? `Liens retour — écrits dans ${dec.liens_retour.length} fiche(s) voisine(s)` :
+      "Liens retour proposés (depuis les fiches voisines — à écrire à la validation de la fiche)"));
     for (const l of R.liens) {
       const p = el("p", "petit");
       p.append(puceFiche(l.fiche), " " + l.raison);
@@ -7105,13 +7144,26 @@ async function pageFiche(slug, section, I) {
     if (f.meta.etat === "brouillon") {
       const ok = el("button", "bouton", "✓ marquer comme relue");
       ok.title = "tu l'as relue : elle passe de brouillon à relue, et les renvois vers elle te sont proposés";
+      // les liens retour proposés par Claude à la création : écrits à la validation, si coché
+      const lr = el("label", "dem-consulter");
+      const xr = el("input");
+      xr.type = "checkbox";
+      xr.checked = true;
+      lr.hidden = true;
+      api(`/fiches/${f.slug}/liens-proposes`).then((L) => {
+        if (!L.length) return;
+        lr.append(xr, ` et écrire le lien retour dans ${L.length} fiche(s) voisine(s) : ${L.map((x) => x.fiche).join(", ")}`);
+        lr.title = L.map((x) => `${x.fiche} — ${x.raison}`).join("\n") + "\n\nune ligne « [[" + f.slug + "]] — raison » dans leur section « Voir aussi » ; leur texte n'est pas touché";
+        lr.hidden = false;
+      }).catch(() => {});
       ok.onclick = async () => {
-        const r = await fetch(`/api/fiches/${f.slug}/relue`, { method: "POST" });
+        const r = await fetch(`/api/fiches/${f.slug}/relue`, { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ liens_retour: !lr.hidden && xr.checked }) });
         if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
         await indexFiches(true);
         pageFiche(f.slug, null, etat.fichesIndex ?? []);
       };
-      b.append(ok);
+      b.append(ok, lr);
     }
     page.append(b);
   }
@@ -7266,7 +7318,7 @@ async function majCompteFiches() {
   const o = document.getElementById("onglet-creation");
   if (o) o.textContent = `en création` + (cours + attente + decider + err ? ` · ${cours + attente + decider + err}` : "");
 }
-setInterval(() => { if (!document.hidden) majCompteFiches(); }, 10000);
+setInterval(() => { if (!document.hidden && !etat.evenements) majCompteFiches(); }, 15000);   // secours, si le fil est coupé
 
 window.addEventListener("hashchange", depuisAdresse);
 
@@ -7356,7 +7408,7 @@ function mdDialogue(texte) {
   return f;
 }
 
-const LIB_ACTION = { fiche: "✚ fiche", pistes: "⛏ creuser", verification: "🔎 vérification", reecriture: "↻ réécriture",
+const LIB_ACTION = { fiche: "✚ fiche", pistes: "⛏ creuser", verification: "🔎 vérification", reecriture: "↻ réécriture", revision: "✎ révision",
   naive: "👁 lecture naïve", plan: "✦ plan" };
 
 function cibleAction(a) {
@@ -7372,6 +7424,7 @@ function cibleAction(a) {
   if (a.annotation) x.push("annotation " + a.annotation);
   if (a.version) x.push(a.version);
   if (a.niveau) x.push(a.niveau + (a.partie ? " " + a.partie : ""));
+  if (a.mots) x.push(`≈ ${a.mots} mots`);
   return x.join(" · ");
 }
 
@@ -7472,8 +7525,11 @@ async function dialogue(ident = etat.conversation) {
     dialogue(null);
   };
   const x = el("button", "fermer", "×");
-  x.onclick = () => { clearTimeout(suiviDialogue); z.hidden = true; delete document.body.dataset.dialogue; document.getElementById("b-claude").classList.remove("actif"); };
-  tete.append(el("h4", null, "✦ Claude"), liste, sup, x);
+  x.onclick = () => { clearTimeout(suiviDialogue); pleinEcranDialogue(false); z.hidden = true; delete document.body.dataset.dialogue; document.getElementById("b-claude").classList.remove("actif"); };
+  const plein = el("button", "pan-lien dia-plein", z.classList.contains("plein") ? "⤡" : "⤢");
+  plein.title = z.classList.contains("plein") ? "revenir au panneau (Échap)" : "plein écran";
+  plein.onclick = () => pleinEcranDialogue(!z.classList.contains("plein"));
+  tete.append(el("h4", null, "✦ Claude"), liste, sup, plein, x);
   const fil = el("div", "dia-fil");
   let c = null;
   if (ident) {
@@ -7519,10 +7575,10 @@ async function dialogue(ident = etat.conversation) {
   const pied = el("div", "dia-pied");
   pied.append(envoi, lieu, err);
   saisie.append(q, pied);
-  z.replaceChildren(tete, fil, saisie);
+  z.replaceChildren(poigneeDialogue(z), tete, fil, saisie);
   fil.scrollTop = fil.scrollHeight;
   if (!occupe) q.focus();
-  if (occupe) suiviDialogue = setTimeout(() => rafraichitDialogue(ident), 2000);
+  if (occupe) suivreConversation(ident);
 }
 
 async function rafraichitDialogue(ident) {
@@ -7534,7 +7590,7 @@ async function rafraichitDialogue(ident) {
   const n = c.tours.length - 1;
   const tours = z.querySelectorAll(".dia-tour");
   tours[tours.length - 1]?.replaceWith(tourDialogue(c, c.tours[n], n));
-  suiviDialogue = setTimeout(() => rafraichitDialogue(ident), 2000);
+  suivreConversation(ident);
 }
 
 // La référence de la vue change avec la navigation : la case « ici » suit.
@@ -7857,11 +7913,17 @@ async function tiroirRedaction(t, d) {
   }
   if (d.etat === "en_cours") {
     t.append(enDirect(d));
-    suivi = setTimeout(() => rafraichitDirect(d.id), 2000);
+    suivreDemande(d.id);
     return piedTiroir(t, d);
   }
   if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
   const R = d.resultat ?? {};
+  if (d.mode === "revision") {
+    const rv = el("p", "annot-corps");
+    rv.append(el("strong", null, "Révision"), ` — ${R.mots_avant ?? d.cible.mots_avant ?? "?"} → ${R.mots ?? "?"} mots` +
+      (d.mots ? ` (visé : ${d.mots})` : "") + (R.paragraphes_avant ? ` · ${R.paragraphes_gardes}/${R.paragraphes_avant} paragraphes gardés (leurs annotations et appuis suivent)` : ""));
+    t.append(rv);
+  }
   const bilan = el("p", "mut petit", `${R.mots ?? "?"} mots · ${R.sections?.length ?? 0} sections · ${R.citations?.length ?? 0} source(s) citée(s)` +
     ` · fiches lues : ${(R.fiches_lues ?? []).join(", ") || "—"}`);
   t.append(bilan);
@@ -8166,6 +8228,12 @@ function bandeauEtape(slug, vue) {
         reste = reste.filter((a) => a !== prem);
       }
     }
+    if (version === "essai" && ["brouillon", "relu", "valide"].includes(C.niveau)) {
+      const r = el("button", "pan-lien", "✎ réviser l'essai…");
+      r.title = "Claude relit le chapitre et le retravaille selon une consigne (couper, resserrer, recentrer) ; la version d'avant est archivée";
+      r.onclick = () => formRevision(slug);
+      act.append(r);
+    }
     for (const a of reste) act.append(puceAction(a, slug));
     b.replaceChildren(tete, act);
   }).catch(() => b.remove());
@@ -8223,14 +8291,14 @@ document.getElementById("b-rafraichir").onclick = () => rafraichitMaintenant();
 // puis le suivant) : chaque chapitre lit le précédent déjà écrit. Le brief est retenu d'office (fiches,
 // squelette, verrou ; synopsis et question seulement s'ils manquent), l'essai posé d'office.
 
-const LIB_SERIE = { brief: "développer le brief", ecrire: "écrire l'essai", naif: "lecture naïve" };
+const LIB_SERIE = { brief: "développer le brief", ecrire: "écrire l'essai", reviser: "réviser l'essai", naif: "lecture naïve" };
 
 function formSerie(zone, chapitres, action, version) {
   if (!chapitres.length) { alert("aucun chapitre coché"); return; }
   const f = el("div", "form-demande");
   const choix = {};
   const acts = el("div", "annot-actions");
-  const possibles = version === "essai" ? ["brief", "ecrire", "naif"] : ["naif"];
+  const possibles = version === "essai" ? ["brief", "ecrire", "reviser", "naif"] : ["naif"];
   for (const a of possibles) {
     const l = el("label", "dem-consulter");
     const x = el("input");
@@ -8246,6 +8314,10 @@ function formSerie(zone, chapitres, action, version) {
   for (const [v, lib] of [["courte", "essai court (1 500–2 500 mots)"], ["moyenne", "essai moyen (3 000–4 500 mots)"], ["longue", "essai long (5 000–7 000 mots)"]]) {
     lon.append(new Option(lib, v, false, v === "moyenne"));
   }
+  const mots = el("input", "dem-motif");
+  mots.type = "number";
+  mots.min = 300;
+  mots.placeholder = "révision : longueur visée par chapitre (mots, facultatif)";
   const mod = choixModele("redaction");
   const go = el("button", "bouton", "▶ lancer la série");
   const err = el("span", "err petit");
@@ -8254,7 +8326,8 @@ function formSerie(zone, chapitres, action, version) {
     if (!actions.length) { err.textContent = "au moins une action"; return; }
     go.disabled = true;
     try {
-      await poste("/series", { chapitres, actions, version, consigne: cons.value, longueur: lon.value, modele: mod.valeur() });
+      if (actions.includes("reviser") && !cons.value.trim()) { err.textContent = "une révision a besoin d'une consigne"; go.disabled = false; return; }
+      await poste("/series", { chapitres, actions, version, consigne: cons.value, longueur: lon.value, mots: mots.value || null, modele: mod.valeur() });
       f.remove();
       vueSuivi(version);
     } catch (e) { err.textContent = String(e); go.disabled = false; }
@@ -8267,7 +8340,7 @@ function formSerie(zone, chapitres, action, version) {
     el("p", "mut petit", "Le brief est retenu d'office (fiches, squelette, verrou ; le synopsis et la question seulement s'ils manquent) ; " +
       "l'essai est posé d'office, pour que le chapitre suivant le lise ; les relevés de lecture naïve restent à décider. " +
       "Une étape sans objet est sautée ; une erreur arrête la série."),
-    cons, lon, mod.noeud, bas);
+    cons, lon, mots, mod.noeud, bas);
   enModale(`Enchaîner sur ${chapitres.length} chapitre${chapitres.length > 1 ? "s" : ""}`, porteeSerie(chapitres), f);
 }
 
@@ -8277,6 +8350,7 @@ function blocSeries(version) {
   const d = el("section", "suivi-series");
   const remplit = async () => {
     clearTimeout(suiviSeries);
+    etat.remplitSeries = () => { if (d.isConnected) remplit(); };
     const L = (await api("/series").catch(() => [])).filter((s) => s.etat !== "abandonnee" || Date.now() - Date.parse(s.modifie) < 864e5);
     const vivantes = L.filter((s) => ["en_cours", "arretee"].includes(s.etat) || Date.now() - Date.parse(s.modifie) < 864e5);
     d.replaceChildren();
@@ -8311,7 +8385,7 @@ function blocSeries(version) {
     const faites = L.reduce((n, s) => n + s.etapes.filter((e) => e.etat !== "a_faire" && e.etat !== "en_cours").length, 0);
     if (etat.etapesVues != null && faites > etat.etapesVues && etat.enSuivi) { etat.etapesVues = faites; return rafraichitVue(); }
     etat.etapesVues = faites;
-    if (vivantes.some((s) => s.etat === "en_cours") && etat.enSuivi) suiviSeries = setTimeout(remplit, 10000);
+    if (vivantes.some((s) => s.etat === "en_cours") && etat.enSuivi && !etat.evenements) suiviSeries = setTimeout(remplit, 15000);
   };
   remplit();
   return d;
@@ -8419,4 +8493,339 @@ function porteeAnnotation(a) {
 
 function porteeOeuvre(cle) {
   return `œuvre ${cle}`;
+}
+
+// ------------------------------------------------------------------ réviser, et l'historique
+
+function formRevision(slug) {
+  const f = el("div", "form-demande");
+  const cons = el("textarea", "annot-texte");
+  cons.placeholder = "Ce qu'il faut faire : couper les redites avec le chapitre précédent, retirer ce qui relève du vivant (Une Vie), " +
+    "resserrer la section @chapitre/…, garder l'exemple de…";
+  const mots = el("input", "dem-motif");
+  mots.type = "number";
+  mots.min = 300;
+  mots.placeholder = "longueur visée en mots (facultatif : sinon, pas plus long qu'aujourd'hui)";
+  const mod = choixModele("redaction");
+  const pl = el("label", "dem-consulter");
+  const poser = el("input");
+  poser.type = "checkbox";
+  pl.append(poser, " poser d'office (sinon : relire, puis poser) — la version d'avant est archivée de toute façon");
+  const go = el("button", "bouton", "✎ réviser");
+  const err = el("span", "err petit");
+  go.onclick = async () => {
+    if (!cons.value.trim()) { err.textContent = "dire ce qu'il faut faire"; return; }
+    go.disabled = true;
+    try {
+      const r = await poste("/redaction", { chapitre: slug, revision: true, consigne: cons.value, mots: mots.value || null, modele: mod.valeur(), poser: poser.checked });
+      f.remove();
+      tiroir(r.id);
+    } catch (e) { err.textContent = String(e); go.disabled = false; }
+  };
+  const non = el("button", "pan-lien", "annuler");
+  non.onclick = () => f.remove();
+  const act = el("div", "annot-actions");
+  act.append(go, non, err);
+  f.append(el("span", "appui-lieu", "Claude relit le chapitre en entier et le retravaille : il garde ce qui tient, coupe, resserre, applique la consigne — " +
+    "depuis les fiches, sans web ; les paragraphes gardés gardent leurs annotations"), cons, mots, mod.noeud, pl, act);
+  const c = etat.chapitres?.find((x) => x.slug === slug);
+  enModale("Réviser l'essai du chapitre", [porteeChapitre(slug), `statut : ${LIB_AVANCEMENT[c?.avancement?.essai] ?? "?"}`], f);
+}
+
+const LIB_HISTO = { essai_redige: "écrit", essai_revise: "révisé", essai_restaure: "restauré" };
+
+async function modaleHistorique(slug) {
+  const H = await api(`/chapitres/${slug}/historique`).catch(() => null);
+  const f = el("div", "form-demande historique");
+  if (!H || !H.entrees.length) {
+    f.append(el("p", "mut", "Pas encore d'historique : il commence à la première écriture ou révision par Claude. Les corrections à la main sont dans git (⎇ versions)."));
+  } else {
+    f.append(el("p", "mut petit", `Version présente : ${H.actuel.mots} mots. Chaque pose archive la version qu'elle remplace ; restaurer archive la présente.`));
+    for (const e of H.entrees) {
+      const l = el("div", "histo-ligne");
+      const tete = el("div", "histo-tete");
+      tete.append(el("span", "st av " + (e.type === "essai_revise" ? "av-relu" : e.type === "essai_restaure" ? "av-brief" : "av-brouillon"), LIB_HISTO[e.type] ?? e.type),
+        el("span", null, (e.date ?? "").slice(0, 16).replace("T", " ")),
+        el("span", "mut petit", `${e.mots_avant ?? "?"} → ${e.mots ?? "?"} mots` + (e.remplace === "squelette" ? " (remplace le squelette)" : "")));
+      if (e.demande) {
+        const a = el("a", "pan-lien", e.demande);
+        a.href = "#";
+        a.onclick = (x) => { x.preventDefault(); tiroir(e.demande); };
+        tete.append(a);
+      }
+      l.append(tete);
+      if (e.consigne) l.append(el("p", "petit", "« " + e.consigne + " »"));
+      if (e.depuis) l.append(el("p", "mut petit", "depuis la version " + e.depuis));
+      if (e.archive && !e.archive_perdue) {
+        const act = el("div", "annot-actions");
+        const voir = el("button", "pan-lien", "voir la version d'avant");
+        const zone = el("div", "histo-apercu");
+        voir.onclick = async () => {
+          if (zone.childElementCount) { zone.replaceChildren(); return; }
+          const V = await api(`/chapitres/${slug}/historique/${e.archive}`);
+          const ap = el("div", "apercu-essai");
+          ap.innerHTML = V.html;
+          zone.replaceChildren(el("p", "mut petit", `${V.mots} mots — ${e.archive}`), ap);
+        };
+        const rest = el("button", "pan-lien", "restaurer cette version");
+        rest.onclick = async () => {
+          if (!confirm("Remettre la version d'avant ? La version présente est archivée, rien n'est perdu.")) return;
+          await poste(`/chapitres/${slug}/historique/${e.archive}/restaurer`, {});
+          fermeModale();
+          rafraichitVue();
+        };
+        act.append(voir, rest);
+        l.append(act, zone);
+      }
+      f.append(l);
+    }
+  }
+  const fermer = el("button", "pan-lien", "fermer");
+  fermer.onclick = () => f.remove();
+  f.append(el("div", "annot-actions"));
+  f.lastChild.append(fermer);
+  enModale("Historique de l'essai", porteeChapitre(slug), f);
+}
+
+// ------------------------------------------------------------------ le panneau de l'assistant : largeur, plein écran
+// La poignée du bord gauche élargit le panneau (largeur retenue) ; ⤢ le met en plein écran, la conversation
+// dans une colonne de lecture centrée ; Échap ou ⤡ le rendent.
+
+function poigneeDialogue(z) {
+  const h = el("div", "dia-poignee");
+  h.title = "tirer pour élargir le panneau (double-clic : largeur par défaut)";
+  h.onmousedown = (e) => {
+    if (z.classList.contains("plein")) return;
+    e.preventDefault();
+    document.body.classList.add("redimensionne");
+    const bouge = (m) => {
+      const l = Math.max(320, Math.min(window.innerWidth - 120, window.innerWidth - m.clientX));
+      z.style.width = l + "px";
+    };
+    const lache = () => {
+      document.removeEventListener("mousemove", bouge);
+      document.removeEventListener("mouseup", lache);
+      document.body.classList.remove("redimensionne");
+      try { localStorage.setItem("atelier-dialogue-largeur", z.style.width); } catch { /* sans stockage */ }
+    };
+    document.addEventListener("mousemove", bouge);
+    document.addEventListener("mouseup", lache);
+  };
+  h.ondblclick = () => { z.style.width = ""; try { localStorage.removeItem("atelier-dialogue-largeur"); } catch { /* */ } };
+  if (!z.style.width) { try { const l = localStorage.getItem("atelier-dialogue-largeur"); if (l) z.style.width = l; } catch { /* */ } }
+  return h;
+}
+
+function pleinEcranDialogue(oui) {
+  const z = document.getElementById("dialogue");
+  z.classList.toggle("plein", oui);
+  const b = z.querySelector(".dia-plein");
+  if (b) { b.textContent = oui ? "⤡" : "⤢"; b.title = oui ? "revenir au panneau (Échap)" : "plein écran"; }
+  try { localStorage.setItem("atelier-dialogue-plein", oui ? "1" : ""); } catch { /* */ }
+  const fil = z.querySelector(".dia-fil");
+  if (fil) fil.scrollTop = fil.scrollHeight;
+}
+
+document.addEventListener("keydown", (e) => {
+  const z = document.getElementById("dialogue");
+  if (e.key === "Escape" && z && !z.hidden && z.classList.contains("plein") && !document.querySelector(".modale")) pleinEcranDialogue(false);
+});
+try { if (localStorage.getItem("atelier-dialogue-plein")) document.getElementById("dialogue").classList.add("plein"); } catch { /* */ }
+
+// ------------------------------------------------------------------ le fil des événements
+//
+// Le serveur prévient la page (Server-Sent Events, /api/evenements) quand une demande est créée, change
+// d'état ou avance, quand une série avance, quand une conversation change : la page redessine ce qui est
+// concerné, et seulement cela. Le navigateur se reconnecte seul ; pendant une coupure, un sondage lent
+// prend le relais.
+
+function suivreDemande(id) {
+  clearTimeout(suivi);
+  if (!etat.evenements) suivi = setTimeout(() => rafraichitDirect(id), 5000);
+}
+
+function suivreConversation(id) {
+  clearTimeout(suiviDialogue);
+  if (!etat.evenements) suiviDialogue = setTimeout(() => rafraichitDialogue(id), 5000);
+}
+
+var minuteurListe;
+
+function surDemande(x, change) {
+  // le tiroir montre cette demande : il suit
+  if (etat.tiroirMontre === x.id && !document.getElementById("tiroir").hidden) rafraichitDirect(x.id);
+  if (!change) return;
+  // la liste des demandes ouverte : redessinée (une fois, même si plusieurs demandes changent ensemble)
+  const t = document.getElementById("tiroir");
+  if (!t.hidden && etat.tiroirMontre == null && t.querySelector(".dem-filtres")) {
+    clearTimeout(minuteurListe);
+    minuteurListe = setTimeout(() => {
+      const tape = document.activeElement && t.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+      if (!tape && etat.tiroirMontre == null && t.querySelector(".dem-filtres")) historique(t);
+    }, 400);
+  }
+  majCompteFiches();
+  if (x.slug === etat.slug && etat.atelier) chargeDemandes().then(() => marquesDemandes()).catch(() => {});
+}
+
+function ouvreEvenements() {
+  if (!window.EventSource) return;
+  const es = new EventSource("/api/evenements");
+  es.addEventListener("bonjour", () => { etat.evenements = true; });
+  es.onerror = () => { etat.evenements = false; };                  // il se reconnecte seul
+  const lit = (e) => { try { return JSON.parse(e.data); } catch { return null; } };
+  es.addEventListener("demande", (e) => { const x = lit(e); if (x) surDemande(x, true); });
+  es.addEventListener("progres", (e) => { const x = lit(e); if (x) surDemande(x, false); });
+  es.addEventListener("serie", () => etat.remplitSeries?.());
+  es.addEventListener("conversation", (e) => {
+    const x = lit(e);
+    const z = document.getElementById("dialogue");
+    if (x && z && !z.hidden && etat.conversation === x.id) rafraichitDialogue(x.id);
+  });
+}
+
+ouvreEvenements();
+
+// ------------------------------------------------------------------ la file : lecture / pause
+// En tête de la liste des demandes : ▶ l'enchaînement automatique (les demandes en attente partent l'une
+// après l'autre), ⏸ la pause (ce qui tourne finit ; rien de nouveau ne part, sauf les séries et les ▶ un à un).
+
+function commandeFile(t) {
+  const d = el("div", "commande-file");
+  api("/file").then((F) => {
+    const auto = F.reglage.auto;
+    const b = el("button", "bouton-file " + (auto ? "en-marche" : "en-pause"), auto ? "⏸" : "▶");
+    b.title = auto ? "mettre la file en pause : ce qui tourne finit, rien de nouveau ne part"
+      : "lancer la file : les demandes en attente partent l'une après l'autre" + (F.en_cours.length ? "" : ", la première tout de suite");
+    b.onclick = async () => {
+      b.disabled = true;
+      await fetch("/api/file", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auto: !auto }) });
+      historique(t);
+    };
+    const lib = el("span", "commande-lib");
+    lib.append(el("strong", null, auto ? "enchaînement en marche" : "enchaînement en pause"),
+      ` · ${F.en_cours.length} en cours · ${F.en_attente.length} en attente` +
+      (F.reglage.simultanees > 1 ? ` · ${F.reglage.simultanees} à la fois` : "") +
+      (auto ? "" : F.en_attente.length ? " — chacune attend son ▶, ou lancez la file" : ""));
+    d.append(b, lib);
+  }).catch(() => d.remove());
+  return d;
+}
+
+// Les versions du livre et la numérotation de l'essai (onglet « versions » de la page du livre).
+function blocVersions(L) {
+  const versions = el("section", "livre-bloc");
+  for (const [k, v] of Object.entries(L.versions ?? {})) {
+    const d = el("p");
+    d.append(el("strong", null, v.titre ?? k), document.createTextNode(v.role ? " — " + v.role : ""));
+    versions.append(d);
+  }
+  if (L.versions?.essai) {                 // calculée à l'affichage, jamais stockée dans le texte
+    const nd = el("label", "champ-edit ed-court");
+    nd.append(el("span", "nom", "Numérotation de l'essai"));
+    const sel = el("select", "livre-select");
+    for (const [v, lib] of [["aucune", "aucune"], ["sections", "sections (1.2.3)"], ["paragraphes", "sections et paragraphes (§1.23)"]]) {
+      sel.append(new Option(lib, v, false, (L.numerotation_essai ?? "aucune") === v));
+    }
+    sel.onchange = () => enregistre({ numerotation_essai: sel.value });
+    nd.append(sel);
+    versions.append(nd);
+  }
+  versions.append(el("p", "mut petit", "Les versions se déclarent dans livre.yaml (section « versions »)."));
+  return versions;
+}
+
+// La consommation de Claude, sur sa page (ouverte depuis la liste des demandes).
+async function pageConsommation() {
+  document.body.dataset.vue = "consommation";
+  delete document.body.dataset.panneau;
+  document.getElementById("volet-chapitre").hidden = true;
+  sommaire();
+  barreDemandes("consommation");
+  const page = document.getElementById("page");
+  page.replaceChildren(el("h1", null, "Consommation de Claude"), el("p", "mut", "calcul…"));
+  const sec = await sectionConsommation();
+  page.replaceChildren(el("h1", null, "Consommation de Claude"), sec);
+  document.getElementById("fiche").replaceChildren(el("p", "mut petit",
+    "Chaque exécution de Claude (demande, reprise, conversation, lecture de confiance) ajoute une ligne à consommation.jsonl, " +
+    "à la racine du livre : jetons, cache, coût au tarif API, modèle, durée."));
+  zone().scrollTo(0, 0);
+}
+
+document.getElementById("b-livre").onclick = () => { location.hash = "livre"; };
+
+// Les pages des demandes : le paramétrage (ce que Claude peut faire, pour chaque sorte de demande) et la
+// consommation ; la liste, elle, est le tiroir « Demandes ».
+function barreDemandes(actif) {
+  const o = document.getElementById("outils");
+  o.hidden = false;
+  const g = el("span", "groupe");
+  const liste = el("button", null, "la liste");
+  liste.title = "la liste des demandes (le tiroir)";
+  liste.onclick = () => tiroir(null);
+  g.append(liste);
+  for (const [k, lib, titre] of [["parametrage", "paramétrage", "ce que Claude peut faire pour chaque sorte de demande : modèle, tours, recherches, pages ; la file"],
+    ["consommation", "consommation", "ce que Claude a consommé : jetons, cache, coût — par type, modèle, chapitre, jour"]]) {
+    const b = el("button", k === actif ? "actif" : null, lib);
+    b.title = titre;
+    b.onclick = () => { location.hash = k; };
+    g.append(b);
+  }
+  o.replaceChildren(el("span", "etiq", "demandes"), g);
+}
+
+async function pageParametrage() {
+  document.body.dataset.vue = "parametrage";
+  delete document.body.dataset.panneau;
+  document.getElementById("volet-chapitre").hidden = true;
+  sommaire();
+  barreDemandes("parametrage");
+  etat.livre = await api("/livre").catch(() => etat.livre);
+  await chargeModeles();
+  const page = document.getElementById("page");
+  page.replaceChildren(el("h1", null, "Paramétrage des demandes à Claude"),
+    el("p", "mut", "Ce que Claude peut faire pour chaque sorte de demande : le modèle, le nombre de tours, de recherches web et de " +
+      "pages lues. Au-delà du budget, l'outil est refusé et Claude rend sa réponse avec ce qu'il a. Chaque demande peut aussi " +
+      "choisir son modèle, pour elle seule. La file d'attente : une demande à la fois, et l'enchaînement automatique."),
+    sectionClaude(etat.livre));
+  document.getElementById("fiche").replaceChildren(el("p", "mut petit", "Écrit dans livre.yaml, section « claude »."));
+  zone().scrollTo(0, 0);
+}
+
+// ------------------------------------------------------------------ le tiroir : largeur, plein écran
+// Une poignée, à part (le tiroir se redessine à chaque vue), tenue contre son bord gauche : on la tire pour
+// élargir (largeur retenue ; double-clic : par défaut). ⤢ dans l'en-tête de chaque tiroir : plein écran.
+
+function poseLargeurTiroir(l) {
+  document.documentElement.style.setProperty("--tiroir-l", l || "min(46rem, 60vw)");
+}
+
+function pleinEcranTiroir(oui) {
+  if (oui) document.body.dataset.tiroirPlein = "1"; else delete document.body.dataset.tiroirPlein;
+  document.querySelectorAll("#tiroir .tiroir-plein").forEach((b) => { b.textContent = oui ? "⤡" : "⤢"; b.title = oui ? "revenir au tiroir (Échap)" : "plein écran"; });
+  try { localStorage.setItem("atelier-tiroir-plein", oui ? "1" : ""); } catch { /* */ }
+}
+
+{
+  try { poseLargeurTiroir(localStorage.getItem("atelier-tiroir-largeur")); if (localStorage.getItem("atelier-tiroir-plein")) document.body.dataset.tiroirPlein = "1"; } catch { poseLargeurTiroir(); }
+  const h = el("div", "tiroir-poignee");
+  h.title = "tirer pour élargir (double-clic : largeur par défaut)";
+  h.onmousedown = (e) => {
+    e.preventDefault();
+    document.body.classList.add("redimensionne");
+    const bouge = (m) => poseLargeurTiroir(Math.max(360, Math.min(window.innerWidth - 120, window.innerWidth - m.clientX)) + "px");
+    const lache = () => {
+      document.removeEventListener("mousemove", bouge);
+      document.removeEventListener("mouseup", lache);
+      document.body.classList.remove("redimensionne");
+      try { localStorage.setItem("atelier-tiroir-largeur", document.documentElement.style.getPropertyValue("--tiroir-l")); } catch { /* */ }
+    };
+    document.addEventListener("mousemove", bouge);
+    document.addEventListener("mouseup", lache);
+  };
+  h.ondblclick = () => { poseLargeurTiroir(); try { localStorage.removeItem("atelier-tiroir-largeur"); } catch { /* */ } };
+  document.body.append(h);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.body.dataset.tiroirPlein === "1" && !document.getElementById("tiroir").hidden && !document.querySelector(".modale")) pleinEcranTiroir(false);
+  });
 }

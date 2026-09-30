@@ -178,6 +178,8 @@ def lit(slug, ident):
 def _ecrit(slug, d):
     (_dossier(slug) / (d["id"] + ".json")).write_text(
         json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+    from . import evenements                     # les pages ouvertes sont prévenues
+    evenements.demande(slug, d)
 
 
 def liste(slug):
@@ -642,10 +644,8 @@ def cree(slug, corps):
     d["titre"] = titre_de(d)
     d.pop("_slug")
     _ecrit(slug, d)
-    t = asyncio.get_running_loop().create_task(_execute(slug, d["id"]))
-    _taches.add(t)
-    t.add_done_callback(_taches.discard)
-    return d
+    from . import file
+    return file.part(slug, d, "reecriture", "_execute", slug, d["id"])
 
 
 async def _execute(slug, ident):
@@ -755,7 +755,7 @@ async def _lance(slug, d, options, prompt, conclut, reprise=False, apres=None):
         serie.avance()
     except Exception as e:                       # noqa: BLE001 — une série ne doit pas casser la demande finie
         print("atelier : série —", e)
-    if slug == "_kb":                            # la file : la suivante, si l'enchaînement est activé
+    if True:                                     # la file : la suivante (d'une série, ou si l'enchaînement est activé)
         from . import file
         try:
             file.suivante()
@@ -868,10 +868,8 @@ def encore(slug, ident, consigne=""):
     d.setdefault("deroule", []).append({"t": time.strftime("%H:%M:%S"), "type": "reprise",
                                         "texte": "chercher encore — budget neuf" + (" : " + consigne if consigne else "")})
     _ecrit(slug, d)
-    t = asyncio.get_running_loop().create_task(_encore(slug, ident, consigne))
-    _taches.add(t)
-    t.add_done_callback(_taches.discard)
-    return d
+    from . import file
+    return file.part(slug, d, "reecriture", "_encore", slug, ident, consigne)
 
 
 async def _encore(slug, ident, consigne):

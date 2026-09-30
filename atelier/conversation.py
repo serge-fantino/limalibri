@@ -18,7 +18,7 @@ from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
 
 from . import livre, reecriture, refs
 
-TYPES_ACTION = ("fiche", "verification", "reecriture", "naive", "plan", "pistes")
+TYPES_ACTION = ("fiche", "verification", "reecriture", "revision", "naive", "plan", "pistes")
 
 SCHEMA = {
     "type": "object",
@@ -36,7 +36,7 @@ SCHEMA = {
             "plan": {"type": "string"}, "annotation": {"type": "string"},
             "version": {"type": "string", "enum": ["recit", "essai"]},
             "niveau": {"type": "string", "enum": ["livre", "partie", "chapitre"]},
-            "partie": {"type": "string"}, "fiche": {"type": "string"}},
+            "partie": {"type": "string"}, "fiche": {"type": "string"}, "mots": {"type": "integer"}},
             "required": ["type", "titre", "pourquoi"]}}},
     "required": ["reponse", "actions"]}
 
@@ -83,6 +83,10 @@ trois au plus. Chaque action : `type`, `titre` (court), `pourquoi` (une phrase),
   (identifiants du verrou) ou `annotation`, `consigne`.
 - `reecriture` — réécrire des paragraphes du récit : `chapitre`, `portee` (paragraphe, plan, annotation),
   `blocs` ou `plan` ou `annotation`, `consigne` (ce qu'il faut changer, précisément).
+- `revision` — réviser l'essai d'un chapitre déjà écrit, en entier : couper, resserrer, recentrer, retirer ce qui
+  sort du périmètre : `chapitre`, `consigne` (précise : ce qu'il faut couper, garder, déplacer, avec des
+  références @chapitre/<slug>/essai^<bloc> si besoin), `mots` (la longueur visée, facultatif). Claude relit et
+  retravaille ; l'auteur relit avant de poser ; la version d'avant est archivée (historique du chapitre).
 - `naive` — une lecture naïve d'un chapitre (un lecteur sans contexte relève où il doit deviner) :
   `chapitre`, `version`.
 - `plan` — une proposition de plan : `niveau` (livre, partie, chapitre), `partie` ou `chapitre`, `consigne`.
@@ -106,6 +110,8 @@ def lit(ident):
 def _ecrit(c):
     c["modifie"] = livre._maintenant()
     (_dossier() / (c["id"] + ".json")).write_text(json.dumps(c, ensure_ascii=False, indent=1), encoding="utf-8")
+    from . import evenements
+    evenements.change("c:" + c["id"], c.get("etat"), "conversation", "conversation", id=c["id"])
 
 
 def liste():
@@ -277,6 +283,11 @@ def lance(ident, n, i, corps):
     elif ty == "pistes":
         from . import pistes
         d, slug = pistes.cree(dict(base, fiche=p.get("fiche"))), "_kb"
+    elif ty == "revision":
+        from . import redaction
+        if not p.get("chapitre"):
+            raise ValueError("l'action ne dit pas son chapitre")
+        d, slug = redaction.cree(dict(base, chapitre=p["chapitre"], revision=True, mots=p.get("mots"))), "_kb"
     elif ty == "plan":
         from . import planif
         d, slug = planif.cree(dict(base, niveau=p.get("niveau"), partie=p.get("partie"), chapitre=p.get("chapitre"))), "_kb"

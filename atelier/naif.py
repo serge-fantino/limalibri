@@ -74,11 +74,8 @@ def cree(slug, corps):
     d["contexte"] = {"systeme": SYSTEME, "message": "# %s\n\n%s" % (c.get("title", slug), texte)}
     d["titre"] = titre_de(d)
     reecriture._ecrit(slug, d)
-    import asyncio
-    t = asyncio.get_running_loop().create_task(_execute(slug, d["id"]))
-    reecriture._taches.add(t)
-    t.add_done_callback(reecriture._taches.discard)
-    return d
+    from . import file
+    return file.part(slug, d, "naif", "_execute", slug, d["id"])
 
 
 def titre_de(d):

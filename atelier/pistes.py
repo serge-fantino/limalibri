@@ -104,11 +104,8 @@ def cree(corps):
     systeme, message = compile_contexte(d)
     d["contexte"] = {"systeme": systeme, "message": message}
     reecriture._ecrit(SLUG_KB, d)
-    import asyncio
-    t = asyncio.get_running_loop().create_task(_execute(d["id"]))
-    reecriture._taches.add(t)
-    t.add_done_callback(reecriture._taches.discard)
-    return d
+    from . import file
+    return file.part(SLUG_KB, d, "pistes", "_execute", d["id"])
 
 
 def titre_de(d):
