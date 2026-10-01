@@ -17,7 +17,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--pf);font-si
 #versions button{font:inherit;font-size:.85rem;background:none;color:var(--mut);
  border:1px solid var(--rule);border-radius:4px;padding:.2rem .7rem;cursor:pointer}
 #versions button.actif{color:var(--fg);border-color:var(--acc)}
-#cadre{display:grid;grid-template-columns:16rem minmax(0,1fr) 20rem;height:calc(100vh - 2.8rem)}
+#cadre{display:grid;grid-template-columns:var(--gauche-l, 16rem) minmax(0,1fr) 20rem;height:calc(100vh - 2.8rem)}
 body{overflow:hidden}
 #centre{display:flex;flex-direction:column;min-width:0;min-height:0}
 #defile{flex:1;overflow:auto;min-height:0}
@@ -77,7 +77,7 @@ body:not([data-vue="storyboard"]) #page [data-block].ajout{border-left-style:dot
 #page h2{font-weight:normal;font-size:1.25rem}
 
 /* ---- récit ⇄ storyboard : une grille, trois colonnes, un seul défilement ---- */
-body[data-vue="storyboard"] #cadre{grid-template-columns:16rem minmax(0,1fr)}
+body[data-vue="storyboard"] #cadre{grid-template-columns:var(--gauche-l, 16rem) minmax(0,1fr)}
 body[data-vue="storyboard"] #droite{display:none}
 body[data-vue="storyboard"] #page{max-width:none;padding:2rem 2rem 6rem}
 .par{display:grid;grid-template-columns:minmax(0,1.15fr) 2.2rem minmax(0,1fr);max-width:92rem}
@@ -138,7 +138,7 @@ details.replie[open] summary::before{content:"▾ "}
 details.replie[open] summary{margin-bottom:.4rem}
 .par-plan h2{margin-bottom:.2rem}
 /* ---- panneau : 3e colonne optionnelle de la vue parallèle ---- */
-body[data-vue="storyboard"][data-panneau] #cadre{grid-template-columns:16rem minmax(0,1fr) 25rem}
+body[data-vue="storyboard"][data-panneau] #cadre{grid-template-columns:var(--gauche-l, 16rem) minmax(0,1fr) 25rem}
 body[data-vue="storyboard"][data-panneau] #droite{display:block}
 .cliquable{cursor:pointer}
 .par-plan h2.cliquable:hover,.par-plan h2.actif-pan{color:var(--acc)}
@@ -682,8 +682,8 @@ body[data-vue="fiches"] #page{max-width:52rem}
 .note-fiches{display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.2rem}
 .bloc-fiches{margin:.3rem 0 .8rem}
 .bloc-fiches h5{margin-bottom:.2rem}
-#cadre:has(#fiche > .apercu-fiche){grid-template-columns:16rem minmax(0,1fr) 30rem}
-body[data-vue="storyboard"] #cadre:has(#fiche > .apercu-fiche){grid-template-columns:16rem minmax(0,1fr) 30rem}
+#cadre:has(#fiche > .apercu-fiche){grid-template-columns:var(--gauche-l, 16rem) minmax(0,1fr) 30rem}
+body[data-vue="storyboard"] #cadre:has(#fiche > .apercu-fiche){grid-template-columns:var(--gauche-l, 16rem) minmax(0,1fr) 30rem}
 .apercu-tete{display:flex;align-items:center;gap:.6rem;position:sticky;top:0;background:var(--bg);padding:.3rem 0;z-index:2}
 .apercu-tete .mut{flex:1}
 .apercu-titre{font-weight:normal;font-size:1.15rem;margin:.3rem 0}
@@ -1012,10 +1012,28 @@ body[data-tiroir-plein="1"] .liste-tete{margin-left:calc(-1 * max(1.2rem,calc((1
 .tiroir-liens + .tiroir-plein{margin-left:0}
 .pilule{font-family:var(--ui);font-size:.74rem;text-decoration:none;color:var(--fg);border:1px solid var(--rule);border-radius:999px;padding:.12rem .6rem;background:var(--bar);white-space:nowrap}
 .pilule:hover{border-color:var(--acc);color:var(--acc)}
-@media(max-width:1100px){#cadre{grid-template-columns:14rem minmax(0,1fr) 16rem}
+/* ---- le volet de gauche : sa largeur ---- */
+.gauche-poignee{position:fixed;top:2.8rem;bottom:0;left:calc(var(--gauche-l, 16rem) - 4px);width:8px;cursor:ew-resize;z-index:15}
+.gauche-poignee:hover,body.redimensionne .gauche-poignee{background:var(--acc);opacity:.35}
+/* ---- le confort de lecture ---- */
+body:is([data-vue="recit"],[data-vue="essai"]) #page,body[data-vue="storyboard"] #page .par-texte{
+ font-size:var(--lec-taille,1.02rem);line-height:var(--lec-interligne,1.68);font-family:var(--lec-police,var(--pf))}
+/* une largeur choisie (en %) : la page prend la place, le texte seul est borné ; le bandeau garde la sienne */
+body.lecture-large:is([data-vue="recit"],[data-vue="essai"]) #page{max-width:none}
+body.lecture-large:is([data-vue="recit"],[data-vue="essai"]) #page > :not(.bandeau-etape):not(.actions-fiche){max-width:var(--lec-largeur)}
+.bandeau-etape{max-width:44rem}
+.b-lecture{font-family:var(--pf);font-weight:600}
+.lecture-pop{position:fixed;z-index:40;width:320px;background:var(--bg);border:1px solid var(--rule);border-radius:8px;
+ box-shadow:0 10px 30px rgba(0,0,0,.3);padding:.7rem .8rem;font-family:var(--ui);font-size:.8rem}
+.lecture-ligne{display:flex;align-items:center;gap:.4rem;margin:.35rem 0}
+.lecture-nom{width:5.2rem;color:var(--mut)}
+.lecture-ligne input[type=range]{flex:1;min-width:0}
+.lecture-ligne select{flex:1}
+.lecture-val{width:3.6rem;text-align:right;font-variant-numeric:tabular-nums;color:var(--mut)}
+@media(max-width:1100px){#cadre{grid-template-columns:var(--gauche-l, 14rem) minmax(0,1fr) 16rem}
  body[data-vue="storyboard"][data-panneau] #cadre{grid-template-columns:minmax(0,1fr) 22rem}
  body[data-vue="storyboard"][data-panneau] #gauche{display:none}}
-@media(max-width:760px){#cadre{grid-template-columns:1fr;height:auto}
+@media(max-width:760px){#cadre{grid-template-columns:1fr;height:auto} .gauche-poignee{display:none}
  body{overflow:auto} #defile{overflow:visible} #outils{position:sticky;top:2.8rem}
  #droite{position:static;max-height:none;border-left:0;border-top:1px solid var(--rule)}
  #gauche{position:static;height:auto;border-right:0;border-bottom:1px solid var(--rule)}

@@ -334,12 +334,17 @@ function barreOutils() {
     const sb = v === "storyboard";
     o.append(bouton("storyboard", sb, () => { location.hash = `${etat.slug}/recit/${sb ? "texte" : "storyboard"}`; },
       "bascule", "le storyboard en regard du récit, ligne à ligne"));
+    o.append(bouton("suivi", false, () => { location.hash = "suivi/recit"; }, "",
+      "le suivi du récit : où en est chaque chapitre, ce qu'il reste à faire"));
     o.append(boutonsPdf("recit", "⎙ PDF", "recit.pdf", titrePdf("recit"))[0]);
   } else if (v === "essai") {
     const g = el("span", "groupe");
     for (const [m, lib] of [["texte", "texte"], ["notes", "notes"], ["biblio", "bibliographie"]]) {
       g.append(bouton(lib, etat.essaiMode === m, () => { location.hash = `${etat.slug}/essai/${m}`; }));
     }
+    const bs = bouton("suivi", false, () => { location.hash = "suivi/essai"; });
+    bs.title = "le suivi de l'essai : où en est chaque chapitre, ce qu'il reste à faire";
+    g.append(bs);
     o.append(g);
     o.append(el("span", "espace"));
     o.append(boutonsPdf("essai", "⎙ PDF", "essai.pdf", titrePdf("essai"))[0]);
@@ -386,6 +391,7 @@ function barreOutils() {
       bh.title = R.ok ? "toutes les portes bloquantes passent" : "portes à passer : " + R.bloquantes.join(", ");
     }).catch(() => {});
   }
+  if (["recit", "storyboard", "essai"].includes(v)) o.append(boutonLecture());
   const bv = el("button", "b-versions", "⎇ versions");
   bv.title = "enregistrer une version du livre (git)";
   bv.onclick = () => panneauVersions(bv);
@@ -651,14 +657,20 @@ function vueBiblio(page) {
   const parNote = Object.fromEntries(notes.map((n) => [n.cle, n]));
   const c = etat.chapitres.find((x) => x.slug === etat.slug);
   let sources = etat.atelier?.bibliographie ?? [];
-  if (!sources.length) {                       // pas encore de fichier : les seules clés [@…]
+  if (!sources.length) {                       // pas de fichier : les clés [@…] du texte et des notes
     const m = new Map();
-    for (const n of notes) for (const ci of n.li.querySelectorAll("cite[data-cle]")) {
-      if (!m.has(ci.dataset.cle)) m.set(ci.dataset.cle, []);
-      m.get(ci.dataset.cle).push(n.cle);
+    const de = (cle) => { if (!m.has(cle)) m.set(cle, { notes: [], blocs: [] }); return m.get(cle); };
+    const extraits = {};                        // le texte des paragraphes, gardé : la vue va remplacer la page
+    for (const n of notes) for (const ci of n.li.querySelectorAll("cite[data-cle]")) de(ci.dataset.cle).notes.push(n.cle);
+    for (const ci of page.querySelectorAll("[data-block] cite[data-cle]")) {
+      const b = ci.closest("[data-block]");
+      if (b.closest(".footnote")) continue;
+      de(ci.dataset.cle).blocs.push(b.dataset.block);
+      extraits[b.dataset.block] ??= b.textContent.replace(/\s+/g, " ").trim();
     }
-    sources = [...m].map(([cle, ns]) => ({ cle, ref: null, centrale: !!etat.sources[cle],
-      citation: "cle", notes: [...new Set(ns)] }));
+    sources = [...m].map(([cle, x]) => ({ cle, ref: null, centrale: !!etat.sources[cle],
+      citation: "cle", notes: [...new Set(x.notes)], blocs: [...new Set(x.blocs)],
+      extraits: [...new Set(x.blocs)].map((b) => ({ bloc: b, texte: extraits[b] })) }));
   }
   const nb = (f) => sources.filter(f).length;
   const out = [el("h1", null, c?.title ?? etat.slug), el("p", "sous", "Bibliographie de l'essai")];
@@ -680,6 +692,7 @@ function vueBiblio(page) {
     if (s.doute) { const d = el("span", "badge doute", "doute"); d.title = s.doute; meta.append(d); }
     meta.append(liensSource(s.doi, s.ref ?? html));
     for (const k of s.notes ?? []) if (parNote[k]) meta.append(el("span", "puce", "note " + parNote[k].num));
+    if (s.blocs?.length) meta.append(el("span", "puce", `${s.blocs.length} paragraphe${s.blocs.length > 1 ? "s" : ""}`));
     for (const fs of s.fiches ?? []) meta.append(puceFiche(fs));
     li.append(ref, meta);
     ul.append(li);
@@ -689,10 +702,10 @@ function vueBiblio(page) {
   page._notes = notes;
   page._sources = sources;
   document.getElementById("fiche").replaceChildren(
-    el("p", "mut", "Choisir une œuvre : les notes qui la citent s'affichent en marge."),
-    el("p", "mut petit", "Base centrale : noosphereV2/Books/UneVie-book/livre/bibliographie.md " +
+    el("p", "mut", "Choisir une œuvre : les passages et les notes qui la citent s'affichent en marge."),
+    el("p", "mut petit", "Bibliographie du livre : kb/sources " +
       `(${Object.keys(etat.sources).length} entrées), en lecture seule. Fichier du chapitre : ` +
-      `UneVie/book-atelier/chapters/${etat.slug}/bibliographie.yaml.`));
+      `chapters/${etat.slug}/bibliographie.yaml (s'il existe ; sinon, les citations [@…] du texte et des notes).`));
   if (etat.sourceChoisie) choisisSource(etat.sourceChoisie, true);
   else zone().scrollTo(0, etat.defil[cleVue()]?.scroll ?? 0);
 }
@@ -728,6 +741,19 @@ function choisisSource(cle, defile = false) {
       };
       nav.append(versTexte);
     }
+    d.append(nav);
+    aside.append(d);
+  }
+  // les paragraphes du texte qui la citent
+  for (const { bloc: b, texte: t } of s.extraits ?? []) {
+    if (!t) continue;
+    const d = el("div", "note-marge");
+    d.append(el("span", "note-num", "¶"));
+    d.append(el("span", null, t.length > 260 ? t.slice(0, 260) + "…" : t));
+    const nav = el("div", "marge-nav");
+    const versTexte = el("button", "pan-lien", "dans le texte →");
+    versTexte.onclick = () => { etat.blocEssai = b; location.hash = `${etat.slug}/essai/texte`; };
+    nav.append(versTexte);
     d.append(nav);
     aside.append(d);
   }
@@ -4208,8 +4234,11 @@ function boutons() {
   document.body.dataset.recit = recit ? "1" : "";
   if (etat.wiki || livre || conso) document.querySelectorAll("#versions button[data-v]").forEach((b) => b.classList.remove("actif"));
   document.getElementById("b-fiches").classList.toggle("actif", fiches);
-  document.getElementById("b-suivi").classList.toggle("actif", !!etat.enSuivi);
   document.getElementById("b-livre").classList.toggle("actif", livre);
+  if (tete === "suivi") {                     // le suivi est un mode de la version : son bouton reste allumé
+    const v = decodeURIComponent(location.hash.slice(1)).split("/")[1] === "essai" ? "essai" : "recit";
+    document.querySelector(`#versions button[data-v="${v}"]`)?.classList.add("actif");
+  }
   document.getElementById("b-demandes").classList.toggle("actif", conso);
   document.getElementById("b-plan").classList.toggle("actif", !!etat.enPlan);
 }
@@ -8010,12 +8039,19 @@ async function vueSuivi(version) {
   const page = document.getElementById("page");
   const o = document.getElementById("outils");
   o.hidden = false;
+  // les modes de la version, comme dans la vue du texte : le suivi en est un
+  const slugRef = etat.slug || etat.chapitres.find((c) => c.atelier)?.slug;
   const g = el("span", "groupe");
-  for (const [v, lib] of [["recit", "récit"], ["essai", "essai"]]) {
-    const b = el("button", v === version ? "actif" : null, lib);
-    b.onclick = () => { location.hash = "suivi/" + v; };
+  const modes = version === "essai" ? [["texte", "texte", "essai/texte"], ["notes", "notes", "essai/notes"], ["biblio", "bibliographie", "essai/biblio"]]
+    : [["texte", "texte", "recit/texte"], ["storyboard", "storyboard", "recit/storyboard"]];
+  for (const [, lib, h] of modes) {
+    const b = el("button", null, lib);
+    b.disabled = !slugRef;
+    b.title = slugRef ? `revenir au texte (${nomChapitre(slugRef)})` : "";
+    b.onclick = () => { location.hash = `${slugRef}/${h}`; };
     g.append(b);
   }
+  g.append(el("button", "actif", "suivi"));
   const F = etat.filtreSuivi ??= "tout";
   const g2 = el("span", "groupe filtres");
   for (const [v, lib] of [["tout", "tous les chapitres"], ["afaire", "à faire"]]) {
@@ -8023,7 +8059,7 @@ async function vueSuivi(version) {
     b.onclick = () => { etat.filtreSuivi = v; vueSuivi(version); };
     g2.append(b);
   }
-  o.replaceChildren(el("span", "etiq", "suivi"), g, g2);
+  o.replaceChildren(el("span", "etiq", version === "essai" ? "essai" : "récit"), g, g2);
   document.getElementById("fiche").replaceChildren(legendeSuivi());
   page.replaceChildren(el("h1", null, `Suivi — ${version === "essai" ? "l'essai" : "le récit"}`), el("p", "mut", "calcul…"));
   const [S, P] = await Promise.all([api("/suivi/" + version).catch(() => null), api("/plan").catch(() => null)]);
@@ -8181,7 +8217,7 @@ function chapitresSuivi(S, version, F) {
   return d;
 }
 
-document.getElementById("b-suivi").onclick = () => { location.hash = "suivi/" + versionSommaire(); };
+
 
 // ------------------------------------------------------------------ la prochaine étape d'un chapitre
 //
@@ -8829,3 +8865,102 @@ function pleinEcranTiroir(oui) {
     if (e.key === "Escape" && document.body.dataset.tiroirPlein === "1" && !document.getElementById("tiroir").hidden && !document.querySelector(".modale")) pleinEcranTiroir(false);
   });
 }
+
+// ------------------------------------------------------------------ le volet de gauche : sa largeur
+{
+  const pose_ = (l) => document.documentElement.style.setProperty("--gauche-l", l || "16rem");
+  try { pose_(localStorage.getItem("atelier-gauche-largeur")); } catch { pose_(); }
+  const h = el("div", "gauche-poignee");
+  h.title = "tirer pour élargir le plan (double-clic : largeur par défaut)";
+  h.onmousedown = (e) => {
+    e.preventDefault();
+    document.body.classList.add("redimensionne");
+    const bouge = (m) => pose_(Math.max(180, Math.min(window.innerWidth * 0.45, m.clientX)) + "px");
+    const lache = () => {
+      document.removeEventListener("mousemove", bouge);
+      document.removeEventListener("mouseup", lache);
+      document.body.classList.remove("redimensionne");
+      try { localStorage.setItem("atelier-gauche-largeur", document.documentElement.style.getPropertyValue("--gauche-l")); } catch { /* */ }
+    };
+    document.addEventListener("mousemove", bouge);
+    document.addEventListener("mouseup", lache);
+  };
+  h.ondblclick = () => { pose_(); try { localStorage.removeItem("atelier-gauche-largeur"); } catch { /* */ } };
+  document.body.append(h);
+}
+
+// ------------------------------------------------------------------ le confort de lecture
+// « Aa » dans la barre des vues de texte : taille, police, interligne, largeur de colonne — pour le texte
+// seulement (l'interface ne change pas), les mêmes pour le récit et l'essai, retenus dans le navigateur.
+
+const POLICES = [["", "Iowan (par défaut)"], ["Palatino, 'Palatino Linotype', serif", "Palatino"], ["Baskerville, 'Libre Baskerville', serif", "Baskerville"],
+  ["Charter, 'Bitstream Charter', serif", "Charter"], ["Georgia, serif", "Georgia"], ["'Avenir Next', Avenir, sans-serif", "Avenir (sans)"],
+  ["system-ui, -apple-system, sans-serif", "Système (sans)"]];
+const LECTURE_DEFAUT = { taille: 17, police: "", interligne: 1.68, largeur: null };   // largeur : % du texte, null = auto
+
+function lecture() {
+  try {
+    const L = { ...LECTURE_DEFAUT, ...JSON.parse(localStorage.getItem("atelier-lecture") || "{}") };
+    if (L.largeur != null && (L.largeur < 40 || L.largeur > 90)) L.largeur = null;     // l'ancienne unité (rem)
+    return L;
+  } catch { return { ...LECTURE_DEFAUT }; }
+}
+
+function appliqueLecture(L) {
+  const r = document.documentElement.style;
+  r.setProperty("--lec-taille", L.taille + "px");
+  r.setProperty("--lec-interligne", String(L.interligne));
+  if (L.largeur) r.setProperty("--lec-largeur", L.largeur + "%"); else r.removeProperty("--lec-largeur");
+  document.body.classList.toggle("lecture-large", !!L.largeur);
+  if (L.police) r.setProperty("--lec-police", L.police); else r.removeProperty("--lec-police");
+  try { localStorage.setItem("atelier-lecture", JSON.stringify(L)); } catch { /* */ }
+}
+
+function boutonLecture() {
+  const b = el("button", "b-versions b-lecture", "Aa");
+  b.title = "confort de lecture : taille, police, interligne, largeur du texte";
+  b.onclick = (e) => {
+    e.stopPropagation();
+    const deja = document.querySelector(".lecture-pop");
+    if (deja) { deja.remove(); return; }
+    const L = lecture();
+    const pop = el("div", "lecture-pop");
+    const ligne = (lib, ...n) => { const d = el("div", "lecture-ligne"); d.append(el("span", "lecture-nom", lib), ...n); pop.append(d); };
+    const reglette = (cle, min, max, pas, unite) => {
+      const moins = el("button", "pan-lien", "−"), plus = el("button", "pan-lien", "+");
+      const r = el("input");
+      r.type = "range"; r.min = min; r.max = max; r.step = pas; r.value = L[cle];
+      const val = el("span", "lecture-val", L[cle] + unite);
+      const pose = (x) => { if (Number.isNaN(x)) x = +r.value; L[cle] = Math.round(Math.max(min, Math.min(max, x)) / pas) * pas; L[cle] = +L[cle].toFixed(2); r.value = L[cle]; val.textContent = L[cle] + unite; appliqueLecture(L); };
+      r.oninput = () => pose(+r.value);
+      moins.onclick = () => pose((L[cle] ?? +r.value) - pas);
+      plus.onclick = () => pose((L[cle] ?? +r.value) + pas);
+      return [moins, r, plus, val];
+    };
+    ligne("taille", ...reglette("taille", 13, 26, 1, " px"));
+    const sel = el("select", "livre-select");
+    for (const [v, lib] of POLICES) { const o = new Option(lib, v, false, L.police === v); o.style.fontFamily = v || "var(--pf)"; sel.append(o); }
+    sel.onchange = () => { L.police = sel.value; appliqueLecture(L); };
+    ligne("police", sel);
+    ligne("interligne", ...reglette("interligne", 1.3, 2.2, 0.05, ""));
+    // la largeur du texte seul, en % de la place disponible ; « auto » : la mise en page d'origine
+    const [lm, lr, lp, lv] = reglette("largeur", 40, 90, 5, " %");
+    if (L.largeur == null) { lr.value = 60; lv.textContent = "auto"; }
+    const auto = el("button", "pan-lien", "auto");
+    auto.title = "la largeur d'origine du texte";
+    auto.onclick = () => { L.largeur = null; lr.value = 60; lv.textContent = "auto"; appliqueLecture(L); };
+    ligne("largeur", lm, lr, lp, lv, auto);
+    const raz = el("button", "pan-lien", "par défaut");
+    raz.onclick = () => { appliqueLecture({ ...LECTURE_DEFAUT }); pop.remove(); b.click(); };
+    pop.append(raz);
+    const r = b.getBoundingClientRect();
+    pop.style.top = r.bottom + 6 + "px";
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - 330, r.left - 150)) + "px";
+    document.body.append(pop);
+    const ferme = (x) => { if (!pop.contains(x.target) && x.target !== b) { pop.remove(); document.removeEventListener("mousedown", ferme); } };
+    setTimeout(() => document.addEventListener("mousedown", ferme), 0);
+  };
+  return b;
+}
+
+appliqueLecture(lecture());
