@@ -65,9 +65,7 @@ def lance(slug, modele=None):
     if _encours.get(slug):
         raise reecriture.Conflit("une lecture est déjà en cours pour cette fiche")
     _encours[slug] = {"debut": time.time()}
-    t = asyncio.get_running_loop().create_task(_lit(slug, modele))
-    reecriture._taches.add(t)
-    t.add_done_callback(reecriture._taches.discard)
+    t = reecriture.tache(_lit(slug, modele))
     return etat(slug)
 
 

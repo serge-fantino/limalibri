@@ -66,6 +66,10 @@ formation particulière.
 Tu n'as pas le web. Un fait que ni les fiches ni les chapitres écrits n'établissent, tu ne l'écris
 pas : tu le signales dans « manques » (une fiche à créer, avec la question qu'elle devrait
 traiter ; ou une fiche existante à creuser). Mieux vaut une section plus courte qu'un fait inventé.
+Le lecteur ne connaît ni la base ni les fiches : le texte n'en parle JAMAIS — ni « la base ne dit
+pas… », ni « la fiche range… », ni « les fiches ». Ce que la science ignore se dit comme un fait du
+monde (« on ignore encore… », « aucune mesure ne permet de… »), avec son degré ; ce que les fiches
+ne disent pas, mais que la science sait peut-être, va dans « manques » et pas dans la prose.
 
 ## La forme
 - Pas de titre de chapitre (il est dans la structure). Des sections « ## Titre », sous-sections
@@ -106,6 +110,8 @@ du périmètre du livre ; resserre ; applique la consigne de l'auteur, qui prime
 les fiches n'établissent pas (vérifie-les au besoin). Garde les sources ([@cle]) des passages gardés.
 Chaque paragraphe que tu gardes ou modifies GARDE son ancre en fin de paragraphe (« ^a1b2 ») ; un
 paragraphe nouveau n'en a pas ; une ancre ne sert qu'une fois. Les intertitres gardent leur {#id}.
+Toute phrase qui parle de « la base » ou des « fiches » est réécrite : un fait du monde (ce qu'on ignore,
+avec son degré), ou rien — ce qui manque aux fiches passe dans « manques ».
 Dans « remarques » : ce que tu as coupé, déplacé ou changé, et pourquoi, en quelques lignes."""
 
 
@@ -211,9 +217,7 @@ def demarre(ident):
     d["contexte"] = {"systeme": systeme, "message": message}
     reecriture._ecrit(SLUG_KB, d)
     import asyncio
-    t = asyncio.get_running_loop().create_task(_execute(ident))
-    reecriture._taches.add(t)
-    t.add_done_callback(reecriture._taches.discard)
+    t = reecriture.tache(_execute(ident))
     return d
 
 
@@ -431,6 +435,45 @@ def decide(ident, corps):
         d.update(etat="decidee", decision={"proposition": "posee", "date": livre._maintenant(), **r})
     reecriture._ecrit(SLUG_KB, d)
     return d
+
+
+# ------------------------------------------------------------------ les manques d'un chapitre
+
+MENTION_BASE = re.compile(r"\b(la base|de la base|dans la base|les fiches|la fiche|cette fiche|une fiche)\b", re.I)
+
+
+def manques(slug):
+    """Ce qui manque à l'essai d'un chapitre : les manques signalés par ses rédactions et révisions (les
+    plus récentes d'abord), et les phrases du texte qui parlent de la base — à remplacer par un fait du
+    monde, ou par une fiche."""
+    R = []
+    for x in reecriture.liste(SLUG_KB):
+        if x.get("type") != "redaction" or x.get("chapitre") != slug:
+            continue
+        d = reecriture.lit(SLUG_KB, x["id"])
+        M = (d.get("resultat") or {}).get("manques") or []
+        R.append({"id": d["id"], "mode": d.get("mode"), "etat": d["etat"], "date": d.get("cree"), "titre": d.get("titre"),
+                  "manques": M})
+    R.sort(key=lambda r: r["date"] or "", reverse=True)
+    mentions = []
+    pe = livre.dossier(slug) / "essai.md"
+    if pe.exists():
+        for b in re.split(r"\n[ \t]*\n", pe.read_text(encoding="utf-8")):
+            if b.lstrip().startswith("#"):
+                continue
+            n = re.match(r"\s*\[\^([^\]]+)\]:\s*", b)          # une note : « [^cle]: … »
+            m = re.search(r"[ \t]\^([a-z0-9]+)[ \t]*$", b)
+            if n:
+                corps, ou = b[n.end():], {"note": n.group(1)}
+            elif m:
+                corps, ou = b[:m.start()], {"bloc": m.group(1)}
+            else:
+                continue
+            texte = re.sub(r"\[\^[^\]]+\]|\[@[\w-]+\]|[ \t]\^[a-z0-9]+[ \t]*$", "", corps)
+            for ph in re.split(r"(?<=[.!?…])\s+(?=[A-ZÀ-ÖØ-Þ«])", " ".join(texte.split())):
+                if MENTION_BASE.search(ph):
+                    mentions.append(dict(ou, phrase=ph.strip()))
+    return {"chapitre": slug, "redactions": R, "mentions": mentions}
 
 
 # ------------------------------------------------------------------ l'historique

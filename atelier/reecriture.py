@@ -32,6 +32,8 @@ PORTEES = ("annotation", "paragraphe", "plan")
 MODES = ("retouche", "reecriture")
 ANCRE_FIN = re.compile(r"[ \t]\^([a-z0-9]+)[ \t]*$")
 _taches = set()          # les demandes en cours (garder une référence aux tâches asyncio)
+_actives = set()         # les demandes dont la tâche tourne vraiment dans ce processus (voir verifie)
+GRACE_S = 120            # le temps laissé à une demande partie pour compiler son contexte et joindre Claude
 
 SCHEMA = {
     "type": "object",
@@ -176,6 +178,8 @@ def lit(slug, ident):
 
 
 def _ecrit(slug, d):
+    from . import filiation
+    filiation.inscrit(slug, d)                   # une demande née d'une autre : son origine, sa génération
     (_dossier(slug) / (d["id"] + ".json")).write_text(
         json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
     from . import evenements                     # les pages ouvertes sont prévenues
@@ -225,6 +229,14 @@ def relance(slug, ident, consigne=None, modele_choisi=False):
     d = lit(slug, ident)
     if d["etat"] == "en_cours":
         raise Conflit("la demande %s est encore en cours" % ident)
+    from . import filiation
+    if d.get("origine"):                         # la relance garde la filiation de la demande remplacée
+        with filiation.depuis(d["origine"]):
+            return _relance(slug, ident, d, consigne, modele_choisi)
+    return _relance(slug, ident, d, consigne, modele_choisi)
+
+
+def _relance(slug, ident, d, consigne, modele_choisi):
     c = d["cible"]
     consigne = d.get("consigne", "") if consigne is None else consigne
     mc = d.get("modele_choisi") if modele_choisi is False else modele_choisi
@@ -251,6 +263,11 @@ def relance(slug, ident, consigne=None, modele_choisi=False):
         n = creation.cree({"question": c["question"], "slug": c.get("slug"), "chapitres": c.get("chapitres"),
                            "depuis": c.get("depuis"), "sources_initiales": c.get("sources_initiales"),
                            "longueur": d.get("longueur"), "consigne": consigne, "modele": mc})
+    elif d.get("type") == "redaction":
+        from . import redaction
+        n = redaction.cree({"chapitre": c["chapitre"], "revision": d.get("mode") == "revision", "consigne": consigne,
+                            "longueur": d.get("longueur"), "mots": d.get("mots"), "poser": d.get("poser"),
+                            "remplacer": d.get("remplacer"), "modele": mc})
     elif d.get("type") == "verification":
         from . import verification
         n = verification.cree(slug, {"assertions": c.get("assertions"), "annotation": c.get("annotation"),
@@ -270,7 +287,7 @@ def relance(slug, ident, consigne=None, modele_choisi=False):
     n["relance_de"] = ident
     _ecrit(slug, n)
     d["remplacee_par"] = n["id"]
-    if d["etat"] in ("prete", "erreur"):          # relancée : l'ancienne est close
+    if d["etat"] in ("prete", "erreur", "en_attente"):   # relancée : l'ancienne est close (et sort de la file)
         d["etat"] = "remplacee"
     _ecrit(slug, d)
     return n
@@ -421,6 +438,65 @@ def interrompues():
             p.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
             n += 1
     return n
+
+
+def tache(coro):
+    """Lancer une coroutine sur la boucle du serveur — depuis la boucle (route async) comme depuis un fil
+    de travail : FastAPI fait tourner les routes synchrones (def) hors de la boucle, où
+    asyncio.get_running_loop() échoue ; la demande restait alors « en cours » sans que Claude parte.
+    Rend une tâche (ou un Future) : .cancelled(), .exception(), add_done_callback."""
+    try:
+        boucle = asyncio.get_running_loop()
+    except RuntimeError:
+        boucle = None
+    if boucle is None:
+        from . import evenements
+        if evenements._boucle is None:
+            raise RuntimeError("pas de boucle asyncio pour lancer la tâche")
+        f = asyncio.run_coroutine_threadsafe(coro, evenements._boucle)
+        _taches.add(f)
+        f.add_done_callback(_taches.discard)
+        return f
+    t = boucle.create_task(coro)
+    _taches.add(t)
+    t.add_done_callback(_taches.discard)
+    return t
+
+
+def perdue(slug, d):
+    """Une demande « en cours » dont aucune tâche ne tourne : sa tâche est morte sans rien écrire
+    (une exception avant l'appel à Claude, par exemple). On laisse GRACE_S à une demande qui vient de
+    partir, le temps qu'elle compile son contexte."""
+    if d.get("etat") != "en_cours" or d.get("id") in _actives:
+        return False
+    try:
+        age = time.time() - (_dossier(slug) / (d["id"] + ".json")).stat().st_mtime
+    except OSError:
+        return False
+    return age > GRACE_S
+
+
+def verifie(slug=None, ident=None):
+    """Confronter l'état écrit à l'état réel : une demande « en cours » perdue passe en erreur (elle se
+    reprend si elle a une session, sinon elle se relance). Toutes, ou une seule. Rend les identifiants
+    corrigés."""
+    from . import file
+    cibles = [(slug, lit(slug, ident))] if ident else [(s, x) for s, x in file._toutes() if x.get("etat") == "en_cours"]
+    corrigees = []
+    for s, d in cibles:
+        if perdue(s, d):
+            d.update(etat="erreur", erreur="perdue : la tâche ne tourne plus (aucune trace depuis %s) — la reprendre ou la relancer"
+                     % time.strftime("%d/%m %H:%M", time.localtime((_dossier(s) / (d["id"] + ".json")).stat().st_mtime)))
+            _ecrit(s, d)
+            corrigees.append(d["id"])
+    if corrigees:
+        from . import serie
+        try:
+            serie.avance()
+            file.suivante()
+        except Exception as e:                   # noqa: BLE001
+            print("atelier : vérification —", e)
+    return corrigees
 
 
 def titre_de(d):
@@ -706,6 +782,7 @@ async def _lance(slug, d, options, prompt, conclut, reprise=False, apres=None):
     """Fait tourner Claude sur une demande : le déroulé s'écrit au fil de l'eau ; la réponse
     structurée passe par conclut(d, sortie) ; l'échec garde la session, pour la reprendre."""
     t0 = time.time()
+    _actives.add(d["id"])
     modele, resultat = None, None
     b0 = {k: (d.get("budget") or {}).get(k, 0) for k in ("recherches", "pages", "refus")}   # ce que cette exécution consomme
     try:
@@ -750,6 +827,7 @@ async def _lance(slug, d, options, prompt, conclut, reprise=False, apres=None):
     if apres:
         apres(slug, d)
     _ecrit(slug, d)
+    _actives.discard(d["id"])
     from . import serie                          # les séries avancent à la fin de chaque demande
     try:
         serie.avance()
@@ -776,14 +854,12 @@ def reprise(slug, ident):
         raise Conflit("seule une demande en erreur se reprend")
     if not d.get("session_id"):
         raise ValueError("pas de session enregistrée pour cette demande : la relancer")
-    d["etat"] = "en_cours"
+    d.update(etat="en_cours", lancee=livre._maintenant())
     d["erreur_avant_reprise"] = d.pop("erreur", None)
     d.setdefault("deroule", []).append({"t": time.strftime("%H:%M:%S"), "type": "reprise",
                                         "texte": "reprise de la session — réponse demandée, sans nouvelle recherche"})
     _ecrit(slug, d)
-    t = asyncio.get_running_loop().create_task(_reprend(slug, ident))
-    _taches.add(t)
-    t.add_done_callback(_taches.discard)
+    t = tache(_reprend(slug, ident))
     return d
 
 

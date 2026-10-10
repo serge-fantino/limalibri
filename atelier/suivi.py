@@ -221,7 +221,9 @@ def chapitre(c, version, demandes):
             A.append(_action("demandes", "%d manque(s) signalé(s) par la rédaction" % x["manques"], vue_texte, tiroir=x["id"], type_="manques"))
 
     score = round(sum(e["points"] for e in E.values()))
-    return {"slug": slug, "numero": c.get("numero"), "titre": c["title"], "partie": c.get("partie"),
+    mesures = {"niveau": niv, "score": score, "fiches": len(fiches), "annotations": len(ouvertes) if ecrit else 0,
+               "naif": bool(p_naif), "portes_ko": len(ko), "controles": bool(bloq) and not ko, "ecrit": ecrit}
+    return {"slug": slug, "mesures": mesures, "numero": c.get("numero"), "titre": c["title"], "partie": c.get("partie"),
             "partie_titre": c.get("partie_titre"), "niveau": niv, "score": score, "etapes": E, "actions": A}
 
 
@@ -265,7 +267,12 @@ def suivi(version):
         raise KeyError(version)
     t0 = time.time()
     D = _demandes()
+    from . import travail, objectifs
+    T = travail.par_chapitre()
     C = [chapitre(c, version, D) for c in livre.chapitres() if version in (c.get("versions") or [version]) or True]
+    for c in C:                                        # le travail en cours du chapitre (demandes, manques)
+        c["travail"] = travail.public({c["slug"]: T.get(c["slug"]) or {"en_file": [], "en_cours": [], "a_decider": [],
+                                                                         "manques": 0, "demandes": set()}})[c["slug"]]
     n = len(C) or 1
     etapes = {k: {"titre": t, "max": p, "moyenne": round(sum(c["etapes"][k]["points"] for c in C) / n, 1),
                   "complets": sum(1 for c in C if c["etapes"][k]["points"] >= p)} for k, t, p in ETAPES}
@@ -281,6 +288,11 @@ def suivi(version):
     G = sorted(groupes.values(), key=lambda g: (ordre.get(g["etape"], 9), -len(g["chapitres"])))
     for g in G:
         g["gain"] = round(g["gain"] / n, 1)            # ce que le livre gagnerait, en points de moyenne
-    return {"version": version, "score": round(sum(c["score"] for c in C) / n), "etapes": etapes,
+    S = {"chapitres": C}
+    O = objectifs.evalue_tous(version, S, T)
+    autres = sum(1 for o in objectifs.lit_tous() if o.get("version", "essai") != version)
+    sans = travail.public({travail.SANS: T[travail.SANS]})[travail.SANS] if travail.SANS in T else None
+    return {"version": version, "objectifs": O, "objectifs_autre_version": autres, "sans_chapitre": sans,
+            "score": round(sum(c["score"] for c in C) / n), "etapes": etapes,
             "repartition": repartition, "chapitres": C, "groupes": G, "calcule_en": round(time.time() - t0, 2),
             "bareme": [{"id": k, "titre": t, "max": p} for k, t, p in ETAPES]}

@@ -359,6 +359,23 @@ si l'enchaînement est activé (`claude.file.auto`), sinon elles attendent leur 
 attente dit sa place, et « ▶ lancer maintenant » la fait partir en parallèle de ce qui tourne. L'assistant
 et la lecture de confiance d'une fiche restent hors de la file.
 
+L'**état réel** : une demande « en cours » dont aucune tâche ne tourne (morte avant d'appeler Claude, ou
+perdue) passe en erreur — à l'ouverture et au ⟳ de la liste, à la lecture de la file, et par « ⟳ état
+réel » dans son tiroir (2 min de grâce après le départ). Tous les départs passent par
+`reecriture.tache()`, qui lance sur la boucle du serveur même depuis une route synchrone ; un départ qui
+échoue met la demande en erreur. Sous l'en-tête de chaque demande : son identifiant, « ⧉ réf », « ⧉ fichier ».
+
+La **filiation** (`atelier/filiation.py`) : une demande née d'une autre porte son `origine` et sa
+`generation` ; la mère garde ses `enfants`. Naissent d'une autre : les fiches retenues d'un « creuser »,
+la vérification des sources qu'une fiche n'a pas pu lire, les actions lancées depuis l'assistant
+(génération 1) ; une relance garde la filiation de la demande remplacée. Deux plafonds
+(`claude.file.profondeur`, 2 ; `claude.file.enfants`, 4 ; réglables dans Paramétrage) : au-delà de la
+profondeur, une demande n'engendre plus rien ; une demande engendre au plus `enfants` demandes vivantes
+(les remplacées et retirées ne comptent pas). « Creuser » propose au plus `enfants` pistes et refuse d'en
+retenir davantage ; les sources en surnombre restent à vérifier à la main (`verifications_sautees`). Ce
+que l'auteur lance lui-même repart de la génération 0. Le tiroir montre « génération n · issue de … » et
+« a engendré … », chaque identifiant ouvrant sa demande.
+
 Les **séries** (`atelier/serie.py`, `kb/series/`) enchaînent des actions sur plusieurs chapitres :
 développer le brief, écrire l'essai, lecture naïve. Depuis le suivi, un groupe d'actions lançable
 (« Développer le brief », « Écrire le texte », « Lectures naïves ») a une case par chapitre et « ▶ lancer
@@ -372,6 +389,13 @@ redémarrage du serveur arrête proprement une série dont l'étape tournait.
 Le bouton **⟳** de l'en-tête relit le livre (chapitres et statuts, plan, textes) et redessine la vue
 courante à la même place, tiroir ouvert. Il part aussi de lui-même après une décision sur une demande
 de la base (poser un essai, retenir un plan, créer une fiche) et quand une demande pose d'office.
+
+**Ce qui manque** à un chapitre (« ◌ manques » dans la barre de l'essai) : les manques signalés par ses
+rédactions et révisions, avec de quoi créer ou creuser la fiche, et les phrases du texte et des notes qui
+parlent de « la base » ou des « fiches » — le lecteur ne les connaît pas (garde-fou R8 d'Un Monde, que le
+harnais contrôle) ; chacune mène à son paragraphe ou à sa note, et « réviser pour retirer ces mentions »
+ouvre une révision à la consigne écrite. Les demandes d'écriture et de révision d'un chapitre figurent dans
+« Demandes du chapitre ».
 
 **Réviser l'essai** d'un chapitre déjà écrit (« ✎ réviser l'essai… » dans le bandeau ; action `revision` de
 l'assistant ; étape « réviser » d'une série) : Claude relit le chapitre en entier et le retravaille selon une
@@ -399,6 +423,37 @@ appuyées ; récit : assertions portées), contrôles 15 (portes bloquantes du h
 qui mène au bon endroit (la vue, et le tiroir : harnais, annotations, demande) ; les actions se
 regroupent pour le livre, avec ce que chacune ferait gagner. Le rapport du harnais est gardé en cache
 tant que les fichiers du chapitre n'ont pas changé.
+
+Les **objectifs** (en tête du suivi ; `atelier/objectifs.py`, `objectifs.yaml` à la racine du livre, dans
+l'ordre de priorité) : jusqu'où on veut aller. Un objectif a une version, un périmètre (le livre, une
+partie, des chapitres) et des critères tenus sur chaque chapitre du périmètre — niveau ≥, score ≥,
+manques ouverts ≤, portes du harnais passées, lecture naïve à jour, annotations ouvertes ≤, fiches au
+brief ≥, demandes à décider ≤ — et parfois une **intention** en clair, qu'aucune mesure ne capte et que
+l'auteur juge (✓ atteinte, pas encore). Facultatifs : une échéance (J-n), un budget en dollars (la
+dépense compte les demandes qui servent le périmètre, depuis la création). La progression compte les
+couples (chapitre, critère) tenus ; un objectif est atteint quand tous le sont et que son intention est
+jugée atteinte. Rien ne s'écrit à la lecture : l'évaluation est recalculée à chaque fois. Déplié, un
+objectif montre ses critères (tenus / total) et les chapitres en écart, avec la mesure ; ✎ modifier,
+↑ ↓ (priorité), archiver, supprimer. Sur la ligne d'un chapitre, ◎n : l'objectif n n'y est pas tenu.
+
+L'**avancement** d'un objectif : chaque fois que sa mesure change (progression, critères tenus,
+atteinte), un point s'ajoute à `objectifs-suivi.jsonl` — seule écriture faite à la lecture du suivi. La
+carte montre la courbe, la mesure du premier point et aujourd'hui, et ce qui a bougé critère par critère.
+
+**Marquer une version** (`atelier/versions.py`, seulement si le livre est dans un dépôt git) : un commit du
+seul dossier du livre (ce qui est déjà indexé ailleurs dans le dépôt n'est pas emporté), puis un tag
+annoté local — jamais poussé. Livre dans son propre dépôt : `v1`, `v2`… ; dans un dépôt plus grand : le
+nom du livre en préfixe (`unmonde/v1`). À la création d'un objectif, « 🏷 marquer d'abord la version
+actuelle » (coché par défaut) en fait le **départ** de l'objectif ; sinon, depuis la carte : marquer
+maintenant, ou partir d'une version déjà marquée. « Ce qui a changé depuis » : fichiers du livre
+modifiés, ajoutés, supprimés (commités ou non), et les mots du texte, chapitre par chapitre. API :
+`GET/POST /api/versions`, `GET /api/versions/depuis?tag=…`, `POST /api/objectifs/{id}/depart`.
+
+Le **travail** de chaque chapitre (`atelier/travail.py`), sur sa ligne du suivi : ⏳ demandes en file ou
+en cours, ✋ résultats à décider, ◌ manques de la dernière rédaction — un clic déplie la liste (chaque
+demande s'ouvre). Une demande de la base compte pour les chapitres qu'elle sert (rédaction, plan : le
+chapitre visé ; fiche : les chapitres de la question ou de la réponse ; creuser : ceux des pistes, sinon
+ceux qui utilisent la fiche) ; les autres vont dans « sans chapitre », en fin de liste.
 
 **Écrire l'essai** (✎, `atelier/redaction.py`) : Claude rédige l'essai d'un chapitre depuis son brief
 (synopsis, question, fiches ; squelette et verrou s'il est amorcé), en lisant ses fiches et les chapitres

@@ -27,8 +27,9 @@ SLUG_KB = "_kb"
 
 def reglage():
     f = (livre.meta().get("claude") or {}).get("file") or {}
-    return {"auto": bool(f.get("auto", False)), "simultanees": max(1, int(f.get("simultanees", 1) or 1)),
-            "creer_d_office": bool(f.get("creer_d_office", False))}
+    from . import filiation
+    return dict({"auto": bool(f.get("auto", False)), "simultanees": max(1, int(f.get("simultanees", 1) or 1)),
+                 "creer_d_office": bool(f.get("creer_d_office", False))}, **filiation.reglage())
 
 
 def _toutes():
@@ -65,14 +66,42 @@ def _occupes(sauf=None):
     return sum(1 for s, x in _toutes() if x.get("etat") == "en_cours" and x.get("id") != sauf)
 
 
-def _tache(depart):
+def _tache(depart, slug=None, ident=None):
     mod = importlib.import_module("." + depart["module"], __package__)
     r = getattr(mod, depart["fonction"])(*depart.get("args") or [])
     if asyncio.iscoroutine(r):
-        t = asyncio.get_running_loop().create_task(r)
-        reecriture._taches.add(t)
-        t.add_done_callback(reecriture._taches.discard)
+        t = reecriture.tache(r)
+        if ident:
+            t.add_done_callback(lambda t: _echec(slug, ident, t))
     return r
+
+
+def _demarre(slug, ident, depart):
+    """Le départ ; s'il échoue tout de suite, la demande passe en erreur (et l'erreur remonte)."""
+    try:
+        _tache(depart, slug, ident)
+    except Exception as e:                       # noqa: BLE001
+        d = reecriture.lit(slug, ident)
+        d.update(etat="erreur", erreur="échec au départ — %s: %s" % (type(e).__name__, e))
+        reecriture._ecrit(slug, d)
+        raise
+
+
+def _echec(slug, ident, t):
+    """Une tâche morte d'une exception hors de reecriture._lance (avant l'appel à Claude) laissait sa
+    demande « en cours » pour toujours : elle passe en erreur, avec l'exception."""
+    if t.cancelled() or t.exception() is None:
+        return
+    try:
+        d = reecriture.lit(slug, ident)
+    except KeyError:
+        return
+    if d.get("etat") == "en_cours":
+        e = t.exception()
+        d.update(etat="erreur", erreur="échec au départ — %s: %s" % (type(e).__name__, e))
+        reecriture._ecrit(slug, d)
+        reecriture._actives.discard(ident)
+        suivante()
 
 
 def part(slug, d, module, fonction, *args, forcer=False):
@@ -83,9 +112,9 @@ def part(slug, d, module, fonction, *args, forcer=False):
         d.update(etat="en_attente", en_file=livre._maintenant(), rang=d.get("rang") or time.time())
         reecriture._ecrit(slug, d)
         return d
-    d["etat"] = "en_cours"
+    d.update(etat="en_cours", lancee=livre._maintenant())
     reecriture._ecrit(slug, d)
-    _tache(d["depart"])
+    _demarre(slug, d["id"], d["depart"])
     return reecriture.lit(slug, d["id"])
 
 
@@ -104,10 +133,10 @@ def lance(ident):
                                  if d.get("type") in ANCIENS else None)
     if not depart:
         raise ValueError("demande sans départ connu : %s" % d.get("type"))
-    d.update(etat="en_cours", depart=depart)
+    d.update(etat="en_cours", depart=depart, lancee=livre._maintenant())
     d.pop("en_file", None)
     reecriture._ecrit(slug, d)
-    _tache(depart)
+    _demarre(slug, ident, depart)
     return reecriture.lit(slug, ident)
 
 

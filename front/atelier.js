@@ -348,6 +348,14 @@ function barreOutils() {
     o.append(g);
     o.append(el("span", "espace"));
     o.append(boutonsPdf("essai", "⎙ PDF", "essai.pdf", titrePdf("essai"))[0]);
+    const bm = el("button", "b-versions", "◌ manques");
+    bm.title = "ce qui manque à ce chapitre : les manques signalés par ses rédactions, et les phrases du texte qui parlent de la base";
+    bm.onclick = () => panneauManques(etat.slug);
+    o.append(bm);
+    api(`/chapitres/${etat.slug}/manques`).then((M) => {
+      const n = M.mentions.length + (M.redactions[0]?.manques.length ?? 0);
+      if (n) { bm.textContent = `◌ manques · ${n}`; bm.classList.add("a-revalider"); }
+    }).catch(() => {});
     const bh = el("button", "b-versions", "🕘 historique");
     bh.title = "les versions de l'essai de ce chapitre : écritures, révisions, restaurations — relire, restaurer";
     bh.onclick = () => modaleHistorique(etat.slug);
@@ -2704,6 +2712,56 @@ async function tiroir(ident) {
   }
   if (!ident) return historique(t);
   const d = await api(`/chapitres/${slugDe(ident)}/demandes/${ident}`);
+  await rendDemande(t, d);
+  if (etat.tiroirMontre === ident) barreRefDemande(t, d);
+}
+
+// Sous l'en-tête de chaque demande : sa référence (⧉ l'identifiant, ⧉ le chemin du fichier JSON — pour
+// le débogage, ou pour la citer), et pour une demande « en cours », ⟳ confronter cet état à la tâche réelle.
+function barreRefDemande(t, d) {
+  t.querySelector(".dem-ref")?.remove();
+  const b = el("div", "dem-ref");
+  b.append(el("code", null, d.id));
+  const id = el("button", "pan-lien", "⧉ réf");
+  id.title = "copier l'identifiant de la demande";
+  id.onclick = () => copieRef(d.id);
+  const ch = el("button", "pan-lien", "⧉ fichier");
+  ch.title = "copier le chemin du fichier de la demande : " + (d.fichier ?? "");
+  ch.onclick = () => copieRef(d.fichier ?? d.id);
+  b.append(id, ch);
+  if (d.etat === "en_cours") {
+    const v = el("button", "pan-lien", "⟳ état réel");
+    v.title = "vérifier que la demande tourne vraiment ; perdue (tâche morte, aucune trace depuis 2 min), elle passe en erreur — à reprendre ou relancer";
+    v.onclick = async () => {
+      v.disabled = true;
+      const r = await poste(`/chapitres/${slugDe(d.id)}/demandes/${d.id}/verifier`, {}).catch((e) => (alert(e.message ?? e), null));
+      v.disabled = false;
+      if (!r) return;
+      avis(r.corrigee ? "la demande était perdue : passée en erreur" : "elle tourne bien");
+      if (r.corrigee) tiroir(d.id);
+    };
+    b.append(v);
+  }
+  // la filiation : d'où elle vient, ce qu'elle a engendré (voir atelier/filiation.py)
+  const ouvre = (id) => { const x = el("button", "pan-lien", id); x.title = "ouvrir cette demande"; x.onclick = () => tiroir(id); return x; };
+  if (d.origine || d.enfants?.length || d.decision?.verifications_sautees?.length) {
+    const f = el("div", "dem-filiation");
+    if (d.origine) {
+      f.append(el("span", null, `génération ${d.generation ?? 1} · issue de `));
+      f.append(/^c-/.test(d.origine) ? el("span", null, "l'assistant (" + d.origine + ")") : ouvre(d.origine));
+    }
+    if (d.enfants?.length) {
+      f.append(el("span", null, (d.origine ? " · " : "") + `a engendré ${d.enfants.length} : `));
+      d.enfants.forEach((id) => f.append(ouvre(id)));
+    }
+    const sa = d.decision?.verifications_sautees ?? [];
+    if (sa.length) f.append(el("span", "mut", ` · sources non vérifiées (plafond) : ${sa.join(", ")}`));
+    b.after(f);
+  }
+  (t.querySelector(".pan-tete") ?? t.firstChild)?.after(b);
+}
+
+async function rendDemande(t, d) {
   if (["en_attente", "retiree"].includes(d.etat) && !["fiche", "reference", "document"].includes(d.type)) {
     t.replaceChildren(teteTiroir(d.titre ?? "Demande en attente", () => historique(t, slugDe(d.id) === "_kb" ? "fiches" : null)));
     if (d.consigne) t.append(el("p", "annot-corps", "« " + d.consigne + " »"));
@@ -2983,7 +3041,9 @@ function enDirect(d) {
 }
 
 function remplitDirect(z, d) {
-  const depuis = Math.round((Date.now() - new Date(d.cree).getTime()) / 1000);
+  // depuis le départ (pas la création : une demande a pu attendre des heures dans la file)
+  const t0 = d.lancee ?? d.cree;
+  const depuis = Math.max(0, Math.round((Date.now() - new Date(t0).getTime()) / 1000));
   const verbe = d.type === "verification" || d.type === "fiche" ? "Claude cherche" : "Claude travaille";
   const je = d.jetons_en_cours;
   z.replaceChildren(el("p", "dem-attente", `${verbe}… ${Math.floor(depuis / 60)} min ${String(depuis % 60).padStart(2, "0")} s`
@@ -3298,8 +3358,16 @@ function periodeDe(d, F) {
 // statut, période et texte. Les filtres sont retenus pour la session.
 var suiviListe;
 
+// Les demandes « en cours » dont la tâche est morte passent en erreur (le serveur confronte l'état écrit
+// à ses tâches réelles). Fait à l'ouverture de la liste et par son ⟳.
+async function verifieDemandes() {
+  const r = await poste("/demandes/verifier", {}).catch(() => null);
+  if (r?.corrigees?.length) avis(r.corrigees.length + (r.corrigees.length > 1 ? " demandes perdues passées" : " demande perdue passée") + " en erreur : " + r.corrigees.join(", "));
+}
+
 async function historique(t, portee = null) {
   clearTimeout(suivi);
+  await verifieDemandes();
   etat.tiroirMontre = null;
   const F = etat.filtresDem ??= { portee: "chapitre", type: "tout", statut: "tout", periode: "tout", depuis: "", texte: "" };
   if (portee) F.portee = portee;
@@ -3307,11 +3375,13 @@ async function historique(t, portee = null) {
   if (F.portee === "chapitre" && sansChapitre) F.portee = "livre";
   const ds = F.portee === "livre" ? await api("/demandes").catch(() => [])
     : F.portee === "fiches" ? (await api("/fiches/demandes").catch(() => [])).map((d) => ({ ...d, chapitre: "_kb" }))
-    : (await api(`/chapitres/${etat.slug}/demandes`).catch(() => [])).map((d) => ({ ...d, chapitre: etat.slug }));
+    : [...(await api(`/chapitres/${etat.slug}/demandes`).catch(() => [])).map((d) => ({ ...d, chapitre: etat.slug })),
+       ...(await api("/fiches/demandes").catch(() => [])).filter((d) => d.chapitre === etat.slug || (d.chapitres ?? []).includes(etat.slug))
+         .map((d) => ({ ...d, chapitre: "_kb", du_chapitre: true }))];
   t.replaceChildren(teteTiroir({ livre: "Demandes du livre", fiches: "Demandes des fiches", chapitre: "Demandes du chapitre" }[F.portee]));
   const maj = el("button", "pan-lien liste-maj", "⟳");
   maj.title = "rafraîchir la liste (elle se met à jour d'elle-même quand une demande change)";
-  maj.onclick = () => historique(t);
+  maj.onclick = async () => { await verifieDemandes(); historique(t); };
   t.querySelector(".pan-tete h4")?.after(maj);
   const conso = el("a", "pan-lien liste-conso", "consommation ↗");
   conso.href = "#consommation";
@@ -3404,21 +3474,37 @@ async function historique(t, portee = null) {
   if (tot.n) totaux.push(`jetons (${tot.n}) : ↑ ${k(tot.e)} en entrée · ↓ ${k(tot.s)} en sortie`);
   if (tot.nc) totaux.push(`≈ ${tot.c.toFixed(2)} $ au tarif API (${tot.nc})`);
   t.append(el("p", "mut petit", totaux.join(" ; ")));
-  // classement par chapitre, dans l'ordre du livre ; dans un chapitre, les plus récentes d'abord
+  // la place dans la file : la file part dans l'ordre d'arrivée (la plus ancienne d'abord)
+  const FQ = await api("/file").catch(() => null);
+  const rangFile = new Map((FQ?.en_attente ?? []).map((x) => [x.id, x.rang]));
+  // « en attente » ou « en cours + en attente » : une seule liste, dans l'ordre où elles partiront
+  const ordreFile = ["en_attente", "actives", "en_cours"].includes(F.statut);
+  // sinon : classement par chapitre, dans l'ordre du livre ; dans un chapitre, les plus récentes d'abord
   const parChap = new Map();
   for (const d of garde) {
-    if (!parChap.has(d.chapitre)) parChap.set(d.chapitre, []);
-    parChap.get(d.chapitre).push(d);
+    const cle = ordreFile ? "_file" : d.chapitre;
+    if (!parChap.has(cle)) parChap.set(cle, []);
+    parChap.get(cle).push(d);
   }
+  if (ordreFile && garde.length) t.append(el("p", "mut petit", "Dans l'ordre où elles partiront : celles qui tournent, puis la file, la plus ancienne d'abord" +
+    (FQ?.reglage.auto ? "." : " (enchaînement en pause : seules les séries partent d'elles-mêmes).")));
   const ordre = etat.chapitres.map((c) => c.slug);
-  for (const slug of [...parChap.keys()].sort((a, b) => ordre.indexOf(a) - ordre.indexOf(b))) {
-    const c = slug === "_kb" ? { numero: "◇", title: "Fiches et livre" } : etat.chapitres.find((x) => x.slug === slug);
-    const liste = parChap.get(slug).sort((a, b) => (a.cree < b.cree ? 1 : -1));
+  for (const groupe of [...parChap.keys()].sort((a, b) => ordre.indexOf(a) - ordre.indexOf(b))) {
+    const c = groupe === "_kb" ? { numero: "◇", title: "Fiches et livre" } : etat.chapitres.find((x) => x.slug === groupe);
+    const liste = groupe === "_file"
+      ? parChap.get(groupe).sort((a, b) => (a.etat === "en_cours" ? 0 : rangFile.get(a.id) ?? 9e9) - (b.etat === "en_cours" ? 0 : rangFile.get(b.id) ?? 9e9))
+      : parChap.get(groupe).sort((a, b) => (a.cree < b.cree ? 1 : -1));
     const ouvertes = liste.filter((d) => OUVERTES.has(d.etat)).length;
-    if (F.portee !== "chapitre") t.append(el("h5", "dem-chapitre", `${c?.numero ?? ""} · ${c?.title ?? slug} — ${liste.length} demande(s)${ouvertes ? `, ${ouvertes} ouverte(s)` : ""}`));
+    if (F.portee !== "chapitre" && groupe !== "_file") t.append(el("h5", "dem-chapitre", `${c?.numero ?? ""} · ${c?.title ?? slug} — ${liste.length} demande(s)${ouvertes ? `, ${ouvertes} ouverte(s)` : ""}`));
     for (const d of liste) {
+      const slug = d.chapitre;
       const l = el("button", "dem-ligne " + (OUVERTES.has(d.etat) ? "ouverte" : "close"));
       const haut = el("span", "dem-haut");
+      if (rangFile.has(d.id)) {
+        const r = el("span", "rang-file", "file n° " + rangFile.get(d.id));
+        r.title = `${rangFile.get(d.id)}${rangFile.get(d.id) === 1 ? "re" : "e"} dans la file d'attente${d.serie ? " — d'une série : elle partira d'elle-même" : ""}`;
+        haut.append(r);
+      }
       haut.append(el("span", "annot-type", LIB_TYPES[d.type ?? "reecriture"] ?? d.type),
         el("span", "dem-etat " + d.etat, etiquetteDemande(d)), el("span", "annot-date", d.cree.slice(0, 16).replace("T", " ")));
       l.append(haut, el("span", "dem-titre-ligne", d.titre ?? d.question ?? ""));
@@ -4731,12 +4817,15 @@ async function tiroirReference(t, d) {
 
 const MOTIF_REF = /(?<![\w[])@(fiche|oeuvre|chapitre|partie|regle)\/[\w./#^:-]*[\w-]/g;
 
+// Un avis passager, en bas de l'écran.
+function avis(texte, ms = 3500) {
+  const a = el("div", "avis", texte);
+  document.body.append(a);
+  setTimeout(() => a.remove(), ms);
+}
+
 function copieRef(ref) {
-  const fin = () => {
-    const a = el("div", "avis", "copié : " + ref);
-    document.body.append(a);
-    setTimeout(() => a.remove(), 2200);
-  };
+  const fin = () => avis("copié : " + ref, 2200);
   if (navigator.clipboard?.writeText) navigator.clipboard.writeText(ref).then(fin, () => prompt("La référence :", ref));
   else prompt("La référence :", ref);
 }
@@ -6047,8 +6136,25 @@ function reglageFile(F, apres) {
   };
   l2.append(c2, " créer d'office (à confirmer)");
   l2.title = "désactivé : une fiche rendue attend ta décision avant d'être écrite";
+  // les plafonds de la filiation : jusqu'où une demande en engendre d'autres
+  const nombre = (cle, lib, titre) => {
+    const w = el("label", "graphe-coche file-auto");
+    const i = el("input");
+    i.type = "number"; i.min = "0"; i.max = "9"; i.value = F.reglage[cle]; i.style.width = "3.2em";
+    i.onchange = async () => {
+      await fetch("/api/file", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [cle]: Number(i.value) }) });
+      apres?.();
+    };
+    w.append(lib + " ", i);
+    w.title = titre;
+    return w;
+  };
+  const l3 = nombre("profondeur", "profondeur", "jusqu'à quelle génération une demande en engendre d'autres d'elle-même. " +
+    "2 : un « creuser » → ses fiches → la vérification de leurs sources, et pas plus loin. Ce que tu lances toi-même repart de 0");
+  const l4 = nombre("enfants", "enfants au plus", "combien de demandes une demande peut engendrer : pistes retenues d'un « creuser », " +
+    "sources vérifiées d'office après une fiche. Le « creuser » propose aussi au plus autant de pistes");
   const g = el("span", "reglage-file");
-  g.append(l, l2);
+  g.append(l, l2, l3, l4);
   return g;
 }
 
@@ -8062,11 +8168,399 @@ async function vueSuivi(version) {
   o.replaceChildren(el("span", "etiq", version === "essai" ? "essai" : "récit"), g, g2);
   document.getElementById("fiche").replaceChildren(legendeSuivi());
   page.replaceChildren(el("h1", null, `Suivi — ${version === "essai" ? "l'essai" : "le récit"}`), el("p", "mut", "calcul…"));
-  const [S, P] = await Promise.all([api("/suivi/" + version).catch(() => null), api("/plan").catch(() => null)]);
+  const [S, P, G] = await Promise.all([api("/suivi/" + version).catch(() => null), api("/plan").catch(() => null),
+    api("/versions").catch(() => ({ actif: false }))]);
   if (P) etat.plan = P;
+  etat.depot = G;
   if (!S || etat.suiviVersion !== version || !etat.enSuivi) return;
-  page.replaceChildren(el("h1", null, `Suivi — ${version === "essai" ? "l'essai" : "le récit"}`), globalSuivi(S), blocSeries(version),
-    actionsSuivi(S, version), chapitresSuivi(S, version, F));
+  page.replaceChildren(el("h1", null, `Suivi — ${version === "essai" ? "l'essai" : "le récit"}`), objectifsSuivi(S, version),
+    globalSuivi(S), blocSeries(version), actionsSuivi(S, version), chapitresSuivi(S, version, F));
+}
+
+// ------------------------------------------------------------------ les objectifs (atelier/objectifs.py)
+//
+// Jusqu'où on veut aller, mesuré dans les fichiers : un périmètre (livre, partie, chapitres), des critères
+// tenus sur chaque chapitre, et parfois une intention, que l'auteur juge. Dans l'ordre de priorité.
+
+const SUGGESTIONS_OBJ = [
+  ["Tout le livre au brouillon", { perimetre: { type: "livre" }, criteres: [{ id: "niveau", valeur: "brouillon" }] }],
+  ["Tout le livre relu", { perimetre: { type: "livre" }, criteres: [{ id: "niveau", valeur: "relu" }, { id: "naif", valeur: true }, { id: "annotations", valeur: 0 }] }],
+  ["Zéro manque ouvert", { perimetre: { type: "livre" }, criteres: [{ id: "manques", valeur: 0 }] }],
+];
+
+function objectifsSuivi(S, version) {
+  const d = el("section", "suivi-objectifs");
+  const h = el("h2", "oeuvre-section", "Objectifs");
+  const plus = el("button", "pan-lien", "+ objectif");
+  plus.title = "jusqu'où aller : un périmètre, des critères mesurés, une intention si besoin";
+  plus.onclick = () => formObjectif(null, version, S);
+  h.append(" ", plus);
+  d.append(h);
+  const O = S.objectifs ?? [];
+  const actifs = O.filter((o) => o.etat !== "archive");
+  const archives = O.filter((o) => o.etat === "archive");
+  if (!actifs.length) {
+    const v = el("p", "mut petit", "Aucun objectif " + (archives.length ? "actif" : "") + ` sur ${version === "essai" ? "l'essai" : "le récit"}. ` +
+      "Un objectif dit jusqu'où aller ; ce qui ne le sert pas pourra attendre. Pour commencer : ");
+    if (version === "essai") SUGGESTIONS_OBJ.forEach(([t, o], k) => {
+      const b = el("button", "pan-lien", t);
+      b.onclick = () => formObjectif({ titre: t, version, ...o }, version, S, true);
+      v.append(k ? " · " : "", b);
+    });
+    d.append(v);
+  }
+  actifs.forEach((o, i) => d.append(carteObjectif(o, i, version, S)));
+  if (archives.length) {
+    const a = el("details", "objectifs-archives");
+    a.append(el("summary", "mut petit", `archivés (${archives.length})`), ...archives.map((o) => carteObjectif(o, null, version, S)));
+    d.append(a);
+  }
+  if (S.objectifs_autre_version) {
+    const autre = version === "essai" ? "recit" : "essai";
+    const l = el("a", "mut petit", `${S.objectifs_autre_version} objectif(s) sur ${autre === "essai" ? "l'essai" : "le récit"} →`);
+    l.href = "#suivi/" + autre;
+    const p = el("p", "petit");
+    p.append(l);
+    d.append(p);
+  }
+  return d;
+}
+
+function carteObjectif(o, i, version, S) {
+  const c = el("details", "objectif" + (o.atteint ? " atteint" : "") + (o.etat === "archive" ? " archive" : ""));
+  const s = el("summary");
+  if (i != null) s.append(el("span", "obj-rang", String(i + 1)));
+  s.append(el("strong", "obj-titre", o.titre), el("span", "mut petit obj-portee", o.perimetre_libelle));
+  const barre = el("span", "obj-barre");
+  const plein = el("span", "obj-plein");
+  plein.style.width = o.progression + "%";
+  barre.append(plein);
+  barre.title = "critères mesurés tenus, chapitre par chapitre";
+  s.append(barre, el("span", "obj-pct", o.atteint ? "atteint ✓" : o.progression + " %"));
+  const meta = el("span", "obj-meta mut petit");
+  if (!o.atteint && o.restants) meta.append(`${o.restants} chapitre(s) à faire`);
+  if (o.intention && !o.jugement?.atteint) meta.append((meta.textContent ? " · " : "") + "intention à juger");
+  if (o.budget != null) {
+    const b = el("span", o.depense > o.budget ? "obj-depasse" : null, ` · ${o.depense.toFixed(2)} $ / ${o.budget} $`);
+    b.title = "dépensé depuis la création de l'objectif, par les demandes qui servent son périmètre";
+    meta.append(b);
+  } else if (o.depense) meta.append(` · ${o.depense.toFixed(2)} $`);
+  if (o.jours != null) {
+    const j = el("span", o.jours < 0 ? "obj-depasse" : null, o.jours < 0 ? ` · échu (${o.echeance})` : ` · J-${o.jours}`);
+    j.title = "échéance : " + o.echeance;
+    meta.append(j);
+  }
+  s.append(meta);
+  c.append(s);
+
+  const corps = el("div", "obj-corps");
+  corps.append(avancementObjectif(o, version));
+  const cr = el("div", "obj-criteres");
+  for (const k of o.criteres_eval) {
+    const x = el("span", "obj-crit" + (k.tenus === k.total ? " ok" : ""), `${k.libelle}${k.attendu ? " " + k.attendu : ""} · ${k.tenus}/${k.total}`);
+    x.title = k.aide;
+    cr.append(x);
+  }
+  corps.append(cr);
+  if (o.intention) {
+    const it = el("div", "obj-intention");
+    const j = o.jugement;
+    it.append(el("span", "etiq", "intention · jugée"), el("p", null, o.intention),
+      el("span", "mut petit", j ? `${j.atteint ? "✓ atteinte" : "pas encore"} — jugé le ${j.date.slice(0, 10)}${j.note ? " : " + j.note : ""}` : "pas encore jugée"));
+    const oui = el("button", "pan-lien", "✓ atteinte");
+    const non = el("button", "pan-lien", "pas encore");
+    const juge = async (atteint) => {
+      const note = atteint ? "" : (prompt("Ce qui manque encore (facultatif) :") ?? null);
+      if (note === null) return;
+      await poste(`/objectifs/${o.id}/juge`, { atteint, note }).catch((e) => alert(e));
+      vueSuivi(version);
+    };
+    oui.onclick = () => juge(true);
+    non.onclick = () => juge(false);
+    it.append(" ", oui, " ", non);
+    corps.append(it);
+  }
+  const L = o.chapitres.filter((l) => l.ecarts.length);
+  if (L.length) {
+    const t = el("div", "obj-chapitres");
+    for (const l of L) {
+      const r = el("div", "obj-ligne");
+      const a = el("a", null, `${l.numero ?? "—"}. ${l.titre}`);
+      a.href = `#${l.slug}/${version === "essai" ? "essai/texte" : "recit/texte"}`;
+      r.append(a);
+      for (const e of l.ecarts) {
+        const x = el("span", "obj-ecart", `${e.libelle} : ${e.mesure}${e.attendu ? " (" + e.attendu + ")" : ""}`);
+        if (e.critere === "manques") { x.classList.add("cliquable"); x.onclick = () => { location.hash = `${l.slug}/essai/texte`; setTimeout(() => panneauManques(l.slug), 400); }; }
+        r.append(x);
+      }
+      t.append(r);
+    }
+    if (L.length > 8) {                              // le reste, replié
+      const caches = [...t.children].slice(8);
+      caches.forEach((x) => { x.hidden = true; });
+      const plus = el("button", "pan-lien", `+ ${caches.length} autres chapitres en écart`);
+      plus.onclick = () => { caches.forEach((x) => { x.hidden = false; }); plus.remove(); };
+      t.append(plus);
+    }
+    corps.append(t);
+  } else if (!o.atteint && !o.criteres_eval.length) corps.append(el("p", "mut petit", "Pas de critère mesuré : l'objectif tient à son intention."));
+  const act = el("div", "annot-actions");
+  const mod = el("button", "pan-lien", "✎ modifier");
+  mod.onclick = () => formObjectif(o, version, S);
+  act.append(mod);
+  if (i != null) {
+    for (const [lib, sens] of [["↑", -1], ["↓", 1]]) {
+      const b = el("button", "pan-lien", lib);
+      b.title = sens < 0 ? "plus prioritaire" : "moins prioritaire";
+      b.onclick = async () => {
+        const T = (await api("/objectifs")).objectifs.map((x) => x.id);
+        const k = T.indexOf(o.id);
+        // le voisin dans la même version (la liste mêle essai et récit)
+        const memes = T.filter((id) => (S.objectifs ?? []).some((x) => x.id === id && x.etat !== "archive"));
+        const voisin = memes[memes.indexOf(o.id) + sens];
+        if (!voisin) return;
+        const kv = T.indexOf(voisin);
+        [T[k], T[kv]] = [T[kv], T[k]];
+        await poste("/objectifs/ordre", { ids: T }, "PUT");
+        vueSuivi(version);
+      };
+      act.append(b);
+    }
+  }
+  const arch = el("button", "pan-lien", o.etat === "archive" ? "réactiver" : "archiver");
+  arch.onclick = async () => { await poste(`/objectifs/${o.id}`, { etat: o.etat === "archive" ? "actif" : "archive" }, "PUT"); vueSuivi(version); };
+  const sup = el("button", "pan-lien", "supprimer");
+  sup.onclick = async () => {
+    if (!confirm(`Supprimer l'objectif « ${o.titre} » ?`)) return;
+    await fetch(`/api/objectifs/${o.id}`, { method: "DELETE" });
+    vueSuivi(version);
+  };
+  act.append(arch, sup);
+  corps.append(act);
+  c.append(corps);
+  return c;
+}
+
+// L'avancement d'un objectif : sa courbe (les points notés quand la mesure change), ce qui a bougé depuis
+// le premier point, et son départ — une version marquée dans git, avec ce qui a changé depuis.
+function avancementObjectif(o, version) {
+  const z = el("div", "obj-avancement");
+  const H = o.historique ?? [];
+  if (H.length) {
+    const p0 = H[0];
+    const l = el("div", "obj-courbe");
+    l.append(courbe(H.map((p) => p.progression)), el("span", "petit",
+      `${p0.progression} % le ${p0.date.slice(8, 10)}/${p0.date.slice(5, 7)} → ${o.progression} % aujourd'hui` +
+      (H.length > 1 ? ` · ${H.length} mesures` : "")));
+    // ce qui a bougé, critère par critère, depuis le premier point
+    const bouge = o.criteres_eval.filter((c) => (p0.tenus?.[c.id] ?? c.tenus) !== c.tenus)
+      .map((c) => `${c.libelle} ${p0.tenus[c.id]} → ${c.tenus}/${c.total}`);
+    if (bouge.length) l.append(el("span", "mut petit", " · " + bouge.join(" · ")));
+    z.append(l);
+  }
+  const G = etat.depot ?? { actif: false };
+  const dep = el("div", "obj-depart");
+  if (o.depart?.tag) {
+    dep.append(el("span", "etiq", "départ"), el("code", null, "🏷 " + o.depart.tag),
+      el("span", "mut petit", (o.depart.date ? " · " + o.depart.date.slice(0, 10) : "") + (o.depart.commit ? " · " + o.depart.commit : "")));
+    const voir = el("button", "pan-lien", "ce qui a changé depuis…");
+    voir.onclick = async () => {
+      voir.disabled = true;
+      voir.textContent = "calcul…";
+      const D = await api(`/versions/depuis?tag=${encodeURIComponent(o.depart.tag)}&version=${version}`).catch((e) => ({ erreur: e }));
+      if (D.erreur) { voir.textContent = "indisponible"; voir.title = String(D.erreur); return; }
+      const r = el("div", "obj-depuis");
+      const f = D.fichiers;
+      r.append(el("span", "petit", `${f.modifies} fichier(s) modifié(s), ${f.ajoutes} ajouté(s), ${f.supprimes} supprimé(s) · texte : ` +
+        `${D.mots.avant.toLocaleString("fr-FR")} → ${D.mots.apres.toLocaleString("fr-FR")} mots`));
+      if (D.chapitres.length) {
+        const ul = el("div", "obj-depuis-ch");
+        for (const c of D.chapitres) {
+          const d = c.apres - c.avant;
+          ul.append(el("span", "petit", `${c.numero}. ${c.titre} ${d > 0 ? "+" : ""}${d.toLocaleString("fr-FR")}`));
+        }
+        r.append(ul);
+      } else r.append(el("span", "mut petit", " · aucun texte de chapitre n'a changé"));
+      voir.replaceWith(r);
+    };
+    dep.append(" ", voir);
+  } else if (G.actif && o.etat !== "archive") {
+    dep.append(el("span", "etiq", "départ"), el("span", "mut petit", "aucune version marquée "));
+    const m = el("button", "pan-lien", `🏷 marquer la version actuelle (${G.prefixe}${G.suivant})…`);
+    m.title = `git : commit du seul dossier du livre (${G.modifie} fichier(s) non commités), puis un tag local ${G.prefixe}${G.suivant} — rien n'est poussé`;
+    m.onclick = async () => {
+      const nom = prompt(`Nom de la version (le tag sera ${G.prefixe}<nom>) :`, G.suivant);
+      if (!nom) return;
+      const message = prompt("Une ligne pour la décrire :", `avant l'objectif « ${o.titre} »`) ?? "";
+      try { await poste(`/objectifs/${o.id}/depart`, { nom, message }); } catch (e) { alert(e); return; }
+      vueSuivi(version);
+    };
+    dep.append(m);
+    if (G.tags?.length) {
+      const sel = el("select", "livre-select petit");
+      sel.append(new Option("ou partir d'une version marquée…", ""));
+      for (const t of G.tags) sel.append(new Option(`${t.tag} · ${t.date.slice(0, 10)}`, t.tag));
+      sel.onchange = async () => { if (sel.value) { await poste(`/objectifs/${o.id}/depart`, { tag: sel.value }).catch((e) => alert(e)); vueSuivi(version); } };
+      dep.append(" ", sel);
+    }
+  }
+  if (dep.childElementCount) z.append(dep);
+  return z;
+}
+
+// Une courbe minuscule (0–100 %), en SVG.
+function courbe(V) {
+  const ns = "http://www.w3.org/2000/svg";
+  const s = document.createElementNS(ns, "svg");
+  const w = 120, h = 22;
+  s.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  s.setAttribute("class", "obj-svg");
+  const pts = (V.length > 1 ? V : [V[0], V[0]]).map((v, i, A) => `${(i * w / (A.length - 1)).toFixed(1)},${(h - 2 - (v / 100) * (h - 4)).toFixed(1)}`);
+  const p = document.createElementNS(ns, "polyline");
+  p.setAttribute("points", pts.join(" "));
+  s.append(p);
+  return s;
+}
+
+// Créer ou modifier un objectif. `brouillon` : une suggestion, pas encore enregistrée.
+async function formObjectif(o, version, S, brouillon = false) {
+  const D = await api("/objectifs");
+  const neuf = !o || brouillon;
+  o = o ?? { version, perimetre: { type: "livre" }, criteres: [] };
+  const f = el("div", "form-demande form-objectif");
+  const titre = el("input", "dem-motif");
+  titre.placeholder = "Le titre : ce qu'on vise (« La Terre relue », « Partie 1 sans manque »…)";
+  titre.value = o.titre ?? "";
+  // le périmètre
+  const per = el("select", "livre-select");
+  per.append(new Option("tout le livre", "livre"));
+  for (const p of etat.plan?.parties ?? []) per.append(new Option("partie : " + p.title, "partie:" + p.id));
+  per.append(new Option("des chapitres…", "chapitres"));
+  per.value = o.perimetre.type === "partie" ? "partie:" + o.perimetre.partie : o.perimetre.type;
+  const chs = el("div", "obj-choix-chapitres");
+  const cases = (S?.chapitres ?? etat.chapitres).map((c) => {
+    const l = el("label", "case-chapitre");
+    const x = el("input");
+    x.type = "checkbox";
+    x.value = c.slug;
+    x.checked = (o.perimetre.chapitres ?? []).includes(c.slug);
+    l.append(x, ` ${c.numero ?? ""}. ${c.titre ?? c.title}`);
+    chs.append(l);
+    return x;
+  });
+  const montreChs = () => { chs.hidden = per.value !== "chapitres"; };
+  per.onchange = montreChs;
+  montreChs();
+  // les critères
+  const crit = el("div", "obj-choix-criteres");
+  const champs = {};
+  for (const k of D.criteres.filter((x) => x.versions.includes(version))) {
+    const l = el("label", "obj-choix");
+    const x = el("input");
+    x.type = "checkbox";
+    const cur = o.criteres.find((c) => c.id === k.id);
+    x.checked = !!cur;
+    l.append(x, " " + k.libelle + " ");
+    let v = null;
+    if (k.id === "niveau") {
+      v = el("select", "livre-select");
+      for (const n of D.niveaux) v.append(new Option(LIB_AVANCEMENT[n] ?? n, n));
+      v.value = cur?.valeur ?? k.defaut;
+      l.append(k.sens + " ", v);
+    } else if (k.sens !== "=") {
+      v = el("input", "obj-nombre");
+      v.type = "number";
+      v.min = "0";
+      v.value = cur?.valeur ?? k.defaut;
+      l.append(k.sens + " ", v);
+    }
+    l.title = k.aide;
+    champs[k.id] = { x, v };
+    crit.append(l);
+  }
+  const intention = el("textarea", "annot-texte petit-texte");
+  intention.placeholder = "Une intention (facultatif), qu'aucune mesure ne capte — tu la jugeras : « le chapitre 2 tient sans la philosophie »…";
+  intention.value = o.intention ?? "";
+  const ech = el("input", "dem-motif");
+  ech.type = "date";
+  ech.value = o.echeance ?? "";
+  const bud = el("input", "obj-nombre");
+  bud.type = "number";
+  bud.min = "0";
+  bud.step = "1";
+  bud.placeholder = "$";
+  bud.value = o.budget ?? "";
+  const G = etat.depot ?? { actif: false };
+  let marquer = null, nomV = null;
+  if (neuf && G.actif) {
+    marquer = el("input");
+    marquer.type = "checkbox";
+    marquer.checked = true;
+    nomV = el("input", "obj-nombre");
+    nomV.value = G.suivant;
+    nomV.style.width = "5em";
+  }
+  const go = el("button", "bouton", neuf ? "Créer l'objectif" : "Enregistrer");
+  const err = el("span", "err petit");
+  go.onclick = async () => {
+    const pv = per.value;
+    const corps = {
+      titre: titre.value, version,
+      perimetre: pv.startsWith("partie:") ? { type: "partie", partie: pv.slice(7) }
+        : pv === "chapitres" ? { type: "chapitres", chapitres: cases.filter((x) => x.checked).map((x) => x.value) } : { type: "livre" },
+      criteres: Object.entries(champs).filter(([, c]) => c.x.checked).map(([id, c]) => ({ id, valeur: c.v ? (c.v.type === "number" ? Number(c.v.value) : c.v.value) : true })),
+      intention: intention.value, echeance: ech.value || null, budget: bud.value === "" ? null : Number(bud.value),
+    };
+    if (marquer?.checked) corps.marquer = { nom: nomV.value.trim() };
+    go.disabled = true;
+    try {
+      await poste(neuf ? "/objectifs" : `/objectifs/${o.id}`, corps, neuf ? "POST" : "PUT");
+    } catch (e) { go.disabled = false; err.textContent = e; return; }
+    f.remove();
+    vueSuivi(version);
+  };
+  const ligne = (lib, ...x) => { const r = el("div", "obj-champ"); r.append(el("span", "etiq", lib), ...x); return r; };
+  f.append(ligne("titre", titre), ligne("périmètre", per), chs, ligne("critères", el("span", "mut petit", "tenus sur chaque chapitre du périmètre")), crit,
+    ligne("intention", intention), ligne("échéance", ech, el("span", "etiq", "budget"), bud, el("span", "mut petit", neuf ? "$ (dépensés à partir de maintenant)" : "$ (dépensés depuis la création)")));
+  if (marquer) {
+    const l = el("label", "obj-choix");
+    l.append(marquer, ` 🏷 marquer d'abord la version actuelle dans git : ${G.prefixe}`, nomV);
+    l.title = `commit du seul dossier du livre (${G.modifie} fichier(s) non commités), puis un tag local — rien n'est poussé. ` +
+      "L'objectif part de cette version : sa carte dira ce qui a changé depuis.";
+    f.append(ligne("départ", l));
+  }
+  f.append(el("div", "annot-actions"));
+  f.lastChild.append(go, err);
+  enModale(neuf ? "Nouvel objectif" : "Modifier l'objectif", `${version === "essai" ? "l'essai" : "le récit"}` + (neuf ? " — dans l'ordre de priorité, après les autres" : ""), f);
+  titre.focus();
+}
+
+// Le travail en cours d'un chapitre : en file, en cours, à décider, manques — un clic déplie la liste.
+function travailChapitre(t, slug, ligne) {
+  const z = el("span", "travail");
+  if (!t) return z;
+  const liste = (titre, L) => () => {
+    const ex = ligne.querySelector(".travail-liste");
+    if (ex && ex.dataset.quoi === titre) { ex.remove(); return; }
+    ex?.remove();
+    const d = el("div", "travail-liste");
+    d.dataset.quoi = titre;
+    d.append(el("span", "etiq", titre));
+    for (const x of L) {
+      const b = el("button", "pan-lien", (x.etat === "en_cours" ? "▶ " : "") + x.titre);
+      b.title = `${x.id} · ${x.etat}`;
+      b.onclick = () => ouvreDemande(x.slug === "_kb" ? "_kb" : x.slug, x.id);
+      d.append(b);
+    }
+    ligne.append(d);
+  };
+  const file = [...(t.en_cours ?? []), ...(t.en_file ?? [])];
+  const pastille = (cls, txt, titre, f) => { const b = el("button", "pastille-travail " + cls, txt); b.title = titre; b.onclick = f; z.append(b); };
+  if (file.length) pastille("p-file", `⏳ ${file.length}`, `${t.en_cours.length} en cours, ${t.en_file.length} en file`, liste("en file", file));
+  if (t.a_decider?.length) pastille("p-decider", `✋ ${t.a_decider.length}`, `${t.a_decider.length} résultat(s) à décider`, liste("à décider", t.a_decider));
+  if (t.manques && slug) pastille("p-manques", `◌ ${t.manques}`, `${t.manques} manque(s) signalé(s) par la dernière rédaction`,
+    () => { location.hash = `${slug}/essai/texte`; setTimeout(() => panneauManques(slug), 400); });
+  return z;
 }
 
 function legendeSuivi() {
@@ -8081,6 +8575,9 @@ function legendeSuivi() {
     l.append(el("span", "seg-pastille seg-" + k), el("strong", null, `${t} · ${p}`), el("span", "mut petit", x));
     d.append(l);
   }
+  d.append(el("h4", null, "Le travail"), el("p", "mut petit",
+    "⏳ demandes en file ou en cours · ✋ résultats à décider · ◌ manques signalés par la dernière rédaction · ◎n : l'objectif n n'est pas tenu sur ce chapitre. " +
+    "Une demande de la base compte pour les chapitres qu'elle sert ; « sans chapitre » regroupe les autres."));
   return d;
 }
 
@@ -8205,6 +8702,14 @@ function chapitresSuivi(S, version, F) {
     st.title = TITRE_AVANCEMENT[c.niveau];
     const sc = el("span", "suivi-pct", c.score + " %");
     const acts = el("div", "suivi-acts");
+    acts.append(travailChapitre(c.travail, c.slug, l));
+    for (const [k, o] of (S.objectifs ?? []).filter((o) => o.etat !== "archive").entries()) {
+      const li = o.chapitres.find((x) => x.slug === c.slug);
+      if (!li?.ecarts.length) continue;
+      const m = el("span", "obj-marque", "◎" + (k + 1));
+      m.title = `objectif ${k + 1} « ${o.titre} » — ` + li.ecarts.map((e) => `${e.libelle} : ${e.mesure}`).join(" · ");
+      acts.append(m);
+    }
     acts.append(...c.actions.slice(0, 4).map((x) => puceAction(x, c.slug)));
     if (c.actions.length > 4) {
       const plus = el("button", "pan-lien", `+${c.actions.length - 4}`);
@@ -8212,6 +8717,17 @@ function chapitresSuivi(S, version, F) {
       acts.append(plus);
     }
     l.append(a, st, barreEtapes(c.etapes, S.bareme), sc, acts);
+    d.append(l);
+  }
+  const sc = S.sans_chapitre;
+  if (sc && (sc.en_file.length || sc.en_cours.length || sc.a_decider.length)) {
+    d.append(el("h3", "suivi-partie", "Sans chapitre"));
+    const l = el("div", "suivi-ligne");
+    const t = el("span", "suivi-titre mut", "demandes qui ne servent aucun chapitre");
+    t.title = "références, textes originaux, renvois, et fiches ou creusements rattachés à aucun chapitre — souvent la première chose à couper";
+    const acts = el("div", "suivi-acts");
+    acts.append(travailChapitre(sc, null, l));
+    l.append(t, el("span"), el("span"), el("span"), acts);
     d.append(l);
   }
   return d;
@@ -8533,11 +9049,12 @@ function porteeOeuvre(cle) {
 
 // ------------------------------------------------------------------ réviser, et l'historique
 
-function formRevision(slug) {
+function formRevision(slug, consigne = "") {
   const f = el("div", "form-demande");
   const cons = el("textarea", "annot-texte");
   cons.placeholder = "Ce qu'il faut faire : couper les redites avec le chapitre précédent, retirer ce qui relève du vivant (Une Vie), " +
     "resserrer la section @chapitre/…, garder l'exemple de…";
+  cons.value = consigne;
   const mots = el("input", "dem-motif");
   mots.type = "number";
   mots.min = 300;
@@ -8964,3 +9481,153 @@ function boutonLecture() {
 }
 
 appliqueLecture(lecture());
+
+// ------------------------------------------------------------------ ce qui manque à un chapitre
+// Les manques signalés par ses rédactions et révisions, et les phrases (texte et notes) qui parlent de la
+// base — le lecteur ne la connaît pas : à remplacer par un fait du monde, ou par une fiche (règle R8).
+
+function boutonManque(m, slug) {
+  const go = el("button", "pan-lien", m.type === "creuser" && m.fiche ? "◇ creuser la fiche" : "✚ créer la fiche");
+  go.onclick = async () => {
+    go.disabled = true;
+    try {
+      const r = m.type === "creuser" && m.fiche
+        ? await poste(`/fiches/${m.fiche}/pistes`, { consigne: m.question })
+        : await poste("/fiches/demandes", { question: m.question, chapitres: [slug], consigne: m.pourquoi ?? "" });
+      go.replaceWith(Object.assign(el("a", "pan-lien", "lancée → ouvrir"), { href: "#", onclick: (e) => { e.preventDefault(); tiroir(r.id); } }));
+    } catch (e) { go.disabled = false; alert(e); }
+  };
+  return go;
+}
+
+// Dans le volet de droite : on garde la liste sous les yeux en parcourant le texte.
+async function panneauManques(slug) {
+  const M = await api(`/chapitres/${slug}/manques`).catch(() => null);
+  const volet = document.getElementById("fiche");
+  const f = el("div", "manques");
+  const tete = el("div", "pan-tete");
+  const x = el("button", "fermer", "×");
+  x.title = "revenir au détail du paragraphe";
+  x.onclick = () => fiche(etat.blocEssai);
+  tete.append(el("h4", null, "Ce qui manque au chapitre"), x);
+  volet.replaceChildren(tete, f);
+  document.getElementById("droite").scrollTop = 0;
+  if (!M) { f.append(el("p", "err", "illisible")); return; }
+  // regrouper : plutôt qu'une fiche par manque, l'assistant en propose quelques-unes (une passe, sans web)
+  const nM = M.redactions.reduce((n, r) => n + r.manques.length, 0) + M.mentions.length;
+  if (nM) {
+    const rg = el("button", "bouton", `✦ regrouper ces ${nM} manques avec l'assistant…`);
+    rg.title = "ouvre l'assistant avec la liste : il propose 3 à 6 fiches (ou fiches existantes à creuser) qui couvrent l'essentiel ; vous lancez celles que vous voulez";
+    rg.onclick = () => {
+      const L = [...M.redactions.flatMap((r) => r.manques.map((m) => `- ${m.type === "creuser" && m.fiche ? "(creuser " + m.fiche + ") " : ""}${m.question}`)),
+        ...M.mentions.map((m) => `- (${m.bloc ? "^" + m.bloc : "note " + m.note}) « ${m.phrase} »`)];
+      etat.brouillonDialogue = `Regroupe ce qui manque au chapitre @chapitre/${slug}/essai en 3 à 6 actions au plus : une fiche nouvelle quand ` +
+        "rien n'existe, « creuser » une fiche existante quand elle couvre déjà le sujet. Une action couvre plusieurs manques. " +
+        "Ne propose rien pour ce que le texte peut simplement dire comme une incertitude (« on ignore encore… »). " +
+        "Pour chaque action, dis quels manques elle couvre.\n\nLes manques :\n" + L.join("\n");
+      dialogue(null);
+    };
+    const ra = el("div", "annot-actions");
+    ra.append(rg);
+    f.append(ra);
+  }
+  // les manques des rédactions
+  f.append(el("h5", null, "Signalés par les rédactions"));
+  const R = M.redactions.filter((r) => r.manques.length);
+  if (!R.length) f.append(el("p", "mut petit", "Aucun : les rédactions de ce chapitre n'ont rien signalé (ou il n'en a pas eu)."));
+  for (const r of R) {
+    const t = el("p", "mut petit");
+    const a = el("a", null, r.id);
+    a.href = "#";
+    a.onclick = (e) => { e.preventDefault(); tiroir(r.id); };
+    t.append(`${r.mode === "revision" ? "révision" : "rédaction"} du ${(r.date ?? "").slice(0, 10)} · `, a);
+    f.append(t);
+    for (const m of r.manques) {
+      const b = el("div", "piste piste-nouvelle");
+      b.append(el("p", "annot-corps", `${m.type === "creuser" ? "◇ " + (m.fiche ?? "") + " — " : "✚ "}${m.question}`));
+      if (m.pourquoi) b.append(el("p", "mut petit", m.pourquoi));
+      b.append(boutonManque(m, slug));
+      f.append(b);
+    }
+  }
+  // les phrases qui parlent de la base
+  f.append(el("h5", null, `Le texte parle de la base (${M.mentions.length})`));
+  if (!M.mentions.length) f.append(el("p", "mut petit", "Aucune phrase : le texte ne mentionne ni la base ni les fiches."));
+  else {
+    f.append(el("p", "mut petit", "Le lecteur ne connaît pas la base (garde-fou R8). Chaque phrase se remplace par un fait du monde " +
+      "(« on ignore encore… »), ou disparaît ; ce qui manque vraiment devient une fiche."));
+    const act = el("div", "annot-actions");
+    const rv = el("button", "bouton", `✎ réviser pour retirer ces ${M.mentions.length} mentions…`);
+    rv.onclick = () => formRevision(slug, "Retirer toute mention de « la base » et des « fiches », dans le texte et dans les notes (garde-fou R8) : " +
+      "chaque phrase se réécrit comme un fait du monde — ce qu'on ignore, avec son degré — ou disparaît si elle ne dit rien d'autre ; " +
+      "ne rien ajouter que les fiches n'établissent ; le reste du texte est inchangé.");
+    act.append(rv);
+    f.append(act);
+    const ul = el("ul", "mentions-base");
+    for (const m of M.mentions) {
+      const li = el("li");
+      const ou = el("a", "pan-lien", m.bloc ? "^" + m.bloc : "note " + m.note);
+      ou.href = "#";
+      ou.onclick = (e) => {
+        e.preventDefault();
+        if (m.bloc && etat.slug === slug && etat.essaiMode === "texte" && blocEl(m.bloc)) {
+          const b = blocEl(m.bloc);
+          b.scrollIntoView({ block: "center" });
+          b.classList.remove("eclair"); void b.offsetWidth; b.classList.add("eclair");
+          ul.querySelectorAll("li").forEach((y) => y.classList.toggle("choisi", y === li));
+        } else if (m.bloc) { etat.blocEssai = m.bloc; location.hash = `${slug}/essai/texte`; }
+        else { etat.noteApres = m.note; location.hash = `${slug}/essai/notes`; }
+      };
+      const fiche = el("button", "pan-lien", "✚ fiche");
+      fiche.title = "chercher ce que la science en sait (une fiche nouvelle)";
+      fiche.onclick = async () => {
+        fiche.disabled = true;
+        try {
+          const r = await poste("/fiches/demandes", { question: "Que sait-on, sources à l'appui, sur ce point resté ouvert : « " + m.phrase + " »", chapitres: [slug] });
+          fiche.replaceWith(Object.assign(el("a", "pan-lien", "lancée → ouvrir"), { href: "#", onclick: (e) => { e.preventDefault(); tiroir(r.id); } }));
+        } catch (e) { fiche.disabled = false; alert(e); }
+      };
+      li.append(ou, " ", el("span", null, m.phrase), " ", fiche);
+      ul.append(li);
+    }
+    f.append(ul);
+  }
+}
+
+// ------------------------------------------------------------------ le panneau de droite : sa largeur
+// Sa largeur d'origine change selon la vue (20 rem, 25 pour le panneau du storyboard, 30 pour l'aperçu
+// d'une fiche) : la poignée suit son bord réel ; une largeur choisie vaut pour toutes les vues.
+{
+  const droite = document.getElementById("droite");
+  const pose_ = (l) => { if (l) document.documentElement.style.setProperty("--droite-l", l); else document.documentElement.style.removeProperty("--droite-l"); };
+  try { pose_(localStorage.getItem("atelier-droite-largeur")); } catch { /* */ }
+  const h = el("div", "droite-poignee");
+  h.title = "tirer pour élargir le panneau (double-clic : largeur d'origine)";
+  const place = () => {
+    const r = droite.getBoundingClientRect();
+    const vu = r.width > 0 && getComputedStyle(droite).display !== "none" && window.innerWidth > 760;
+    h.style.display = vu ? "block" : "none";
+    h.style.left = Math.round(r.left - 4) + "px";
+  };
+  h.onmousedown = (e) => {
+    e.preventDefault();
+    document.body.classList.add("redimensionne");
+    const bouge = (m) => { pose_(Math.max(220, Math.min(window.innerWidth * 0.55, window.innerWidth - m.clientX)) + "px"); place(); };
+    const lache = () => {
+      document.removeEventListener("mousemove", bouge);
+      document.removeEventListener("mouseup", lache);
+      document.body.classList.remove("redimensionne");
+      try { localStorage.setItem("atelier-droite-largeur", document.documentElement.style.getPropertyValue("--droite-l")); } catch { /* */ }
+    };
+    document.addEventListener("mousemove", bouge);
+    document.addEventListener("mouseup", lache);
+  };
+  h.ondblclick = () => { pose_(null); try { localStorage.removeItem("atelier-droite-largeur"); } catch { /* */ } place(); };
+  document.body.append(h);
+  const ro = new ResizeObserver(place);
+  ro.observe(droite);
+  ro.observe(document.getElementById("centre"));          // le volet de gauche bouge : le bord de droite aussi
+  window.addEventListener("resize", place);
+  window.addEventListener("hashchange", () => setTimeout(place, 300));
+  place();
+}

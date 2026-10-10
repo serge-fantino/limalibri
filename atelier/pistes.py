@@ -64,6 +64,9 @@ def compile_contexte(d):
     L = ["# La fiche à creuser : %s — %s" % (slug, f["titre"]),
          "Fichier : kb/fiches/%s.md (le lire en entier)" % slug,
          "Sujet : %s" % meta.get("sujet", ""), "Confiance : %s" % meta.get("confiance", "")]
+    from . import filiation
+    n = filiation.reglage()["enfants"]
+    L.append("\nPlafond de ce livre : %d piste%s au plus — les plus utiles au livre, les autres non." % (n, "s" if n > 1 else ""))
     if d.get("consigne"):
         L.append("\n## Précision de l'auteur\n" + d["consigne"])
     L.append("\n## Ses sections\n" + "\n".join("%s- %s {#%s}" % ("  " * (s["niveau"] - 2), s["titre"], s["id"])
@@ -170,8 +173,29 @@ def decide(ident, corps):
         reecriture._ecrit(SLUG_KB, d)
         return d
     P = d["resultat"]["pistes"]
+    from . import filiation
+    pl = filiation.place(ident)
+    choisies = corps.get("pistes") or []
+    if len(choisies) > pl["permis"]:
+        raise ValueError("%d pistes cochées, %d permises — %s" % (
+            len(choisies), pl["permis"], pl["motif"] or "plafond : %d fiches au plus par creusement (claude.file.enfants)"
+            % filiation.reglage()["enfants"]))
     lancees = []
-    for x in corps.get("pistes") or []:
+    with filiation.depuis(ident):
+        _cree_fiches(d, P, choisies, lancees, ident)
+    if not lancees:
+        raise ValueError("aucune piste cochée")
+    d = reecriture.lit(SLUG_KB, ident)           # relue : elle compte maintenant ses enfants
+    d.update(etat="decidee", decision={"proposition": "pistes", "lancees": lancees, "motif": motif,
+                                       "date": livre._maintenant(), "en_file": True})
+    reecriture._ecrit(SLUG_KB, d)
+    from . import file
+    file.suivante()                              # seulement si l'enchaînement est activé
+    return d
+
+
+def _cree_fiches(d, P, choisies, lancees, ident):
+    for x in choisies:
         i = x.get("i")
         if not isinstance(i, int) or not 0 <= i < len(P):
             raise ValueError("piste inconnue : %s" % i)
@@ -183,11 +207,3 @@ def decide(ident, corps):
             "consigne": "Piste proposée en creusant la fiche [[%s]]%s : %s" % (
                 d["cible"]["fiche"], " (section {#%s})" % p["appel"] if p.get("appel") else "", p["pourquoi"])})
         lancees.append({"i": i, "demande": n["id"]})
-    if not lancees:
-        raise ValueError("aucune piste cochée")
-    d.update(etat="decidee", decision={"proposition": "pistes", "lancees": lancees, "motif": motif,
-                                       "date": livre._maintenant(), "en_file": True})
-    reecriture._ecrit(SLUG_KB, d)
-    from . import file
-    file.suivante()                              # seulement si l'enchaînement est activé
-    return d

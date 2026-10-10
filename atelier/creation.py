@@ -188,9 +188,7 @@ def demarre(ident):
     d["contexte"] = {"systeme": systeme, "message": message}
     reecriture._ecrit(SLUG_KB, d)
     import asyncio
-    t = asyncio.get_running_loop().create_task(_execute(d["id"]))
-    reecriture._taches.add(t)
-    t.add_done_callback(reecriture._taches.discard)
+    t = reecriture.tache(_execute(d["id"]))
     return d
 
 
@@ -302,9 +300,10 @@ def decide(ident, corps):
     _ecrit_fiche(d, R, slug, (corps.get("titre") or "").strip() or R["titre"], "brouillon")
     relies = _relie(slug, corps.get("chapitres") or [], ident)
     retours = _liens_retour(slug, R.get("liens") or [], ident) if corps.get("liens_retour") else []   # d'ordinaire : à la validation
-    verifs = _verifie_sources(R.get("sources") or []) if corps.get("verifier_sources", True) else []
+    verifs, sautees = _verifie_sources(R.get("sources") or [], ident) if corps.get("verifier_sources", True) else ([], [])
+    d["enfants"] = reecriture.lit(SLUG_KB, ident).get("enfants") or d.get("enfants") or []   # inscrits pendant la vérification
     d.update(etat="decidee", decision={"proposition": slug, "fiche": slug, "chapitres": relies, "liens_retour": retours,
-                                       "verifications": verifs, "motif": motif, "date": livre._maintenant()})
+                                       "verifications": verifs, "verifications_sautees": sautees, "motif": motif, "date": livre._maintenant()})
     reecriture._ecrit(SLUG_KB, d)
     return d
 
@@ -380,23 +379,24 @@ def _liens_retour(slug, liens, ident):
     return faits
 
 
-def _verifie_sources(S):
-    """Une vérification de référence, mise en file, pour chaque source que Claude n'a pas lue."""
-    from . import references
+def _verifie_sources(S, ident):
+    """Les sources que Claude n'a pas pu lire : une vérification de référence chacune, filles de la
+    demande de fiche — dans la limite de la filiation (profondeur, nombre d'enfants). Rend
+    (lancées, sautées) ; les sautées se vérifient à la main."""
+    from . import references, filiation
     ouvertes = {x.get("cle") for x in reecriture.liste(SLUG_KB)
                 if x.get("type") == "reference" and x.get("etat") in ("en_cours", "en_attente", "prete")}
+    a_faire = [c for c in (_slug(s.get("cle") or "") for s in S if not s.get("verifie")) if c and c not in ouvertes]
+    permis = filiation.place(ident)["permis"]
     faits = []
-    for s in S:
-        cle = _slug(s.get("cle") or "")
-        if s.get("verifie") or not cle or cle in ouvertes:
-            continue
-        try:
-            references.cree({"cle": cle, "consigne": "source d'une fiche nouvelle, que Claude n'a pas pu lire à l'écriture"})
-            faits.append(cle)
-        except Exception:                          # noqa: BLE001 — une œuvre illisible n'empêche pas la fiche
-            pass
-    return faits
-
+    with filiation.depuis(ident):
+        for cle in a_faire[:permis]:
+            try:
+                references.cree({"cle": cle, "consigne": "source d'une fiche nouvelle, que Claude n'a pas pu lire à l'écriture"})
+                faits.append(cle)
+            except Exception:                      # noqa: BLE001 — une œuvre illisible n'empêche pas la fiche
+                pass
+    return faits, a_faire[permis:]
 
 def _relie(slug, chapitres, ident):
     """Ajoute la fiche aux « fiches: » des chapitres donnés (journal du chapitre)."""

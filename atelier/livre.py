@@ -177,6 +177,8 @@ def ecrit_meta(champs, version):
                     fi[k] = bool(v)
                 elif k == "simultanees":
                     fi["simultanees"] = max(1, int(v))
+                elif k in ("profondeur", "enfants"):    # les plafonds de la filiation (atelier/filiation.py)
+                    fi[k] = max(0, min(9, int(v)))
                 else:
                     raise KeyError("claude.file.%s" % k)
         for g, cles in CLAUDE_GENRES.items():

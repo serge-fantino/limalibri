@@ -75,7 +75,9 @@ N'invente jamais une référence : seulement des identifiants que tu as lus.
 
 ## Les actions (le champ `actions`)
 Quand la réponse appelle un travail, propose-le — l'auteur décide et lance. Rien s'il n'y a rien à faire ;
-trois au plus. Chaque action : `type`, `titre` (court), `pourquoi` (une phrase), et ses paramètres :
+trois au plus d'ordinaire, six au plus quand on te demande de regrouper (des manques, des pistes) : alors
+une action couvre plusieurs points, une fiche existante se « creuse » plutôt qu'on n'en crée une voisine,
+et ce que le texte peut dire comme une incertitude n'appelle aucune fiche. Chaque action : `type`, `titre` (court), `pourquoi` (une phrase), et ses paramètres :
 - `fiche` — créer une fiche : `question` (la question qu'elle doit traiter), `slug` proposé, `chapitres`
   concernés, `consigne`.
 - `pistes` — creuser une fiche existante (ce qui lui manque, les fiches à créer) : `fiche`, `consigne`.
@@ -204,9 +206,7 @@ def demande(ident, corps):
     c["titre"] = c.get("titre") or " ".join(q.split())[:80]
     c["etat"] = "en_cours"
     _ecrit(c)
-    tache = asyncio.get_running_loop().create_task(_execute(ident))
-    reecriture._taches.add(tache)
-    tache.add_done_callback(reecriture._taches.discard)
+    tache = reecriture.tache(_execute(ident))
     return c
 
 
@@ -238,7 +238,7 @@ async def _execute(ident):
         if not sortie:
             raise ValueError("aucune réponse structurée")
         t.update(etat="fini", reponse=sortie.get("reponse", ""),
-                 actions=[a for a in sortie.get("actions") or [] if a.get("type") in TYPES_ACTION][:3])
+                 actions=[a for a in sortie.get("actions") or [] if a.get("type") in TYPES_ACTION][:6])
     except Exception as e:                         # noqa: BLE001 — l'erreur est rendue à l'auteur
         t.update(etat="erreur", erreur="%s: %s" % (type(e).__name__, e))
     modele_vu = t.get("modele_en_cours")
@@ -274,6 +274,12 @@ def lance(ident, n, i, corps):
         raise reecriture.Conflit("action déjà lancée : %s" % a["lancee"]["id"])
     p = dict(a)
     p.update({k: v for k, v in (corps or {}).items() if k != "type"})
+    from . import filiation
+    with filiation.depuis(ident):
+        return _lance_action(ident, n, i, a, p)
+
+
+def _lance_action(ident, n, i, a, p):
     ty = a["type"]
     base = {"consigne": p.get("consigne") or "", "modele": p.get("modele")}
     if ty == "fiche":

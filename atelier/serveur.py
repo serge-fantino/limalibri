@@ -12,7 +12,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction, suivi, serie, evenements
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction, suivi, serie, evenements, objectifs
+from . import versions as depot          # git : marquer une version du livre (le nom « versions » est pris)
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
@@ -302,6 +303,21 @@ def toutes_les_demandes():
     return reecriture.liste_toutes()
 
 
+@app.post("/api/demandes/verifier")
+def verifie_demandes():
+    """Confronter l'état des demandes « en cours » à leurs tâches réelles ; les perdues passent en erreur."""
+    return {"corrigees": reecriture.verifie()}
+
+
+@app.post("/api/chapitres/{slug}/demandes/{ident}/verifier")
+def verifie_demande(slug: str, ident: str):
+    try:
+        c = reecriture.verifie(slug, ident)
+        return dict(reecriture.lit(slug, ident), corrigee=bool(c))
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+
+
 @app.post("/api/chapitres/{slug}/demandes/{ident}/reprise")
 async def reprise(slug: str, ident: str):
     """Reprendre une demande arrêtée dans sa session : Claude rend sa réponse sans chercher plus."""
@@ -398,6 +414,116 @@ def consommation_journal():
     return FileResponse(f, media_type="application/x-ndjson", filename=consommation.NOM)
 
 
+@app.get("/api/objectifs")
+def objectifs_liste():
+    """Les objectifs (bruts, dans l'ordre de priorité) et la définition des critères."""
+    return {"objectifs": objectifs.lit_tous(), **objectifs.definitions()}
+
+
+@app.post("/api/objectifs")
+async def objectif_cree(request: Request):
+    """{titre, version, perimetre: {type: livre|partie|chapitres, …}, criteres: [{id, valeur}], intention?, echeance?,
+    budget?, marquer?: {nom, message}} — marquer : la version actuelle est d'abord taguée dans git, et devient le
+    départ de l'objectif (rien n'est créé si le tag échoue)."""
+    c = await request.json()
+    try:
+        objectifs._propre(c)                            # valider avant de toucher à git
+        m = c.get("marquer")
+        dep = depot.marque(m.get("nom"), m.get("message") or "avant l'objectif « %s »" % c.get("titre")) if m else None
+        o = objectifs.cree(c)
+        return objectifs.pose_depart(o["id"], dep) if dep else o
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409, "git : %s" % e)
+
+
+@app.post("/api/objectifs/{ident}/depart")
+async def objectif_depart(ident: str, request: Request):
+    """Le départ d'un objectif : {tag} (une version déjà marquée) ou {nom, message} (marquer maintenant)."""
+    c = await request.json()
+    try:
+        if c.get("tag"):
+            t = next((x for x in depot.etat().get("tags") or [] if x["tag"] == c["tag"]), None)
+            if not t:
+                raise ValueError("version inconnue : %s" % c["tag"])
+            dep = {"tag": t["tag"], "date": t["date"]}
+        else:
+            o = next(x for x in objectifs.lit_tous() if x.get("id") == ident)
+            dep = depot.marque(c.get("nom"), c.get("message") or "départ de l'objectif « %s »" % o.get("titre"))
+        return objectifs.pose_depart(ident, dep)
+    except (KeyError, StopIteration):
+        raise HTTPException(404, "objectif inconnu : %s" % ident)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409, "git : %s" % e)
+
+
+@app.get("/api/versions")
+def versions_etat():
+    """Le livre dans git : actif ?, préfixe des tags, fichiers non commités, versions marquées, nom suivant."""
+    return depot.etat()
+
+
+@app.post("/api/versions")
+async def versions_marque(request: Request):
+    """Marquer la version actuelle : {nom, message} — commit du seul dossier du livre, puis tag (local)."""
+    c = await request.json()
+    try:
+        return depot.marque(c.get("nom"), c.get("message"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(409, "git : %s" % e)
+
+
+@app.get("/api/versions/depuis")
+def versions_depuis(tag: str, version: str = "essai"):
+    """Ce qui a changé depuis une version marquée : fichiers, mots du texte par chapitre."""
+    try:
+        return depot.depuis(tag, version)
+    except KeyError:
+        raise HTTPException(404, "version inconnue : %s" % tag)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.put("/api/objectifs/ordre")
+async def objectifs_ordre(request: Request):
+    """{ids: [...]} — l'ordre de priorité."""
+    return {"objectifs": objectifs.ordonne((await request.json()).get("ids") or [])}
+
+
+@app.put("/api/objectifs/{ident}")
+async def objectif_modifie(ident: str, request: Request):
+    try:
+        return objectifs.modifie(ident, await request.json())
+    except KeyError:
+        raise HTTPException(404, "objectif inconnu : %s" % ident)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/objectifs/{ident}/juge")
+async def objectif_juge(ident: str, request: Request):
+    """L'intention, jugée : {atteint, note?}."""
+    try:
+        return objectifs.juge(ident, await request.json())
+    except KeyError:
+        raise HTTPException(404, "objectif inconnu : %s" % ident)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/objectifs/{ident}")
+def objectif_supprime(ident: str):
+    try:
+        return objectifs.supprime(ident)
+    except KeyError:
+        raise HTTPException(404, "objectif inconnu : %s" % ident)
+
+
 @app.get("/api/suivi/{version}")
 def suivi_version(version: str):
     """Le suivi d'une version : chaque chapitre noté par étapes, le livre, et ce qu'il reste à faire."""
@@ -453,6 +579,12 @@ async def redaction_cree(request: Request):
         raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/api/chapitres/{slug}/manques")
+def manques_chapitre(slug: str):
+    """Ce qui manque à l'essai d'un chapitre : manques des rédactions, phrases qui parlent de la base."""
+    return redaction.manques(slug)
 
 
 @app.get("/api/chapitres/{slug}/historique")
@@ -759,7 +891,9 @@ async def lit_confiance(slug: str, request: Request):
 
 @app.get("/api/file")
 def file_etat():
-    """La file d'attente : réglage (auto, simultanées), en cours, en attente."""
+    """La file d'attente : réglage (auto, simultanées), en cours, en attente. Les demandes « en cours »
+    perdues (tâche morte) sont d'abord ramenées à leur état réel."""
+    reecriture.verifie()
     return file.etat()
 
 
@@ -768,7 +902,7 @@ async def file_reglage(request: Request):
     """{auto?, simultanees?} — écrit dans livre.yaml ; activer l'enchaînement lance la suivante."""
     c = await request.json()
     m = livre.meta()
-    livre.ecrit_meta({"claude": {"file": {k: c[k] for k in ("auto", "simultanees", "creer_d_office") if k in c}}}, m["_version"])
+    livre.ecrit_meta({"claude": {"file": {k: c[k] for k in ("auto", "simultanees", "creer_d_office", "profondeur", "enfants") if k in c}}}, m["_version"])
     file.suivante()
     return file.etat()
 
@@ -973,7 +1107,9 @@ async def relance(slug: str, ident: str, request: Request):
 @app.get("/api/chapitres/{slug}/demandes/{ident}")
 def demande(slug: str, ident: str):
     try:
-        return reecriture.lit(slug, ident)
+        d = reecriture.lit(slug, ident)
+        d["fichier"] = str(reecriture._dossier(slug) / (ident + ".json"))
+        return d
     except KeyError:
         raise HTTPException(404, "demande inconnue : %s" % ident)
 

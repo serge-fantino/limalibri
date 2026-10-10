@@ -96,9 +96,7 @@ def demarre(ident):
              contexte={"systeme": SYSTEME, "message": "\n".join(L) + _refs(d)})
     reecriture._ecrit(SLUG_KB, d)
     import asyncio
-    t = asyncio.get_running_loop().create_task(_execute(ident))
-    reecriture._taches.add(t)
-    t.add_done_callback(reecriture._taches.discard)
+    t = reecriture.tache(_execute(ident))
     return d
 
 

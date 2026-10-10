@@ -168,9 +168,7 @@ def demarre(ident):
     d["cible"]["usages"] = [u["ou"] for u in U]
     reecriture._ecrit(SLUG_KB, d)
     import asyncio
-    t = asyncio.get_running_loop().create_task(_execute(ident))
-    reecriture._taches.add(t)
-    t.add_done_callback(reecriture._taches.discard)
+    t = reecriture.tache(_execute(ident))
     return d
 
 
