@@ -204,6 +204,21 @@ def chapitre(c, version, demandes):
                              type_="annotations", poids=round(5 - p_ann, 1)))
         if niv == "brouillon":
             A.append(_action("relecture", "passer en relu, puis en validé", plan_c, type_="statut", poids=5))
+        # la relecture critique : jamais faite, ou le texte a changé depuis la dernière (hors barème)
+        R = [x for x in demandes.get(slug, []) if x.get("type") == "relecture" and x.get("version") in (None, version)]
+        if not any(x.get("etat") in ("en_attente", "en_cours") for x in R):
+            faites = sorted((x for x in R if x.get("etat") in ("decidee", "prete")), key=lambda x: x["cree"])
+            depuis = None
+            if faites:
+                import datetime
+                try:
+                    depuis = datetime.datetime.fromisoformat(faites[-1]["cree"]).timestamp()
+                except ValueError:
+                    depuis = None
+            if not faites:
+                A.append(_action("relecture", "relecture critique", vue_texte, type_="relecture"))
+            elif depuis and pv.exists() and pv.stat().st_mtime > depuis:
+                A.append(_action("relecture", "relecture critique (le texte a changé depuis)", vue_texte, type_="relecture"))
 
     # un chapitre qui n'a qu'un synopsis : une seule action, développer le brief (synopsis et question s'ils
     # manquent, fiches, déroulé, squelette et verrou) — c'est ce que fait la proposition de Claude
@@ -222,7 +237,7 @@ def chapitre(c, version, demandes):
 
     score = round(sum(e["points"] for e in E.values()))
     mesures = {"niveau": niv, "score": score, "fiches": len(fiches), "annotations": len(ouvertes) if ecrit else 0,
-               "naif": bool(p_naif), "portes_ko": len(ko), "controles": bool(bloq) and not ko, "ecrit": ecrit}
+               "naif": bool(p_naif), "portes_ko": len(ko), "portes_ko_titres": [p["titre"] for p in ko], "controles": bool(bloq) and not ko, "ecrit": ecrit}
     return {"slug": slug, "mesures": mesures, "numero": c.get("numero"), "titre": c["title"], "partie": c.get("partie"),
             "partie_titre": c.get("partie_titre"), "niveau": niv, "score": score, "etapes": E, "actions": A}
 
@@ -239,6 +254,10 @@ def _demandes():
                 ch = d["cible"].get("chapitre")
                 x = dict(x, manques=len((d.get("resultat") or {}).get("manques") or []) if d.get("etat") == "decidee" else 0)
                 x["chapitre"] = ch
+            if x.get("type") == "relecture":            # une relecture vaut pour chacun de ses chapitres
+                for c in x.get("chapitres") or []:
+                    out.setdefault(c, []).append(dict(x, chapitre=c))
+                continue
             if ch:
                 out.setdefault(ch, []).append(x)
     except Exception:                                   # noqa: BLE001
@@ -290,6 +309,21 @@ def suivi(version):
         g["gain"] = round(g["gain"] / n, 1)            # ce que le livre gagnerait, en points de moyenne
     S = {"chapitres": C}
     O = objectifs.evalue_tous(version, S, T)
+    try:                                               # le pilotage de chaque objectif : son cadrage, son plan
+        from . import pilotage, reecriture
+        K = {}
+        for x in reecriture.liste("_kb"):
+            if x.get("type") == "cadrage" and x.get("etat") not in ("retiree", "remplacee"):
+                K.setdefault("_", []).append(x)
+        for o in O:
+            P = pilotage.lit(o["id"])
+            ks = [x for x in K.get("_", []) if reecriture.lit("_kb", x["id"]).get("cible", {}).get("objectif") == o["id"]]
+            k = max(ks, key=lambda x: x["cree"]) if ks else None
+            o["pilotage"] = {"plan": P and P["etat"], "cadrage": k and {"id": k["id"], "etat": k["etat"]},
+                             "actions": P and sum(len(ph["actions"]) for ph in P["phases"]),
+                             "faites": P and sum(1 for ph in P["phases"] for a in ph["actions"] if a["etat"] in ("faite", "sautee"))}
+    except Exception:                                  # noqa: BLE001 — le suivi passe avant
+        pass
     autres = sum(1 for o in objectifs.lit_tous() if o.get("version", "essai") != version)
     sans = travail.public({travail.SANS: T[travail.SANS]})[travail.SANS] if travail.SANS in T else None
     return {"version": version, "objectifs": O, "objectifs_autre_version": autres, "sans_chapitre": sans,

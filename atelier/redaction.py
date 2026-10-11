@@ -48,6 +48,7 @@ SCHEMA = {
             "fiche": {"type": "string"}, "section": {"type": "string"}},
             "required": ["type", "question"]}},
         "fiches_lues": {"type": "array", "items": {"type": "string"}},
+        "annotations_traitees": {"type": "array", "items": {"type": "string"}},
         "remarques": {"type": "string"}},
     # le moins de champs obligatoires possible : une réponse refusée pour un détail oblige Claude à
     # réécrire tout le chapitre (dix minutes)
@@ -112,6 +113,9 @@ Chaque paragraphe que tu gardes ou modifies GARDE son ancre en fin de paragraphe
 paragraphe nouveau n'en a pas ; une ancre ne sert qu'une fois. Les intertitres gardent leur {#id}.
 Toute phrase qui parle de « la base » ou des « fiches » est réécrite : un fait du monde (ce qu'on ignore,
 avec son degré), ou rien — ce qui manque aux fiches passe dans « manques ».
+Les annotations ouvertes du chapitre (dans le message, s'il y en a) sont à traiter : chacune vise un
+paragraphe ; règle le problème qu'elle signale si c'est juste (sinon, dis pourquoi dans les remarques), et
+donne dans « annotations_traitees » les identifiants (a-…) de celles que ta révision règle.
 Dans « remarques » : ce que tu as coupé, déplacé ou changé, et pourquoi, en quelques lignes."""
 
 
@@ -164,6 +168,8 @@ def cree(corps, lancer=True):
          "poser": bool(corps.get("poser")), "remplacer": bool(corps.get("remplacer")) or revision,
          "mots": int(corps["mots"]) if str(corps.get("mots") or "").strip().isdigit() and int(corps["mots"]) > 0 else None,
          "serie": corps.get("serie"),
+         # les annotations à traiter, si on les a choisies (une relecture critique appliquée) ; sinon toutes les ouvertes
+         "annotations": [str(x) for x in corps.get("annotations") or []] or None,
          "cible": {"chapitre": slug, "version": "essai", "niveau": niv},
          "etat": "en_attente", "cree": livre._maintenant(), "rang": time.time() + corps.get("_rang", 0) * 1e-3}
     if revision:
@@ -265,6 +271,13 @@ def compile_contexte(d):
     elif pe.exists() and revision:
         L += ["", "## Le texte actuel, à réviser (%d mots) — les ancres ^id sont à garder" % (d["cible"].get("mots_avant") or 0),
               pe.read_text(encoding="utf-8").strip()]
+        A = [a for a in livre.annotations(slug) if a.get("version") == "essai" and a.get("etat") == "ouverte"
+             and (not d.get("annotations") or a["id"] in d["annotations"])]
+        if A:
+            L += ["", "## Les annotations ouvertes du chapitre — à traiter (donne les identifiants de celles que tu règles)"]
+            L += ["- %s · ^%s · %s%s : %s" % (a["id"], a["bloc"], a.get("type"), " (" + ", ".join(a["regles"]) + ")" if a.get("regles") else "",
+                                             " ".join((("« " + a["citation"] + " » — ") if a.get("citation") else "") .split() + (a.get("texte") or "").split()))
+                  for a in A]
     elif pe.exists() and d.get("remplacer"):
         L += ["", "## L'essai actuel (à remplacer) : chapters/%s/essai.md — lis-le avant d'écrire" % slug]
     V = [a for s in _yaml(livre.dossier(slug) / "verrou.yaml").get("sections") or [] for a in s.get("assertions") or []
@@ -343,6 +356,7 @@ def conclut(d, sortie):
          "notes_orphelines": sorted((appels - defs) | (defs - appels)),
          "manques": [m for m in sortie.get("manques") or [] if m.get("question")],
          "fiches_lues": sortie.get("fiches_lues") or [], "remarques": sortie.get("remarques") or "",
+         "annotations_traitees": [x for x in sortie.get("annotations_traitees") or [] if isinstance(x, str)],
          "html": _apercu(d["cible"]["chapitre"], t)}
     if revision:
         R.update(mots_avant=d["cible"].get("mots_avant"), paragraphes_gardes=len(re.findall(r"\^[a-z0-9]+\s*$", t, re.M)),
@@ -350,8 +364,10 @@ def conclut(d, sortie):
     d.update(etat="prete", resultat=R)
     if d.get("poser"):
         try:
-            pose(d["cible"]["chapitre"], t, remplacer=d.get("remplacer"), demande=d["id"], mode=d.get("mode"), consigne=d.get("consigne"))
-            d.update(etat="decidee", decision={"proposition": "posee", "d_office": True, "date": livre._maintenant()})
+            r = pose(d["cible"]["chapitre"], t, remplacer=d.get("remplacer"), demande=d["id"], mode=d.get("mode"), consigne=d.get("consigne"),
+                     traitees=R.get("annotations_traitees"))
+            d.update(etat="decidee", decision={"proposition": "posee", "d_office": True, "date": livre._maintenant(),
+                                               "annotations_resolues": r.get("annotations_resolues")})
         except Exception as e:                    # noqa: BLE001 — la proposition reste à décider
             d["erreur_pose"] = "%s" % e
 
@@ -393,7 +409,7 @@ def _archive(slug, texte):
     return nom
 
 
-def pose(slug, texte, remplacer=False, demande=None, mode="ecriture", consigne=""):
+def pose(slug, texte, remplacer=False, demande=None, mode="ecriture", consigne="", traitees=None):
     from . import essai, plan
     c = _chapitre(slug)
     d = livre.dossier(slug)
@@ -420,7 +436,14 @@ def pose(slug, texte, remplacer=False, demande=None, mode="ecriture", consigne="
     plan.journal(e)
     with (d / "journal.jsonl").open("a", encoding="utf-8") as f:
         f.write(json.dumps(dict(e, date=livre._maintenant()), ensure_ascii=False) + "\n")
-    return {"chapitre": slug, "titre": c["title"], "intertitres": n}
+    # les annotations que la révision dit régler : résolues
+    resolues = []
+    ouvertes = {a["id"] for a in livre.annotations(slug) if a.get("etat") == "ouverte"}
+    for a in traitees or []:
+        if a in ouvertes:
+            livre.modifie_annotation(slug, a, {"etat": "resolue"})
+            resolues.append(a)
+    return {"chapitre": slug, "titre": c["title"], "intertitres": n, "annotations_resolues": resolues}
 
 
 def decide(ident, corps):
@@ -431,7 +454,7 @@ def decide(ident, corps):
         d.update(etat="decidee", decision={"proposition": None, "motif": corps.get("motif", ""), "date": livre._maintenant()})
     else:
         r = pose(d["cible"]["chapitre"], d["resultat"]["texte"], remplacer=d.get("remplacer") or corps.get("remplacer"), demande=ident,
-                 mode=d.get("mode"), consigne=d.get("consigne"))
+                 mode=d.get("mode"), consigne=d.get("consigne"), traitees=d["resultat"].get("annotations_traitees"))
         d.update(etat="decidee", decision={"proposition": "posee", "date": livre._maintenant(), **r})
     reecriture._ecrit(SLUG_KB, d)
     return d
@@ -453,7 +476,7 @@ def manques(slug):
         d = reecriture.lit(SLUG_KB, x["id"])
         M = (d.get("resultat") or {}).get("manques") or []
         R.append({"id": d["id"], "mode": d.get("mode"), "etat": d["etat"], "date": d.get("cree"), "titre": d.get("titre"),
-                  "manques": M})
+                  "manques": M, "filles": reecriture.filles(d["id"]) if d.get("enfants") else []})
     R.sort(key=lambda r: r["date"] or "", reverse=True)
     mentions = []
     pe = livre.dossier(slug) / "essai.md"

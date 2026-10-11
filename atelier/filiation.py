@@ -74,11 +74,32 @@ def depuis(origine):
         _courante.reset(jeton)
 
 
+_champs = contextvars.ContextVar("champs", default=None)
+
+
+@contextlib.contextmanager
+def marque(**champs):
+    """Les demandes créées dans ce bloc reçoivent ces champs à leur première écriture (le pilotage d'un
+    plan : {plan: {…}, creer_d_office: True}) — avant tout départ, donc sans course avec la tâche."""
+    jeton = _champs.set(champs)
+    try:
+        yield
+    finally:
+        _champs.reset(jeton)
+
+
 def inscrit(slug, d):
-    """Appelé par reecriture._ecrit : une demande neuve, écrite dans un bloc depuis(), reçoit son origine."""
-    o = _courante.get()
-    if not o or d.get("id") == o or "origine" in d or (reecriture._dossier(slug) / (d["id"] + ".json")).exists():
-        return                                   # seulement à la toute première écriture
+    """Appelé par reecriture._ecrit : une demande neuve, écrite dans un bloc depuis() ou marque(), reçoit son
+    origine et ses champs — seulement à la toute première écriture."""
+    o, ch = _courante.get(), _champs.get()
+    if not o and not ch:
+        return
+    if (reecriture._dossier(slug) / (d["id"] + ".json")).exists():
+        return
+    for k, v in (ch or {}).items():
+        d.setdefault(k, v)
+    if not o or d.get("id") == o or "origine" in d:
+        return
     ms, m = _mere(o)
     d["origine"] = o
     d["generation"] = (m.get("generation") or 0) + 1 if m else 1

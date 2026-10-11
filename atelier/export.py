@@ -141,31 +141,9 @@ def imprimable():
     H.append('<h3>Annexe</h3><ol><li><a href="#bibliographie">Bibliographie des œuvres exploitées</a></li></ol></section>')
     heritage, slugs = kb._heritage_md(), set(par)          # une fois pour toutes (kb.fiche les recalcule)
     for s in ordre:
-        meta, md = kb._lit(s)
-        f = {"titre": par[s]["titre"], "meta": meta, "confiance": par[s]["confiance"],
-             "entrants": par[s]["entrants"], "chapitres": par[s]["chapitres"]}
-        corps = _ancres(s, kb._rendu(md, slugs, heritage))
-        citees |= set(re.findall(r'href="#oeuvre-([\w-]+)"', corps))
-        etiq = ""
-        if f["meta"].get("origine") == "claude":
-            etiq = '<p class="etiquette claude">Écrite par Claude · état : %s</p>' % html.escape(f["meta"].get("etat", "?"))
-        conf = "".join("<div><b>%s</b> %s</div>" % (html.escape(c["degre"]), _md(c["sur"])) for c in f["confiance"])
-        H.append('<section class="fiche" id="fiche-%s"><p class="etiquette">%s</p><h1>%s</h1>%s%s%s%s' % (
-            s, s, html.escape(f["titre"]),
-            '<p class="sujet">%s</p>' % html.escape(f["meta"]["sujet"]) if f["meta"].get("sujet") and f["meta"]["sujet"] != f["titre"] else "",
-            etiq, '<div class="confiance">%s</div>' % conf if conf else "", corps))
-        oeuvres = [o["cle"] for o in O.values() if s in o["fiches"]]
-        citees |= set(oeuvres)
-        pied = []
-        if f["entrants"]:
-            pied.append("Citée par : " + ", ".join('<a href="#fiche-%s">%s</a>' % (x, html.escape(par[x]["titre"])) for x in f["entrants"] if x in par))
-        if f["chapitres"]:
-            pied.append("Chapitres : " + ", ".join(html.escape("%s %s" % (c.get("numero") or "", c["title"])) for c in f["chapitres"]))
-        if oeuvres:
-            pied.append("Œuvres : " + ", ".join('<a href="#oeuvre-%s">%s</a>' % (k, html.escape(_courte(k))) for k in sorted(oeuvres)))
-        if pied:
-            H.append('<div class="renvois">%s</div>' % "<br>".join(pied))
-        H.append("</section>")
+        h, c = fiche_html(s, par, slugs, heritage, O)
+        H.append(h)
+        citees |= c
     H.append('<section class="biblio" id="bibliographie"><h2>Bibliographie des œuvres exploitées</h2>')
     for k in sorted(citees):
         o = O.get(k)
@@ -181,6 +159,53 @@ def imprimable():
     return "\n".join(H)
 
 
+def fiche_html(s, par, slugs, heritage, O, inclus=None, chapitres_liens=False, avant_pied=""):
+    """Une fiche en section (confiance, texte, renvois) ; rend (html, clés d'œuvres citées).
+    inclus : les fiches présentes dans le document (un lien vers une autre devient du texte, marqué) ;
+    chapitres_liens : les chapitres sont dans le document (l'édition complète) — liens vers eux."""
+    meta, md = kb._lit(s)
+    f = {"titre": par[s]["titre"], "meta": meta, "confiance": par[s]["confiance"],
+         "entrants": par[s]["entrants"], "chapitres": par[s]["chapitres"], "liens": par[s].get("liens") or []}
+    corps = _ancres(s, kb._rendu(md, slugs, heritage))
+    if inclus is not None:                              # un lien vers une fiche absente : du texte, marqué
+        corps = re.sub(r'<a href="#(?:fiche-|fs-)([\w-]+?)(?:--[\w-]+)?"[^>]*>(.*?)</a>',
+                       lambda m: m.group(0) if m.group(1) in inclus else
+                       '<span class="hors" title="fiche hors de cette édition">%s</span>' % m.group(2), corps)
+    citees = set(re.findall(r'href="#oeuvre-([\w-]+)"', corps))
+    dans = (lambda x: x in par) if inclus is None else (lambda x: x in inclus)
+    etiq = ""
+    if f["meta"].get("origine") == "claude":
+        etiq = '<p class="etiquette claude">Écrite par Claude · état : %s</p>' % html.escape(f["meta"].get("etat", "?"))
+    conf = "".join("<div><b>%s</b> %s</div>" % (html.escape(c["degre"]), _md(c["sur"])) for c in f["confiance"])
+    sert = ""
+    if chapitres_liens and f["chapitres"]:                 # en tête : les chapitres qu'elle sert, pour y revenir
+        sert = '<p class="sert">Sert : %s</p>' % " · ".join(
+            '<a href="#chap-%s">%s%s</a>' % (c["slug"], "ch. %s — " % c["numero"] if c.get("numero") else "", html.escape(c["title"]))
+            for c in f["chapitres"])
+    H = ['<section class="fiche" id="fiche-%s"><p class="etiquette">%s</p><h1>%s</h1>%s%s%s%s%s' % (
+        s, s, html.escape(f["titre"]),
+        '<p class="sujet">%s</p>' % html.escape(f["meta"]["sujet"]) if f["meta"].get("sujet") and f["meta"]["sujet"] != f["titre"] else "",
+        sert, etiq, '<div class="confiance">%s</div>' % conf if conf else "", corps)]
+    oeuvres = [o["cle"] for o in O.values() if s in o["fiches"]]
+    citees |= set(oeuvres)
+    pied = []
+    if chapitres_liens:
+        voisines = [x for x in f["liens"] if dans(x)]
+        if voisines:
+            pied.append("Voisines : " + ", ".join('<a href="#fiche-%s">%s</a>' % (x, html.escape(par[x]["titre"])) for x in voisines))
+    if f["entrants"]:
+        pied.append("Citée par : " + ", ".join('<a href="#fiche-%s">%s</a>' % (x, html.escape(par[x]["titre"])) for x in f["entrants"] if dans(x)))
+    if f["chapitres"] and not chapitres_liens:
+        pied.append("Chapitres : " + ", ".join(html.escape("%s %s" % (c.get("numero") or "", c["title"])) for c in f["chapitres"]))
+    if oeuvres:
+        pied.append("Œuvres : " + ", ".join('<a href="#oeuvre-%s">%s</a>' % (k, html.escape(_courte(k))) for k in sorted(oeuvres)))
+    H.append(avant_pied)
+    if pied:
+        H.append('<div class="renvois">%s</div>' % "<br>".join(pied))
+    H.append("</section>")
+    return "".join(H), citees
+
+
 def chrome():
     for p in [os.environ.get("ATELIER_CHROME", "")] + CHROMES:
         if p and os.path.exists(p):
@@ -192,7 +217,7 @@ def chrome():
     return None
 
 
-async def pdf(quoi="kb"):
+async def pdf(quoi="kb", portee="utilisees"):
     """Rend (octets du PDF, nom de fichier) : la base de connaissance (kb), l'essai ou le récit. RuntimeError
     si aucun Chrome n'est disponible."""
     exe = chrome()
@@ -202,7 +227,11 @@ async def pdf(quoi="kb"):
     with tempfile.TemporaryDirectory() as tmp:
         src, out = os.path.join(tmp, "kb.html"), os.path.join(tmp, "kb.pdf")
         with open(src, "w", encoding="utf-8") as f:
-            f.write(version_imprimable(quoi) if quoi in livre.VERSIONS else imprimable())
+            if quoi == "complet":                       # l'essai et la base de connaissance (atelier/compagnon.py)
+                from . import compagnon
+                f.write(compagnon.imprimable(portee))
+            else:
+                f.write(version_imprimable(quoi) if quoi in livre.VERSIONS else imprimable())
         proc = await asyncio.create_subprocess_exec(
             exe, "--headless=new", "--disable-gpu", "--no-pdf-header-footer", "--no-first-run",
             "--user-data-dir=" + os.path.join(tmp, "profil"), "--print-to-pdf=" + out, "file://" + src,
@@ -230,7 +259,8 @@ async def pdf(quoi="kb"):
         with open(out, "rb") as f:
             donnees = f.read()
     m = livre.meta()
-    nom = "%s — %s — %s.pdf" % (m.get("titre", "livre"), _nom_version(quoi) if quoi in livre.VERSIONS else "base de connaissance",
+    nom = "%s — %s — %s.pdf" % (m.get("titre", "livre"), _nom_version(quoi) if quoi in livre.VERSIONS else
+                                "essai et base de connaissance" if quoi == "complet" else "base de connaissance",
                                 datetime.date.today().isoformat())
     return donnees, nom
 
@@ -385,7 +415,10 @@ def essai_imprimable():
     return version_imprimable("essai")
 
 
-def version_imprimable(version="essai"):
+def version_imprimable(version="essai", compagnon=None):
+    """compagnon (atelier/compagnon.py) : l'édition « essai + base de connaissance » — il ajoute un intitulé
+    de couverture, des entrées de sommaire, un encart à la fin de chaque chapitre, l'annexe (la carte du
+    livre, les fiches) et remplace la bibliographie par une bibliographie commune."""
     from . import plan
     if version not in livre.VERSIONS:
         raise KeyError(version)
@@ -394,7 +427,7 @@ def version_imprimable(version="essai"):
     tous = {c["slug"]: c for c in livre.chapitres()}
     prefaces = [c for c in livre.structure().get("prefaces") or [] if version in (c.get("versions") or [version])]
     mode = (m.get("numerotation_essai") or "aucune") if version == "essai" else "aucune"
-    nom = _nom_version(version)
+    nom = _nom_version(version) + (compagnon.intitule if compagnon else "")
     jour = datetime.date.today()
     # l'avancement de chaque chapitre, une fois
     chapitres = [dict(c, numero=None, partie=None) for c in prefaces]
@@ -428,7 +461,8 @@ def version_imprimable(version="essai"):
         return "%s" % c["numero"] if c.get("numero") else ""
 
     H = ['<!doctype html><html lang="%s"><head><meta charset="utf-8">' % (m.get("langue") or "fr"),
-         "<title>%s — %s</title><style>%s%s</style></head><body>" % (html.escape(m.get("titre", "")), html.escape(nom.lower()), CSS, CSS_ESSAI)]
+         "<title>%s — %s</title><style>%s%s%s</style></head><body>" % (html.escape(m.get("titre", "")), html.escape(nom.lower()), CSS, CSS_ESSAI,
+                                                                         compagnon.css if compagnon else "")]
     # la page de garde
     H.append('<section class="couverture">%s<div class="sur">%s</div><h1>%s</h1>%s<div class="kb">%s</div>'
              '<div class="synopsis">%s</div><div class="meta">%d chapitres · %d rédigés%s · état au %s</div></section>' % (
@@ -454,7 +488,9 @@ def version_imprimable(version="essai"):
     for i, p in enumerate(P["parties"], 1):
         H.append('<div class="partie"><a href="#partie-%s">%s · %s</a></div><ol>%s</ol>' % (
             p["id"], _romain(i), html.escape(p["title"] or ""), "".join(ligne(c) for c in chapitres if c["partie"] == p["id"])))
-    H.append('<div class="partie"><a href="#bibliographie">Bibliographie</a></div></section>' if citees or version == "essai" else "</section>")
+    if compagnon:
+        H.append(compagnon.sommaire())
+    H.append('<div class="partie"><a href="#bibliographie">Bibliographie</a></div></section>' if citees or version == "essai" or compagnon else "</section>")
 
     def chapitre(c):
         a = c["av"]
@@ -481,6 +517,8 @@ def version_imprimable(version="essai"):
                 corps += '<p class="question">%s</p>' % html.escape(c["question"])
             if not corps:
                 corps = '<p class="avertit">Ni texte ni synopsis pour l\'instant.</p>'
+        if compagnon:
+            corps += compagnon.apres_chapitre(c)
         return '<section class="%s" id="chap-%s">%s%s</section>' % (classes, c["slug"], tete, corps)
 
     for c in chapitres:
@@ -496,6 +534,12 @@ def version_imprimable(version="essai"):
         for c in chapitres:
             if c["partie"] == p["id"]:
                 H.append(chapitre(c))
+    if compagnon:                                   # l'annexe, puis une bibliographie commune
+        H.append(compagnon.annexe())
+        H.append(compagnon.bibliographie(citees, chapitres))
+        H.append(compagnon.script())
+        H.append("</body></html>")
+        return "\n".join(H)
     # la bibliographie des œuvres citées (le récit n'en a pas, d'ordinaire)
     if not citees and version != "essai":
         H.append("</body></html>")

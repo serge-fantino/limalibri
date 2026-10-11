@@ -12,12 +12,22 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction, suivi, serie, evenements, objectifs
+from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction, suivi, serie, evenements, objectifs, execution, capacites, cadrage, pilotage
 from . import versions as depot          # git : marquer une version du livre (le nom « versions » est pris)
 
 FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
 
 app = FastAPI(title="Atelier")
+
+
+@app.middleware("http")
+async def _sans_cache_du_front(request, appel):
+    """Le front (index, atelier.js, atelier.css) : toujours revalidé. Sans cette directive, le navigateur
+    gardait un atelier.js périmé après une mise à jour ; avec, il redemande et reçoit un 304 si rien n'a changé."""
+    r = await appel(request)
+    if not request.url.path.startswith("/api/"):
+        r.headers["Cache-Control"] = "no-cache"
+    return r
 
 # Un dossier qui n'est pas encore un livre le devient : livre.yaml et structure.yaml vides.
 for nom in livre.initialise() + regles.initialise():
@@ -51,15 +61,18 @@ async def fil_evenements(request: Request):
 
 @app.on_event("startup")
 async def _reprend_la_file():
-    """Au démarrage : si l'enchaînement est activé, la file repart d'elle-même."""
+    """Au démarrage : les séries et les plans d'abord (une étape interrompue les arrête, ou les bloque — leurs
+    demandes en file attendent alors), puis la file repart (les lots actifs, et le reste si l'enchaînement
+    est activé). Dans l'autre ordre, la suivante d'un plan interrompu partait avant qu'il soit bloqué."""
+    try:
+        serie.avance()                          # une série dont l'étape a été interrompue s'arrête, et le dit
+        pilotage.avance()                       # un plan d'objectif aussi (bloqué sur l'action interrompue)
+    except Exception as e:                      # noqa: BLE001
+        print("atelier : séries —", e)
     try:
         file.suivante()
     except Exception as e:                      # noqa: BLE001
         print("atelier : file d'attente —", e)
-    try:
-        serie.avance()                          # une série dont l'étape a été interrompue s'arrête, et le dit
-    except Exception as e:                      # noqa: BLE001
-        print("atelier : séries —", e)
 
 
 def _meta(m):
@@ -239,6 +252,21 @@ async def modifie_plan(slug: str, pid: str, request: Request):
         raise HTTPException(400, str(e))
 
 
+@app.post("/api/chapitres/{slug}/storyboard/{op}")
+async def forme_storyboard(slug: str, op: str, request: Request):
+    """La forme du storyboard : recit_ajoute | recit_retire | recit_deplace | plan_ajoute | plan_retire —
+    {plan, rang?, vers?, texte?, title?, apres?, empreinte}."""
+    c = await request.json()
+    try:
+        return livre.forme_plan(slug, op, c, c.get("empreinte", ""), c.get("motif", ""))
+    except livre.Conflit as e:
+        raise HTTPException(409, str(e))
+    except KeyError:
+        raise HTTPException(404, "plan inconnu : %s" % c.get("plan"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.get("/api/chapitres/{slug}/essai/plan")
 def plan_essai(slug: str):
     """L'arbre de l'essai : sections (à toute profondeur) et paragraphes."""
@@ -349,8 +377,11 @@ async def encore(slug: str, ident: str, request: Request):
 def modeles():
     """Les modèles qu'on peut choisir, et ceux que le livre retient par défaut."""
     return {"modeles": reecriture.MODELES,
-            "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan")},
-            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan", "conversation", "redaction")}}
+            "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan",
+                                                               "redaction", "cadrage")}
+                       | {g: reecriture.modele(g) or "claude-fable-5-1" for g in ("relecture", "storyboard", "recit")},   # Fable, sauf réglage
+            "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan",
+                                                           "conversation", "redaction", "cadrage", "relecture", "storyboard", "recit")}}
 
 
 @app.get("/api/fiches")
@@ -371,12 +402,34 @@ def fiches_demandes():
     return reecriture.liste("_kb")
 
 
+def _filles(c):
+    """Le contexte d'une demande lancée depuis une autre ({origine, sujet}) : filiation et sujet notés."""
+    import contextlib
+    from . import filiation
+    pile = contextlib.ExitStack()
+    if c.get("origine"):
+        pile.enter_context(filiation.depuis(c["origine"]))
+    if c.get("sujet"):
+        pile.enter_context(filiation.marque(sujet=" ".join(str(c["sujet"]).split())))
+    return pile
+
+
+@app.get("/api/demandes/{ident}/filles")
+def filles(ident: str):
+    """Les demandes nées d'une demande : leur état, leur sujet, la fiche créée."""
+    return reecriture.filles(ident)
+
+
 @app.post("/api/fiches/demandes")
 async def cree_fiche(request: Request):
     """Lancer une création de fiche : {question, slug?, chapitres?, consigne?, longueur?, modele?,
-    depuis?, sources_initiales?}. Claude cherche en tâche de fond."""
+    depuis?, sources_initiales?, origine?, sujet?}. Claude cherche en tâche de fond. origine : la demande
+    d'où elle vient (une proposition de plan, une rédaction) — la fiche en est la fille ; sujet : le manque
+    qu'elle traite, tel que la mère l'a écrit (pour que la mère dise où en est chacun de ses sujets)."""
+    c = await request.json()
     try:
-        return creation.cree(await request.json())
+        with _filles(c):
+            return creation.cree(c)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -438,6 +491,164 @@ async def objectif_cree(request: Request):
         raise HTTPException(409, "git : %s" % e)
 
 
+@app.post("/api/storyboards")
+async def cree_storyboard(request: Request):
+    """Le storyboard d'un chapitre du récit, depuis son essai : {chapitre, consigne?, modele?, poser?}."""
+    from . import storyboard
+    try:
+        return storyboard.cree(await request.json())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/recits")
+async def cree_recit(request: Request):
+    """Le récit d'un chapitre depuis son storyboard : {chapitre, plan?, rang?, consigne?, modele?, poser?}."""
+    from . import narration
+    try:
+        return narration.cree(await request.json())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/relectures")
+async def cree_relecture(request: Request):
+    """Une relecture critique : {partie | chapitres, version?, consigne?, modele?} — Claude annote ce qu'il trouve."""
+    from . import relecture
+    try:
+        return relecture.cree(await request.json())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/relectures/{ident}/appliquer")
+async def relecture_applique(ident: str, request: Request):
+    """Appliquer une relecture : {annotations: [id], consigne?, poser?, modele?} — une série de révisions, une par
+    chapitre concerné, chacune ne traitant que les annotations choisies."""
+    from . import relecture
+    try:
+        return relecture.applique(ident, await request.json())
+    except KeyError:
+        raise HTTPException(404, "relecture inconnue : %s" % ident)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/relectures/{ident}/annotations")
+def relecture_annotations(ident: str):
+    """Les annotations posées par une relecture critique, chapitre par chapitre, avec leur état."""
+    from . import relecture
+    try:
+        return relecture.posees(reecriture.lit("_kb", ident))
+    except KeyError:
+        raise HTTPException(404, "relecture inconnue : %s" % ident)
+
+
+@app.get("/api/capacites")
+def capacites_liste():
+    """Le catalogue : ce que l'atelier sait faire (capacités, propositions de cadre), avec le coût moyen dans ce livre."""
+    return capacites.catalogue()
+
+
+@app.post("/api/objectifs/{ident}/cadrer")
+async def objectif_cadre(ident: str, request: Request):
+    """Cadrer un objectif avec Claude : {consigne?, modele?} — une demande « cadrage », dans la file."""
+    try:
+        return cadrage.cree(ident, await request.json())
+    except KeyError:
+        raise HTTPException(404, "objectif inconnu : %s" % ident)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/objectifs/{ident}/pilotage")
+def objectif_pilotage(ident: str):
+    """Le pilotage d'un objectif : son plan retenu (s'il y en a un) et ses cadrages (le plus récent en entier)."""
+    K = sorted((x for x in reecriture.liste("_kb") if x.get("type") == "cadrage"), key=lambda x: x["cree"], reverse=True)
+    K = [x for x in K if (reecriture.lit("_kb", x["id"]).get("cible") or {}).get("objectif") == ident]
+    dernier = reecriture.lit("_kb", K[0]["id"]) if K else None
+    if dernier:
+        dernier.pop("contexte", None)
+    P = pilotage.lit(ident)
+    if P:                                              # chaque demande lancée : son état réel, sa place dans la file
+        rangs = {x["id"]: x["rang"] for x in file.etat()["en_attente"]}
+        for ph in P["phases"]:
+            for a in ph["actions"]:
+                if a.get("demande"):
+                    d = pilotage._etat_demande(a)
+                    dec = (d or {}).get("decision") or {}
+                    a["vivant"] = {"etat": d and d.get("etat"), "rang": rangs.get(a["demande"]),
+                                   "titre": d and d.get("titre"), "cout": ((d or {}).get("execution") or {}).get("cout_usd"),
+                                   "issue": None if not d or d.get("etat") != "decidee" else
+                                   "rejetee" if dec.get("proposition") is None else "retenue"}
+    if P:                                              # le budget de l'objectif, pour le comparer au plan
+        o = next((x for x in objectifs.lit_tous() if x.get("id") == ident), {})
+        P["budget"] = o.get("budget")
+    return {"plan": P, "cadrages": [{k: x.get(k) for k in ("id", "etat", "cree", "titre")} for x in K],
+            "cadrage": dernier, "catalogue": capacites.catalogue()}
+
+
+@app.post("/api/objectifs/{ident}/pilotage/retenir")
+async def objectif_retient(ident: str, request: Request):
+    """{demande, actions: [id], cadre: [index], couper: [id], edits?, options?} — le plan retenu (prêt)."""
+    try:
+        return pilotage.retient(ident, await request.json())
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except pilotage.Conflit as e:
+        raise HTTPException(409, str(e))
+    except (ValueError, reecriture.Conflit) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/objectifs/{ident}/pilotage/actions/{aid}/{op}")
+def objectif_action(ident: str, aid: str, op: str):
+    """Une action du plan : fait (une tâche de l'auteur), sauter, relancer (une action en erreur)."""
+    try:
+        return pilotage.geste_action(ident, aid, op)
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except pilotage.Conflit as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/objectifs/{ident}/pilotage/{op}")
+def objectif_geste(ident: str, op: str):
+    """Le plan : demarrer, pause, continuer (après un point d'arrêt), arreter."""
+    try:
+        return pilotage.geste(ident, op)
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except pilotage.Conflit as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/objectifs/{ident}/plan")
+def objectif_plan(ident: str):
+    """Le plan d'exécution d'un objectif : ses écarts, traduits en travail (Claude ou auteur), avec coût et état."""
+    try:
+        return execution.plan(ident)
+    except KeyError:
+        raise HTTPException(404, "objectif inconnu : %s" % ident)
+
+
+@app.post("/api/objectifs/{ident}/executer")
+async def objectif_execute(ident: str, request: Request):
+    """{items: [id], poser?, modele?, consigne?, forcer?} — les éléments de Claude retenus deviennent une série."""
+    try:
+        return execution.execute(ident, await request.json())
+    except KeyError:
+        raise HTTPException(404, "objectif inconnu : %s" % ident)
+    except OverflowError as e:
+        raise HTTPException(409, "budget : %s" % e)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/api/objectifs/{ident}/depart")
 async def objectif_depart(ident: str, request: Request):
     """Le départ d'un objectif : {tag} (une version déjà marquée) ou {nom, message} (marquer maintenant)."""
@@ -476,6 +687,12 @@ async def versions_marque(request: Request):
         raise HTTPException(400, str(e))
     except RuntimeError as e:
         raise HTTPException(409, "git : %s" % e)
+
+
+@app.get("/api/versions/historique")
+def versions_historique(n: int = 25):
+    """Les derniers commits qui touchent le dossier du livre (avec leurs tags)."""
+    return depot.historique(n)
 
 
 @app.get("/api/versions/depuis")
@@ -967,6 +1184,27 @@ def recit_imprimable():
     return export.version_imprimable("recit")
 
 
+@app.get("/api/complet/imprimable", response_class=HTMLResponse)
+def complet_imprimable(portee: str = "utilisees"):
+    """L'essai et la base de connaissance en un document HTML : chaque chapitre avec ses fiches et sa mini-carte,
+    la carte du livre (cliquable, vivante au survol), les fiches (avec les chapitres qu'elles servent), une
+    bibliographie commune. portee : utilisees (les fiches des briefs) ou toutes."""
+    from . import compagnon
+    return compagnon.imprimable(portee)
+
+
+@app.get("/api/complet/pdf")
+async def complet_pdf(portee: str = "utilisees"):
+    """La même édition en PDF (Chrome sans interface), liens internes gardés."""
+    from urllib.parse import quote
+    try:
+        donnees, nom = await export.pdf("complet", portee)
+    except RuntimeError as e:
+        raise HTTPException(501, str(e))
+    return Response(donnees, media_type="application/pdf",
+                    headers={"Content-Disposition": "attachment; filename*=UTF-8''%s" % quote(nom)})
+
+
 @app.get("/api/essai/pdf")
 async def essai_pdf():
     """L'essai en PDF (Chrome sans interface), liens internes gardés."""
@@ -1063,7 +1301,8 @@ async def creuse(slug: str, request: Request):
     """Creuser une fiche : Claude propose des fiches complémentaires. {consigne?, modele?}"""
     c = await request.json()
     try:
-        return pistes.cree({"fiche": slug, "consigne": c.get("consigne"), "modele": c.get("modele")})
+        with _filles(c):
+            return pistes.cree({"fiche": slug, "consigne": c.get("consigne"), "modele": c.get("modele")})
     except KeyError:
         raise HTTPException(404, "fiche inconnue : %s" % slug)
     except ValueError as e:
@@ -1146,6 +1385,17 @@ async def decide(slug: str, ident: str, request: Request):
             return planif.decide(ident, await request.json())
         if ident.startswith("e-"):
             return redaction.decide(ident, await request.json())
+        if ident.startswith("k-"):
+            return cadrage.decide(ident, await request.json())
+        if ident.startswith("q-"):
+            from . import relecture
+            return relecture.decide(ident, await request.json())
+        if ident.startswith("b-"):
+            from . import storyboard
+            return storyboard.decide(ident, await request.json())
+        if ident.startswith("t-"):
+            from . import narration
+            return narration.decide(ident, await request.json())
         return reecriture.decide(slug, ident, await request.json())
     except KeyError as e:
         raise HTTPException(404, "inconnu : %s" % e)
@@ -1183,13 +1433,28 @@ async def modifie_bloc(slug: str, version: str, bloc: str, request: Request):
 @app.post("/api/chapitres/{slug}/{version}/blocs/{bloc}/apres")
 async def insere_bloc(slug: str, version: str, bloc: str, request: Request):
     c = await request.json()
-    return _edition(lambda: edition.insere_bloc(slug, version, bloc, c.get("texte", ""), c.get("motif", "")))
+    return _edition(lambda: edition.insere_bloc(slug, version, bloc, c.get("texte", ""), c.get("motif", ""), c.get("micro", "")))
 
 
 @app.delete("/api/chapitres/{slug}/{version}/blocs/{bloc}")
 async def supprime_bloc(slug: str, version: str, bloc: str, request: Request):
     c = await request.json()
-    return _edition(lambda: edition.supprime_bloc(slug, version, bloc, c.get("avant", ""), c.get("motif", "")))
+    return _edition(lambda: edition.supprime_bloc(slug, version, bloc, c.get("avant", ""), c.get("motif", ""), bool(c.get("force"))))
+
+
+@app.post("/api/chapitres/{slug}/recit/paragraphes/{op}")
+async def paragraphe_recit(slug: str, op: str, request: Request):
+    """Le récit à la main, rangé par plan : ajoute {plan, rang, texte} | retire {bloc, avant, force?} | deplace {bloc, vers}."""
+    from . import narration
+    c = await request.json()
+    try:
+        return narration.paragraphe(slug, op, c)
+    except reecriture.Conflit as e:
+        raise HTTPException(409, str(e))
+    except KeyError as e:
+        raise HTTPException(404, "inconnu : %s" % e)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/chapitres/{slug}/harnais/{version}")

@@ -11,6 +11,12 @@ plus tard (son « départ » : le module et la fonction qui la font tourner). Qu
 à un redémarrage ; on peut la retirer tant qu'elle n'est pas partie. L'assistant (les conversations)
 et la lecture de confiance d'une fiche restent hors de la file : ce sont des échanges courts.
 
+Les **lots** : une phase d'un plan d'objectif (atelier/pilotage.py), une série (atelier/serie.py). Les
+demandes d'un lot partent d'elles-mêmes (lancer le plan ou la série valait accord) tant que le lot est
+actif — le plan en cours, la série en cours ; un plan en pause retient ses demandes en file. Et un lot
+s'enchaîne d'un bloc : la place libérée va d'abord au lot de la dernière demande partie, avant les
+autres, pour qu'aucune demande ne s'intercale au milieu d'un groupe.
+
 Le contexte d'une création de fiche, d'une vérification de référence, d'une recherche de texte
 original et d'une rédaction est compilé à son départ, pas à sa mise en file : elle voit ce qui a
 été créé entre-temps.
@@ -51,14 +57,56 @@ def _trouve(ident):
     raise KeyError(ident)
 
 
+_dernier_lot = None          # le lot de la dernière demande partie : il passe en premier
+
+
+def _lot(x, cache):
+    """Le lot d'une demande : {id, titre, actif, objectif?, phase?} — ou None."""
+    p = x.get("plan") or {}
+    if p.get("plan"):
+        from . import pilotage
+        k = "o:" + str(p.get("objectif"))
+        if k not in cache:
+            cache[k] = pilotage.lit(p.get("objectif")) if p.get("objectif") else None
+        P = cache[k]
+        if not P or P.get("id") != p["plan"]:
+            return {"id": p["plan"], "titre": "plan remplacé", "actif": False, "objectif": p.get("objectif")}
+        ph = p.get("phase")
+        if ph is None:                              # demandes d'avant la phase notée : retrouvée par l'action
+            ph = next((i for i, f in enumerate(P["phases"]) for a in f["actions"] if a["id"] == p.get("action")), 0)
+        f = P["phases"][ph] if ph < len(P["phases"]) else {"titre": "?"}
+        if "o-t:" + p["objectif"] not in cache:
+            from . import objectifs
+            cache["o-t:" + p["objectif"]] = next((o.get("titre") for o in objectifs.lit_tous() if o.get("id") == p["objectif"]), "")
+        return {"id": "%s#%d" % (p["plan"], ph), "titre": "Phase %d — %s" % (ph + 1, f["titre"]), "actif": P["etat"] == "en_cours",
+                "objectif": p["objectif"], "objectif_titre": cache["o-t:" + p["objectif"]], "phase": ph, "action": p.get("action"),
+                "plan_etat": P["etat"]}
+    if x.get("serie"):
+        from . import serie
+        k = "s:" + x["serie"]
+        if k not in cache:
+            try:
+                cache[k] = serie.lit(x["serie"])
+            except KeyError:
+                cache[k] = None
+        s = cache[k]
+        if not s:
+            return {"id": x["serie"], "titre": "série", "actif": False}
+        return {"id": s["id"], "titre": "Série — " + " → ".join(serie.LIB.get(a, a) for a in s["actions"]), "actif": s["etat"] == "en_cours"}
+    return None
+
+
 def etat():
     T = _toutes()
+    cache = {}
     attente = sorted(((s, x) for s, x in T if x.get("etat") == "en_attente"),
                      key=lambda sx: (sx[1].get("rang") or 0, sx[1].get("cree") or ""))
     return {"reglage": reglage(),
             "en_cours": [x["id"] for s, x in T if x.get("etat") == "en_cours"],
+            "lots_en_cours": {x["id"]: _lot(x, cache) for s, x in T if x.get("etat") == "en_cours" and (x.get("plan") or x.get("serie"))},
             "en_attente": [{"id": x["id"], "slug": s, "type": x.get("type"), "titre": x.get("titre"), "cree": x.get("cree"),
-                            "question": (x.get("cible") or {}).get("question"), "serie": x.get("serie"), "rang": i + 1}
+                            "question": (x.get("cible") or {}).get("question"), "serie": x.get("serie") or (x.get("plan") or {}).get("plan"),
+                            "lot": _lot(x, cache), "rang": i + 1}
                            for i, (s, x) in enumerate(attente)]}
 
 
@@ -114,6 +162,9 @@ def part(slug, d, module, fonction, *args, forcer=False):
         return d
     d.update(etat="en_cours", lancee=livre._maintenant())
     reecriture._ecrit(slug, d)
+    global _dernier_lot
+    lot = _lot(d, {})
+    _dernier_lot = lot["id"] if lot else None
     _demarre(slug, d["id"], d["depart"])
     return reecriture.lit(slug, d["id"])
 
@@ -135,6 +186,9 @@ def lance(ident):
         raise ValueError("demande sans départ connu : %s" % d.get("type"))
     d.update(etat="en_cours", depart=depart, lancee=livre._maintenant())
     d.pop("en_file", None)
+    global _dernier_lot
+    lot = _lot(d, {})
+    _dernier_lot = lot["id"] if lot else None
     reecriture._ecrit(slug, d)
     _demarre(slug, ident, depart)
     return reecriture.lit(slug, ident)
@@ -155,8 +209,13 @@ def suivante():
     r = reglage()
     lancees = []
     while _occupes() < r["simultanees"]:
-        cand = [x for x in etat()["en_attente"] if r["auto"] or x.get("serie")]
+        # un lot actif (phase d'un plan en cours, série en cours) et un cadrage partent toujours (les lancer valait
+        # accord) ; un lot inactif (plan en pause) attend ; le reste, si l'enchaînement est activé
+        cand = [x for x in etat()["en_attente"]
+                if (x["lot"]["actif"] if x.get("lot") else (r["auto"] or x.get("type") == "cadrage"))]
         if not cand:
             break
+        # le lot de la dernière demande partie d'abord : un groupe s'enchaîne d'un bloc
+        cand.sort(key=lambda x: (0 if x.get("lot") and x["lot"]["id"] == _dernier_lot else 1, x["rang"]))
         lancees.append(lance(cand[0]["id"]))
     return lancees[0] if lancees else None

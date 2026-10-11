@@ -7,8 +7,9 @@ changé entre la lecture et l'écriture, on refuse. Chaque correction est notée
 chapitre (avant, après, motif) — la trace fine, par paragraphe.
 
 L'essai accepte aussi un paragraphe nouveau (après un autre) et la suppression d'un
-paragraphe — refusée s'il étaie une assertion du verrou. Le récit, lui, garde ses paragraphes :
-son découpage suit le storyboard.
+paragraphe — refusée s'il étaie une assertion du verrou. Le récit aussi, rangé par plan
+(atelier/narration.py : le nouveau paragraphe entre dans le plan de celui d'avant ; retirer un
+paragraphe qui porte des assertions demande de le confirmer).
 
 Les versions : un commit git des seuls fichiers du livre, quand l'auteur le demande — jamais
 automatiquement, et jamais au-delà du dossier du livre.
@@ -107,9 +108,15 @@ def _nouvel_id(slug):
             return i
 
 
-def insere_bloc(slug, version, apres, texte, motif=""):
-    if version != "essai":
-        raise ValueError("le récit garde ses paragraphes : son découpage suit le storyboard")
+def insere_bloc(slug, version, apres, texte, motif="", micro=""):
+    if version == "recit":                       # le récit est rangé par plan : le nouveau suit celui d'avant dans son plan
+        from . import narration
+        G = narration._groupes(slug)
+        pid, k = next(((p, r) for p, g in G.items() for r, x in narration._effectifs(g) if x[0] == apres), (None, None))
+        if pid is None:
+            raise KeyError(apres)
+        r = narration.paragraphe(slug, "ajoute", {"plan": pid, "rang": k, "texte": texte or "…", "micro": micro, "motif": motif})
+        return lit_bloc(slug, version, r["bloc"])
     p = _fichier(slug, version)
     ms = _morceaux(p)
     i = _trouve(ms, apres)
@@ -121,9 +128,14 @@ def insere_bloc(slug, version, apres, texte, motif=""):
     return lit_bloc(slug, version, bloc)
 
 
-def supprime_bloc(slug, version, bloc, avant, motif=""):
-    if version != "essai":
-        raise ValueError("le récit garde ses paragraphes : son découpage suit le storyboard")
+def supprime_bloc(slug, version, bloc, avant, motif="", force=False):
+    if version == "recit":
+        from . import narration, reecriture
+        try:
+            narration.paragraphe(slug, "retire", {"bloc": bloc, "avant": avant, "force": force, "motif": motif})
+        except reecriture.Conflit as e:
+            raise Conflit(str(e))
+        return {"supprime": bloc}
     at = livre.atelier(slug)
     portees = sorted(a for a, x in at["assertions"].items() if any(l["bloc"] == bloc for l in x.get("essai") or []))
     if portees:

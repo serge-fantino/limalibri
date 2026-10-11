@@ -94,6 +94,25 @@ def marque(nom, message):
     return {"tag": tag, "nom": nom, "commit": commit, "commite": commite, "date": livre._maintenant()}
 
 
+def historique(n=25):
+    """Les derniers commits qui touchent le livre : [{commit, date, auteur, message, tags}]."""
+    racine = _racine()
+    if not racine:
+        return []
+    ch = _chemin(racine)
+    tags = {}
+    for l in _git("for-each-ref", "--format=%(objectname:short) %(*objectname:short) %(refname:short)", "refs/tags", cwd=racine).splitlines():
+        a, b, t = (l.split(" ") + ["", ""])[:3]
+        for x in (a, b):
+            if x:
+                tags.setdefault(x, []).append(t)
+    out = []
+    for l in _git("log", "-n", str(int(n)), "--date=iso-strict", "--format=%h\t%ad\t%an\t%s", "--", ch, cwd=racine).splitlines():
+        c, d, a, m = (l.split("\t") + ["", "", ""])[:4]
+        out.append({"commit": c, "date": d, "auteur": a, "message": m, "tags": tags.get(c, [])})
+    return out
+
+
 def _mots(texte):
     texte = re.sub(r"\^[a-z0-9]+|\[\^[^\]]+\]|\[@[\w-]+\]|\{#[^}]+\}", "", texte or "")
     return len(re.findall(r"\w+", texte))

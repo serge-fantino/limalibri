@@ -1081,18 +1081,23 @@ body.lecture-large:is([data-vue="recit"],[data-vue="essai"]) #page > :not(.bande
 .objectif{border:1px solid var(--rule);border-radius:6px;margin:.4rem 0;padding:.45rem .7rem;background:var(--pan)}
 .objectif.atteint{border-color:var(--seg-relecture)}
 .objectif.archive{opacity:.65}
-.objectif summary{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;cursor:pointer;list-style:none}
-.objectif summary::-webkit-details-marker{display:none}
+.objectif{display:flex;align-items:center;gap:.6rem}
+.obj-tete{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;flex:1;min-width:0}
+a.obj-titre{color:inherit;text-decoration:none;font-weight:600}
+a.obj-titre:hover{text-decoration:underline}
+.obj-ordre{display:flex;gap:.2rem}
+.obj-tete-page{margin:-.4rem 0 1rem;font-family:var(--ui)}
+.obj-tete-page .obj-meta{padding-left:0}
 .obj-rang{display:inline-grid;place-items:center;width:1.4rem;height:1.4rem;border-radius:50%;background:var(--bar);font-size:.75rem;font-weight:600}
 .obj-titre{font-size:.95rem}
 .obj-barre{flex:1 1 8rem;min-width:6rem;max-width:16rem;height:.5rem;background:var(--bar);border-radius:3px;overflow:hidden}
 .obj-plein{display:block;height:100%;background:var(--acc)}
 .objectif.atteint .obj-plein{background:var(--seg-relecture)}
 .obj-pct{font-variant-numeric:tabular-nums;font-size:.85rem;min-width:3.5rem}
-.obj-meta{flex-basis:100%;padding-left:2rem;font-size:.78rem}
+.obj-meta{flex-basis:100%;font-size:.78rem}
 .obj-portee{font-size:.8rem}
 .obj-depasse{color:#b3412a}
-.obj-corps{padding:.5rem 0 .2rem 2rem}
+.obj-corps{padding:.2rem 0 .6rem;font-family:var(--ui)}
 .obj-criteres{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.5rem}
 .obj-crit{font-size:.78rem;padding:.1rem .45rem;border-radius:10px;border:1px solid var(--rule)}
 .obj-crit.ok{border-color:var(--seg-relecture);color:var(--seg-relecture)}
@@ -1128,3 +1133,126 @@ body.lecture-large:is([data-vue="recit"],[data-vue="essai"]) #page > :not(.bande
 .obj-depart code{font-size:.78rem}
 .obj-depuis{display:flex;flex-direction:column;gap:.2rem}
 .obj-depuis-ch{display:flex;flex-wrap:wrap;gap:.1rem .9rem}
+/* le plan d'exécution d'un objectif */
+.obj-plan,.obj-series{font-family:var(--ui)}
+.obj-plan-outils{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;font-size:.82rem;margin:.3rem 0 .6rem}
+.obj-plan-liste{display:flex;flex-direction:column}
+.obj-plan-ch{font-weight:600;margin:.7rem 0 .2rem;color:inherit;text-decoration:none;font-size:.9rem}
+.obj-plan-item{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;padding:.2rem 0 .2rem .4rem;border-bottom:1px dotted var(--rule);font-size:.85rem}
+.obj-plan-item .mut{flex:1;min-width:12rem}
+.obj-plan-auteur{width:13px;text-align:center}
+.obj-plan-statut{font-size:.72rem;padding:0 .45rem;border-radius:9px;border:1px solid var(--rule);white-space:nowrap}
+.obj-plan-statut.cliquable{cursor:pointer}
+.st-a_lancer{border-color:var(--acc);color:var(--acc)}
+.st-en_cours,.st-serie{border-color:var(--seg-controles);color:var(--seg-controles)}
+.st-a_decider{border-color:var(--seg-preparation)}
+.st-auteur{color:var(--mut)}
+.obj-plan-cout{min-width:3.5rem;text-align:right}
+.obj-plan-pied{position:sticky;bottom:0;display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;padding:.6rem .4rem;margin-top:.6rem;background:var(--bg);border-top:1px solid var(--rule)}
+.obj-resume{font-variant-numeric:tabular-nums;font-size:.85rem}
+.obj-ligne[hidden]{display:none}
+.obj-ecarts{font-family:var(--ui);margin-top:1.4rem}
+.obj-plan-pied label{font-size:.82rem}
+/* le pilotage d'un objectif */
+.obj-pilotage{font-family:var(--ui);margin:1rem 0}
+.obj-proposition,.obj-plan-retenu{border:1px solid var(--rule);border-radius:6px;padding:.6rem .8rem;margin:.5rem 0;background:var(--pan)}
+.obj-prop-tete{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.4rem}
+.obj-lecture{font-family:var(--pf);margin:.3rem 0 .6rem}
+.obj-sousbuts{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.5rem}
+.sb-mesure{border-color:var(--seg-relecture)}.sb-a_mesurer{border-color:var(--seg-preparation)}.sb-juge{border-style:dashed}
+.obj-cadre-ligne{display:flex;align-items:baseline;gap:.4rem;font-size:.85rem;padding:.2rem 0}
+.obj-phase{margin:.6rem 0;padding-left:.5rem;border-left:3px solid var(--rule)}
+.obj-phase.phase-en_cours{border-left-color:var(--seg-controles)}.obj-phase.phase-point_arret{border-left-color:var(--seg-preparation)}.obj-phase.phase-faite{border-left-color:var(--seg-relecture);opacity:.75}
+.obj-phase-tete{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;margin-bottom:.2rem}
+.obj-action-detail{flex-basis:100%;padding-left:1.6rem;color:var(--mut)}
+.obj-action-consigne{font-style:italic}
+.item-pb{background:color-mix(in srgb,#b3412a 8%,transparent)}
+.item-faite strong,.item-sautee strong{text-decoration:line-through;opacity:.7}
+.st-lancee,.st-pret{border-color:var(--seg-controles);color:var(--seg-controles)}
+.st-a_toi,.st-point_arret,.st-pause{border-color:var(--seg-preparation)}
+.st-faite,.st-fini{border-color:var(--seg-relecture);color:var(--seg-relecture)}
+.st-erreur,.st-bloque{border-color:#b3412a;color:#b3412a}
+.obj-plan-mesure{margin:1rem 0;font-family:var(--ui)}
+.obj-plan-mesure > summary{cursor:pointer}
+.obj-trous,.obj-diagnostic,.obj-journal{margin:.4rem 0}
+.obj-remarques{margin-top:.5rem}
+/* les capacités */
+.capacites{display:grid;gap:.5rem;font-family:var(--ui)}
+.capacite{border:1px solid var(--rule);border-radius:5px;padding:.45rem .7rem}
+.capacite-tete{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap}
+.capacite p{margin:.25rem 0}
+.objectif > a.obj-plan-statut{text-decoration:none;white-space:nowrap}
+/* la liste des demandes en pleine page : sans les boutons du tiroir */
+.liste-page .pan-tete .fermer,.liste-page .pan-tete .tiroir-plein,.liste-page .pan-tete .retour{display:none}
+.liste-page .liste-tete{position:sticky;top:0;background:var(--bg);z-index:2;padding-bottom:.3rem}
+.liste-page{font-family:var(--ui);max-width:60rem}
+.liste-tete .nav-demandes{display:flex;margin:.2rem 0 .4rem;font-size:.8rem}
+.capacite-artefacts{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:.2rem 1rem;margin-top:.2rem}
+.capacite-artefacts ul{margin:.15rem 0 .2rem;padding-left:1.1rem;color:var(--mut)}
+.capacite-artefacts li{margin:.05rem 0}
+/* la navigation des demandes dans le tiroir : le même dessin que dans la barre */
+.nav-demandes{display:flex;font-family:var(--ui);font-size:.76rem}
+.nav-demandes button{font:inherit;background:none;color:var(--mut);border:1px solid var(--rule);border-left-width:0;border-radius:0;padding:.18rem .6rem;cursor:pointer}
+.nav-demandes button:first-child{border-left-width:1px;border-radius:4px 0 0 4px}
+.nav-demandes button:last-child{border-radius:0 4px 4px 0}
+.nav-demandes button.actif{color:var(--fg);border-color:var(--acc);background:var(--bar)}
+/* les lots dans la file */
+.dem-lot{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;margin:.7rem 0 .2rem;padding:.25rem .4rem;border-left:3px solid var(--seg-controles);background:var(--bar);font-size:.8rem;font-family:var(--ui)}
+.dem-lot.inactif{border-left-color:var(--seg-preparation);opacity:.8}
+.lot-etiquette{border-color:var(--seg-controles)}
+.puce-fille{font-size:.75rem;border:1px solid var(--rule);border-radius:9px;padding:0 .45rem;white-space:nowrap}
+.puce-fille.st-a_confirmer,.puce-fille.st-prete{border-color:var(--seg-preparation)}
+.puce-fille.st-en_cours{border-color:var(--seg-controles);color:var(--seg-controles)}
+.puce-fille.st-decidee{border-color:var(--seg-relecture);color:var(--seg-relecture)}
+.puce-fille.st-erreur{border-color:#b3412a;color:#b3412a}
+/* lecture naïve : ce que chaque choix fera, et ce qui a été fait */
+.releve-naif{border-left:3px solid var(--rule)}
+.releve-naif[data-choix="appliquer"]{border-left-color:var(--seg-relecture)}
+.releve-naif[data-choix="annoter"]{border-left-color:var(--seg-preparation)}
+.releve-naif[data-choix="ignorer"]{border-left-color:var(--rule);opacity:.8}
+.effet-naif{display:block;margin-top:.25rem;color:var(--mut);font-style:italic}
+.bilan-naif{border-color:var(--seg-relecture)}
+.cout-reel{font-variant-numeric:tabular-nums;color:var(--fg)}
+.obj-plan-total{font-variant-numeric:tabular-nums}
+#outils button.b-suivi{border-radius:4px}
+.releve-relecture{border-left:3px solid var(--seg-preparation);padding:.3rem .6rem;margin:.35rem 0;font-family:var(--ui)}
+.releve-relecture.close{opacity:.55;border-left-color:var(--rule)}
+.releve-relecture .badge{margin-right:.3rem}
+.releve-relecture .badge.majeur{border-color:#b3412a;color:#b3412a}
+.plan-sb-tiroir{border-left:3px solid var(--seg-preparation);padding:.3rem .6rem;margin:.4rem 0;font-family:var(--ui)}
+.plan-sb-tiroir ol{margin:.2rem 0 0;padding-left:1.2rem;font-style:italic}
+#b-fiches .pastille-decider{font-size:.72rem;padding:0 .35rem;border-radius:8px;background:var(--seg-preparation);color:#1f1c17}
+.revisions{font-family:var(--ui);max-width:60rem}
+.revisions-marquer{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin:.6rem 0 1rem}
+.revisions-marquer .dem-motif{flex:1;min-width:14rem}
+.revision{border:1px solid var(--rule);border-radius:5px;padding:.4rem .7rem;margin:.35rem 0}
+.revision-tete{display:flex;gap:.6rem;align-items:baseline;flex-wrap:wrap}
+.revisions-log{display:flex;flex-direction:column;gap:.15rem}
+.revisions-log .obj-plan-statut{margin-left:.4rem}
+.version-bloc{border:1px solid var(--rule);border-radius:5px;padding:.4rem .8rem;margin:.6rem 0;font-family:var(--ui)}
+.version-bloc h3{margin:.1rem 0 .4rem;font-size:1rem}
+.parties-raccourcis{display:flex;flex-wrap:wrap;gap:.25rem .5rem;align-items:center;margin:.4rem 0 .2rem;font-size:.8rem;font-family:var(--ui)}
+.partie-raccourci{border:1px solid var(--rule);border-radius:9px;padding:0 .5rem}
+.partie-raccourci.actif{border-color:var(--acc);background:var(--bar);color:var(--fg)}
+.der-lien{margin-left:.4rem;white-space:nowrap}
+.releve-tete{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
+.obj-plan-pied textarea{flex-basis:100%}
+.application-relecture{margin:.5rem 0;padding:.35rem .6rem;border-left:3px solid var(--seg-controles);background:var(--pan)}
+.application-ligne{margin:.15rem 0}
+.role-version{width:100%;min-height:110px;font-family:var(--pf);font-size:.95rem;line-height:1.45;resize:vertical}
+.version-bloc .ed-long{display:flex;flex-direction:column;align-items:stretch;gap:.25rem}
+/* écrire le récit depuis le storyboard : les liens par plan et par paragraphe */
+.par-plan .sb-ecrire{margin-left:.8rem;font-size:.72rem;white-space:nowrap}
+.par-tete .sb-ecrire{display:block;margin-top:.6rem;font-size:.8rem}
+.sb-a-ecrire{font-size:.86rem;line-height:1.5}
+.sb-a-ecrire .pan-lien{font-style:normal;font-size:.8rem}
+.sb-liens-tete{display:flex;gap:1rem;flex-wrap:wrap}
+/* les outils d'un micro-récit, au survol de sa ligne */
+.sb-outils{display:flex;gap:.5rem;opacity:0;transition:opacity .12s;font-size:.75rem}
+.par-sb.ligne:hover .sb-outils,.par-sb.ligne.choisi .sb-outils{opacity:1}
+.sb-outils .pan-lien{padding:0 .15rem}
+.pan-lien.danger{color:#b33}
+.pan-lien:disabled{opacity:.4;cursor:not-allowed}
+.par-texte.ligne:hover .sb-outils,.par-texte.ligne.choisi .sb-outils,.par-texte.ligne.survol .sb-outils{opacity:1}
+.sb-outils-para{margin-top:.2rem}
+.sb-a-ecrire .pan-lien{display:inline;padding:0}

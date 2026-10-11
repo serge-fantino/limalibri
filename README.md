@@ -227,6 +227,21 @@ avancement : le **texte**, avec son statut (brief, brouillon, en relecture, vali
 seul, avec sa question. La numérotation (sections, sections + §) suit le réglage du livre. En annexe,
 la bibliographie des œuvres citées.
 
+**L'essai et la base de connaissance** (`atelier/compagnon.py` ; **⎙ essai + base…** dans la barre de
+l'essai ; `/api/complet/pdf?portee=…`, `/api/complet/imprimable?portee=…`) : l'essai imprimable, relié à ses
+fiches. Chaque chapitre se termine par **« Pour aller plus loin »** : ses fiches (son brief), les fiches qui
+partagent ses sources, et une **mini-carte** (le chapitre, ses fiches, leurs voisines). En annexe, **la
+carte du livre** — un tableau des clusters thématiques, puis une carte par cluster : les chapitres à
+gauche dans l'ordre du livre, les fiches à droite (rangées par le rang moyen de leurs chapitres, pour
+croiser le moins de traits), un trait plein chapitre → fiche, un pointillé fiche → fiche —, puis les
+fiches par cluster, chacune avec en tête **« Sert : ch. … »** et en pied ses voisines et qui la cite. Une
+**bibliographie commune** dit, pour chaque œuvre, les chapitres et les fiches qui la citent. Portée :
+`utilisees` (les fiches des briefs ; par défaut) ou `toutes` ; un lien vers une fiche hors de l'édition
+devient du texte, marqué. Les cartes sont disposées ici, en mm : traits en SVG, noms en liens HTML posés
+dessus — le PDF les garde cliquables (drill-down vers le chapitre ou la fiche). La version imprimable
+(HTML) les anime : survoler un nœud allume ses liens et ses voisins. L'essai ne nomme toujours pas ses
+fiches (R8) : l'appareil est en encart et en annexe.
+
 Le **récit** s'exporte de la même façon (**⎙ récit PDF** dans la barre du livre, **⎙ PDF** dans celle du
 récit ; `/api/recit/pdf`, `/api/recit/imprimable`), avec un niveau d'avancement à lui : entre le synopsis
 et le texte, le **storyboard** — les plans du chapitre, chacun avec son cadre (lieu, temps, ambiance) et
@@ -436,9 +451,129 @@ jugée atteinte. Rien ne s'écrit à la lecture : l'évaluation est recalculée 
 objectif montre ses critères (tenus / total) et les chapitres en écart, avec la mesure ; ✎ modifier,
 ↑ ↓ (priorité), archiver, supprimer. Sur la ligne d'un chapitre, ◎n : l'objectif n n'y est pas tenu.
 
+La **vue d'un objectif** (`#objectif/<id>`, le titre d'un objectif dans le suivi y mène) : sa tête
+(progression, chapitres à faire, intention, budget, échéance), son avancement, ses critères, son
+intention à juger, puis le **plan d'exécution** (`atelier/execution.py`), tiré de ses écarts sans Claude,
+chapitre par chapitre dans l'ordre du travail : brief, écrire (chapitre sans texte), réviser (portes du
+harnais en échec, ou visées par « relu » — la consigne nomme les portes et reprend l'intention), lecture
+naïve (après la révision), puis ce qui revient à l'auteur (✋ passer en relu, manques, fiches, annotations,
+décisions — « y aller → »). Chaque élément dit pourquoi, son coût estimé (moyennes du journal de
+consommation du livre, au moins trois demandes ; sinon une valeur par défaut) et son état : à lancer, en
+file, en cours, à décider, dans une série. On coche (tout, rien, les révisions, les lectures naïves, les n
+premiers chapitres) ; le pied recalcule nombre, coût, durée et budget restant. **▶ exécuter la sélection** :
+une série rattachée à l'objectif (`objectif` dans `kb/series/`), une étape après l'autre, chapitre par
+chapitre, chaque révision avec sa consigne ; révisions posées d'office par défaut (sinon, la lecture naïve
+d'un chapitre révisé est retirée). Au-delà du budget restant, il faut confirmer. La section **Exécution**
+suit les séries de l'objectif (arrêter, reprendre, ouvrir l'étape en cours) ; la vue se redessine quand
+une étape ou une demande avance, et la sélection en cours survit au redessin.
+
+**Cadrer un objectif avec Claude** (`atelier/cadrage.py`, demandes `k-…`, genre `cadrage` : 40 tours, sans
+web) : « ✦ cadrer avec Claude… » dans la vue de l'objectif. Claude reçoit l'objectif (titre, critères,
+intention, consigne commune, budget), les mesures du suivi par chapitre (niveau, score, portes en échec,
+lecture naïve, fiches, manques, à décider), le travail en attente, le plan du livre, l'index des fiches,
+les règles d'écriture et le **catalogue des capacités** — puis il lit lui-même le livre (Read, Grep, Glob)
+pour se faire son idée. Il rend : sa lecture de l'objectif, ses sous-buts (mesuré, à mesurer, jugé), un
+diagnostic par chapitre, des **ajouts au cadre** (une règle d'écriture, un critère, une consigne commune),
+un **plan en phases** (avec points d'arrêt), fait d'actions — chacune une capacité, ses paramètres, son
+pourquoi, ses dépendances —, les demandes à couper, ses remarques. Le harnais contrôle la réponse :
+capacités et paramètres valides (chapitres, fiches, parties existants ; pas de fiche en double),
+dépendances connues et sans cycle, coût estimé, et **couverture** (les écarts mesurés qu'aucune action ne
+traite). La proposition s'affiche dans la vue de l'objectif : tout se coche ; « Retenir » applique le
+cadre coché (une règle déjà présente n'est pas doublée), retire les demandes à couper, et pose le plan.
+
+**Piloter le plan** (`atelier/pilotage.py`, `kb/plans/<objectif>.json` ; l'ancien est archivé) : ▶ démarrer,
+⏸ pause (ce qui tourne finit, rien de neuf ne part), ▶ continuer après un point d'arrêt, arrêter. Une action
+part quand ses dépendances sont faites (`capacites.lance`), marquée du plan : ses demandes passent la file
+d'elles-mêmes, comme celles d'une série ; les fiches sont créées d'office (à confirmer) et les révisions
+posées d'office, pour que la suite s'en serve (options au moment de retenir). Une action est faite quand
+sa demande a rendu son résultat (prête, à confirmer, décidée) ; ce qui attend une décision se décide au
+point d'arrêt. Une action en erreur bloque le plan (relancer, sauter) ; une tâche de l'auteur attend son
+« ✓ fait ». Le pilotage avance à la fin de chaque demande, au démarrage du serveur et à chaque geste.
+
+Les **lots** (`atelier/file.py`) : une phase d'un plan, une série. Leurs demandes partent d'elles-mêmes tant
+que le lot est actif (plan en cours, série en cours) — un plan en pause retient ses demandes en file, un
+plan arrêté (ou remplacé) les retire, et leurs actions passent « sautées ». Un lot s'enchaîne d'un bloc : la
+place libérée va d'abord au lot de la dernière demande partie. Au démarrage, plans et séries avancent avant
+la file (un plan interrompu est bloqué avant que sa suivante puisse partir). La liste des demandes, en vue
+« en cours + en attente », groupe la file par lot (titre de la phase, lien vers l'objectif, « attend » si
+inactif) ; chaque demande lancée par un plan porte ◫ son action et sa phase, et son tiroir un lien « plan de
+l'objectif → ». Dans la vue de l'objectif, une action lancée montre l'état réel de sa demande (en file n° k,
+en cours, à décider).
+
+La **relecture critique** (`atelier/relecture.py`, demandes `q-…`, capacité `relire` ; « ✦ relecture critique… »
+dans la barre du suivi) : Claude relit EN ENTIER une partie (ou des chapitres), en connaissant les règles de
+la version, le plan du livre et l'index des fiches, et va voir ailleurs (Grep, lecture) ce que le livre dit
+déjà. Il **annote lui-même** chaque constat avec l'outil `annoter` (`atelier/outils_livre.py`, un serveur MCP
+en mémoire : `mcp__atelier__annoter`) — sur le paragraphe (^id), avec un extrait exact ; l'outil refuse une
+ancre ou un extrait introuvables, Claude corrige. Sortes : répétition (avec l'autre chapitre et son ^id),
+écart à une règle (son numéro), incohérence, fait à vérifier, manque de recherche, clarté, rythme ; gravité
+majeur / mineur. L'annotation garde son `origine` (la demande, la sorte, la gravité). Fable 5.1 par défaut
+(sauf `claude.relecture.modele`). Le tiroir montre le bilan, la synthèse, les annotations par chapitre ;
+« classer » les marque toutes résolues. L'**assistant** a le même outil, mais ne l'utilise qu'à la demande.
+La **révision** d'un chapitre reçoit ses annotations ouvertes, les traite, et donne les identifiants de
+celles qu'elle règle : à la pose, elles passent résolues.
+
+Le **storyboard d'un chapitre** (`atelier/storyboard.py`, demandes `b-…`, capacité `storyboard` ; « ✦
+storyboard… » dans la barre du récit) : Claude prépare les plans du récit depuis l'**essai** (révisé) et le
+**verrou** du chapitre, selon les règles du récit (la voix, le registre), en enchaînant sur le storyboard du
+chapitre précédent. Chaque plan : lieu, temps, ambiance, attaque, chute, les **assertions** qu'il met en
+scène (le lien avec l'essai), la séquence, les micro-récits, les ajouts permis. Le contrôle dit si chaque
+assertion obligatoire est portée et si les identifiants existent. Retenir (ou poser d'office, depuis un
+plan) écrit `brief.yaml` — `beats`, `intent`, `tenue` ; synopsis, question et fiches gardés ; l'ancien
+storyboard dans `historique/`. Fable 5.1 par défaut.
+
+Le **récit d'un chapitre** s'écrit depuis son storyboard (`atelier/narration.py`, demandes `t-…`, capacité
+`ecrire_recit`, action de série `recit`). La portée est soit le chapitre entier, soit un plan, soit un seul
+paragraphe : son rang dans le plan, c'est-à-dire le micro-récit qu'il réalise.
+
+Dans la vue storyboard :
+- « ✦ écrire tout le récit » se trouve en tête ;
+- « ✦ écrire ce plan » ou « ✦ réécrire ce plan… » se trouve à côté de chaque plan ;
+- « ✦ écrire ce paragraphe » apparaît sur chaque rang vide.
+
+On écrit dans l'ordre qu'on veut : un paragraphe porte son rang dans `links.yaml` (« rang », c'est-à-dire
+le micro-récit qu'il réalise), et les rangs vides restent ouverts. Sans rang écrit, la place d'un
+paragraphe est sa position dans le plan, comme pour un récit écrit d'un trait.
+
+Claude reçoit :
+- les règles et l'intention du récit ;
+- le storyboard entier ;
+- le texte des assertions ;
+- le récit déjà écrit autour de la portée ;
+- la fin du récit du chapitre précédent.
+
+Il lit l'essai pour les faits. Pour chaque paragraphe, il rend les assertions portées, ou « ajout ».
+
+Retenir réécrit `recit.md` : les paragraphes de la portée sont remplacés, et les autres gardent leurs ancres. `links.yaml` suit (plan, assertions, ajout), et l'ancien récit va dans `historique/`.
+
+Le cadrage peut aussi proposer de **réviser une règle** (`regle_revue` : la cible — `R5`, `la-voix`… —, son
+titre et son texte nouveaux), et un plan peut **dépendre d'une action du plan d'un autre objectif**
+(`o-xxxx:a8`) : le cadrage reçoit les plans des autres objectifs ; le pilotage attend que l'action visée
+soit faite ; chaque geste fait avancer tous les plans.
+
+Les **capacités** (`atelier/capacites.py`, page `#capacites` sous Demandes) : le catalogue unique de ce
+que l'atelier sait lancer — créer une fiche, creuser, relier, vérifier une référence, lire un texte
+original, développer un brief, une partie, revoir la structure du livre, écrire, réviser, lecture naïve,
+vérifier des assertions, une tâche de l'auteur — avec ses paramètres, ce qu'il faut à la fin (décision,
+pose, rapport), ce qu'elle **produit ou modifie** dans le livre — à la réponse de Claude et à la décision de
+l'auteur (fichiers et champs : `kb/fiches/<slug>.md`, `chapters/<slug>/brief.yaml`, `essai.md` et son
+historique, `verrou.yaml`, `kb/sources/<cle>.yaml`, `structure.yaml`…) — et son coût moyen dans ce livre ;
+et les ajouts au cadre qu'un cadrage peut proposer. Le cadrage reçoit aussi ces artefacts.
+
+**Les demandes, en pleine page** (`#demandes`) : la même liste que le tiroir (filtres, file, commande de
+l'enchaînement), qui se redessine quand une demande change ; une demande s'ouvre dans le tiroir. Une seule
+navigation pour les demandes — liste · paramétrage · consommation · capacités — dans la barre des pages
+Demandes et en tête de la liste du tiroir ; le bouton « Demandes » de l'en-tête ouvre le tiroir.
+
 L'**avancement** d'un objectif : chaque fois que sa mesure change (progression, critères tenus,
 atteinte), un point s'ajoute à `objectifs-suivi.jsonl` — seule écriture faite à la lecture du suivi. La
 carte montre la courbe, la mesure du premier point et aujourd'hui, et ce qui a bougé critère par critère.
+
+Les **révisions** (vue Livre › **révisions**, `#livre/revisions`) : l'état du dépôt (préfixe des tags, fichiers
+du livre non commités), « 🏷 marquer la version actuelle » (nom, une ligne), les versions marquées — leur
+date, leur message, les objectifs qui en partent, « ce qui a changé depuis » (fichiers, mots de l'essai par
+chapitre) —, et les derniers commits qui touchent le livre (`GET /api/versions/historique`). L'onglet voisin
+« récit · essai » (anciennement « versions ») règle les versions du texte et la numérotation de l'essai.
 
 **Marquer une version** (`atelier/versions.py`, seulement si le livre est dans un dépôt git) : un commit du
 seul dossier du livre (ce qui est déjà indexé ailleurs dans le dépôt n'est pas emporté), puis un tag
@@ -501,8 +636,42 @@ jetons (neufs, cache créé, cache relu, sortie), coût au tarif API, détail pa
 `migrer/consommation.py` reconstitue le travail d'avant le journal depuis les demandes (lignes
 « reconstitue », les reprises y sont cumulées) ; le rejouer ne crée pas de doublon.
 
-Le **storyboard** se recadre dans la vue Récit (mode storyboard) : double-clic sur un micro-récit,
-champs du plan dans son détail. Écrit dans `brief.yaml` (mise en forme gardée), noté au
+Le **storyboard** se recadre dans la vue Récit (mode storyboard). Au survol d'un micro-récit,
+des outils apparaissent : ✎ pour le modifier (ou double-clic), ＋ pour en insérer un après, ↑ ↓ pour le
+déplacer, × pour le retirer. Un plan vide propose « ＋ premier micro-récit ». Le détail d'un plan donne
+ses champs, ses ajouts permis, et deux actions : « insérer un plan après », « retirer ce plan ». Retirer
+un plan n'est possible que s'il ne porte aucun paragraphe du récit. « ＋ ajouter un plan à la fin » se
+trouve au bas de la vue. Côté serveur, c'est `livre.forme_plan`, sur `POST
+/api/chapitres/<slug>/storyboard/<op>`. Les paragraphes du récit suivent leur micro-récit.
+
+Le **texte du récit** a les mêmes outils, en face. Au survol d'un paragraphe : ✎ pour le corriger, ＋ pour
+écrire un paragraphe après lui dans le même plan, ↑ ↓ pour le déplacer dans son plan, × pour le retirer.
+Chaque rang vide d'un plan propose « ✎ l'écrire à la main », à côté de « ✦ écrire ce paragraphe ».
+**Le texte et le storyboard restent alignés ligne à ligne.** Une ligne, c'est un micro-récit et son
+paragraphe, et elle bouge d'un bloc des deux côtés :
+- **＋** (d'un côté ou de l'autre) insère une ligne : un micro-récit, obligatoire, et son paragraphe,
+  facultatif. Les lignes suivantes descendent toutes les deux.
+- **↑ ↓** déplace la ligne : depuis le paragraphe, le micro-récit le suit ; depuis le micro-récit, le
+  paragraphe le suit.
+- **×** côté micro-récit retire la ligne entière, et le texte du paragraphe reste au journal. S'il porte des
+  assertions, une confirmation est demandée.
+- **×** côté paragraphe retire seulement le texte : le micro-récit reste, à écrire.
+
+Le serveur refuse ce qui désalignerait les deux côtés :
+- un paragraphe sur une ligne sans micro-récit ;
+- un paragraphe sur une ligne déjà écrite ;
+- un déplacement du texte seul.
+
+En mode « corriger », « ＋ paragraphe après » demande le micro-récit de la nouvelle ligne. Claude écrit un
+plan entier avec exactement un paragraphe par micro-récit ; s'il ne le fait pas, le tiroir signale l'écart.
+Un récit plus ancien peut avoir des paragraphes au-delà des micro-récits : la vue les signale (« sans
+micro-récit »), et « ＋ micro-récit pour ce paragraphe » les rattache.
+Côté serveur, c'est `narration.paragraphe`, sur `POST /api/chapitres/<slug>/recit/paragraphes/<op>` ;
+`recit.md` et `links.yaml` sont réécrits ensemble, avec un groupe par plan séparé par `---`. Sans
+modification, la réécriture redonne le même fichier, à l'octet près, pour les 27 récits d'Une Vie.
+Retirer un paragraphe qui porte des assertions demande une confirmation. Le mode « corriger » accepte aussi
+d'insérer et de supprimer un paragraphe du récit. Chaque opération va au journal du chapitre, avec le
+texte complet. Le storyboard, lui, s'écrit dans `brief.yaml` (mise en forme gardée), noté au
 journal ; la réécriture suivante lit le nouveau cadre. Une re-migration du chapitre ne
 remplace plus brief, textes ni liens sans `--ecraser`. Claude rend des propositions structurées ; le tiroir (↻ dans l'en-tête) les
 montre mot à mot. « Retenir » réécrit les paragraphes visés (^id conservés), écrit le

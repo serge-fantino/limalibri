@@ -68,6 +68,10 @@ LIMITES = {"verification": {"tours": 25, "recherches": 6, "pages": 12},
            "plan": {"tours": 24, "recherches": 0, "pages": 0},
            "conversation": {"tours": 30, "recherches": 4, "pages": 6},
            "redaction": {"tours": 40, "recherches": 0, "pages": 0},
+           "cadrage": {"tours": 40, "recherches": 0, "pages": 0},
+           "relecture": {"tours": 90, "recherches": 0, "pages": 0},
+           "storyboard": {"tours": 40, "recherches": 0, "pages": 0},
+           "recit": {"tours": 40, "recherches": 0, "pages": 0},
            "reecriture": {"tours": 16, "recherches": 0, "pages": 0}}
 # Un message du CLI peut porter un gros résultat d'outil (un PDF lu d'un bloc) : 1 Mo par défaut
 # ne suffit pas. Et un PDF se lit par pages, jamais entier (voir le crochet).
@@ -81,7 +85,8 @@ ARRETE = (" Ne cherche plus : rends maintenant ta réponse structurée avec ce q
           "pu être vérifié le reste (verdict « introuvable », ou verifie: false).")
 
 
-MODELES = {"claude-opus-5-5": "Opus 5.5", "claude-sonnet-5": "Sonnet 5", "claude-haiku-4-5-20251001": "Haiku 4.5"}
+MODELES = {"claude-opus-5-5": "Opus 5.5", "claude-fable-5-1": "Fable 5.1", "claude-sonnet-5": "Sonnet 5",
+           "claude-haiku-4-5-20251001": "Haiku 4.5"}
 
 
 def modele(genre, d=None):
@@ -196,7 +201,8 @@ def liste(slug):
             d["_slug"] = slug
             d["titre"] = titre_de(d)
         out.append({k: d.get(k) for k in ("id", "type", "titre", "portee", "mode", "consigne", "etat", "cree",
-                                          "remplacee_par", "relance_de", "modele_choisi")}
+                                          "remplacee_par", "relance_de", "modele_choisi", "serie")}
+                   | {"pilote": d.get("plan")}          # le plan d'objectif qui l'a lancée (« plan » : celui du récit)
                    | {"modele": (d.get("execution") or {}).get("modele")}
                    | {"jetons": (d.get("execution") or {}).get("jetons"),
                       "cout_usd": (d.get("execution") or {}).get("cout_usd")}
@@ -207,6 +213,27 @@ def liste(slug):
                       "niveau": d["cible"].get("niveau"), "partie": d["cible"].get("partie"), "chapitre": d["cible"].get("chapitre"),
                       "plan": d["cible"].get("plan"), "decision": d.get("decision")})
     return sorted(out, key=lambda d: d["cree"], reverse=True)
+
+
+def filles(ident):
+    """Les demandes nées de `ident` (atelier/filiation.py) : {id, slug, type, etat, titre, sujet, fiche, issue}."""
+    from . import file
+    try:
+        _, m = file._trouve(ident)
+    except KeyError:
+        return []
+    out = []
+    for e in m.get("enfants") or []:
+        try:
+            s, d = file._trouve(e)
+        except KeyError:
+            continue
+        dec = d.get("decision") or {}
+        out.append({"id": d["id"], "slug": s, "type": d.get("type"), "etat": d.get("etat"), "titre": d.get("titre"),
+                    "sujet": d.get("sujet"), "question": (d.get("cible") or {}).get("question"), "fiche": dec.get("fiche"),
+                    "remplacee_par": d.get("remplacee_par"),
+                    "issue": None if d.get("etat") != "decidee" else ("rejetee" if dec.get("proposition") is None else "retenue")})
+    return out
 
 
 def liste_toutes():
@@ -268,6 +295,13 @@ def _relance(slug, ident, d, consigne, modele_choisi):
         n = redaction.cree({"chapitre": c["chapitre"], "revision": d.get("mode") == "revision", "consigne": consigne,
                             "longueur": d.get("longueur"), "mots": d.get("mots"), "poser": d.get("poser"),
                             "remplacer": d.get("remplacer"), "modele": mc})
+    elif d.get("type") == "storyboard":
+        from . import storyboard
+        n = storyboard.cree({"chapitre": c["chapitre"], "consigne": consigne, "poser": d.get("poser"), "modele": mc})
+    elif d.get("type") == "recit":
+        from . import narration
+        n = narration.cree({"chapitre": c["chapitre"], "plan": c.get("plan"), "rang": c.get("rang"), "consigne": consigne,
+                            "poser": d.get("poser"), "modele": mc})
     elif d.get("type") == "verification":
         from . import verification
         n = verification.cree(slug, {"assertions": c.get("assertions"), "annotation": c.get("annotation"),
@@ -285,7 +319,12 @@ def _relance(slug, ident, d, consigne, modele_choisi):
         n = cree(slug, corps)
     n = lit(slug, n["id"])
     n["relance_de"] = ident
+    if d.get("serie"):                            # une étape de série : la nouvelle en est, et la série la suit
+        n["serie"] = d["serie"]
     _ecrit(slug, n)
+    if d.get("serie"):
+        from . import serie
+        serie.relie(d["serie"], ident, n["id"])
     d["remplacee_par"] = n["id"]
     if d["etat"] in ("prete", "erreur", "en_attente"):   # relancée : l'ancienne est close (et sort de la file)
         d["etat"] = "remplacee"
@@ -492,7 +531,9 @@ def verifie(slug=None, ident=None):
     if corrigees:
         from . import serie
         try:
+            from . import pilotage
             serie.avance()
+            pilotage.avance()
             file.suivante()
         except Exception as e:                   # noqa: BLE001
             print("atelier : vérification —", e)
@@ -833,6 +874,11 @@ async def _lance(slug, d, options, prompt, conclut, reprise=False, apres=None):
         serie.avance()
     except Exception as e:                       # noqa: BLE001 — une série ne doit pas casser la demande finie
         print("atelier : série —", e)
+    try:
+        from . import pilotage                   # les plans d'objectifs aussi
+        pilotage.avance()
+    except Exception as e:                       # noqa: BLE001
+        print("atelier : pilotage —", e)
     if True:                                     # la file : la suivante (d'une série, ou si l'enchaînement est activé)
         from . import file
         try:
@@ -889,6 +935,18 @@ def _genre(d):
     if d.get("type") == "plan":
         from . import planif
         return "plan", planif.schema(d["cible"]["niveau"]), planif.conclut, None
+    if d.get("type") == "cadrage":
+        from . import cadrage
+        return "cadrage", cadrage.SCHEMA, cadrage.conclut, None
+    if d.get("type") == "relecture":
+        from . import relecture
+        return "relecture", relecture.SCHEMA, relecture.conclut, None
+    if d.get("type") == "storyboard":
+        from . import storyboard
+        return "storyboard", storyboard.SCHEMA, storyboard.conclut, None
+    if d.get("type") == "recit":
+        from . import narration
+        return "recit", narration.SCHEMA, narration.conclut, None
     return "reecriture", SCHEMA, _conclut, None
 
 

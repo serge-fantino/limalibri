@@ -165,6 +165,18 @@ def juge(ident, corps):
     return o
 
 
+def ajoute_consigne(ident, texte):
+    """Une consigne commune (d'un cadrage retenu) : ajoutée à toutes les actions de Claude de l'objectif."""
+    L = lit_tous()
+    i, o = _trouve(L, ident)
+    texte = " ".join((texte or "").split())
+    if texte and texte not in (o.get("consigne") or ""):
+        o["consigne"] = ((o.get("consigne") or "") + "\n" + texte).strip()
+    L[i] = o
+    _ecrit(L, "consigne", o)
+    return o
+
+
 def supprime(ident):
     L = lit_tous()
     i, o = _trouve(L, ident)

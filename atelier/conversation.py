@@ -61,7 +61,10 @@ ou te demande de l'aide pour décider du travail à faire. Tu réponds en franç
 - Cherche dans le livre d'abord (Grep, Glob, Read) ; le web (WebSearch, WebFetch) seulement pour ce que
   le livre ne dit pas, avec mesure, et en le disant.
 - Ne lis que ce qu'il faut : Grep pour trouver, Read ciblé ensuite. Le budget est compté.
-- Tu n'écris ni ne modifies aucun fichier. Tu réponds, et tu proposes.
+- Tu n'écris ni ne modifies aucun fichier. Tu réponds, et tu proposes. Une exception : quand l'auteur te
+  le demande, tu peux ANNOTER des paragraphes avec l'outil « annoter » (mcp__atelier__annoter : chapitre,
+  version, ancre du paragraphe, extrait exact, constat) — une annotation ne touche pas au texte ; la
+  révision du chapitre la lira. Jamais sans qu'il l'ait demandé.
 - Sois exact : un fait non vérifié est dit non vérifié. Distingue ce que le livre dit, ce que les fiches
   établissent, et ce que tu en penses.
 
@@ -217,9 +220,12 @@ async def _execute(ident):
     outils = ["Read", "Grep", "Glob", "WebSearch", "WebFetch"]
     depot, _ = livre.heritage()
     modele = c.get("modele_session") or reecriture.modele("conversation", {"modele_choisi": c.get("modele_choisi")})
+    from . import outils_livre
+    srv = outils_livre.serveur(ident, None, None, auteur="assistant")
     options = ClaudeAgentOptions(
         max_buffer_size=reecriture.TAMPON, thinking=reecriture.PENSEE,
-        tools=outils, allowed_tools=outils, max_turns=lim["tours"] + 2, setting_sources=[],
+        tools=outils, allowed_tools=outils + outils_livre.OUTILS, mcp_servers={outils_livre.NOM: srv},
+        max_turns=lim["tours"] + 2, setting_sources=[],
         cwd=str(livre.LIVRE), add_dirs=[str(depot)] if depot else [],
         system_prompt=_systeme(), output_format={"type": "json_schema", "schema": SCHEMA},
         hooks=reecriture.garde(t, lim), model=modele, resume=c.get("session_id"))

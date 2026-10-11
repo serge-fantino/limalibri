@@ -131,10 +131,12 @@ def decide(slug, ident, corps):
         if not isinstance(i, int) or not 0 <= i < len(R) or action not in ("appliquer", "annoter", "ignorer"):
             raise ValueError("action inconnue : %s" % x)
         r = R[i]
+        voulu, note = action, None
         if action == "appliquer":
             t = trouve(slug, version, r)
             if t is None:
                 action = "annoter"                     # la citation n'y est plus : on garde le relevé en annotation
+                note = "la citation n'est plus dans le texte : relevé gardé en annotation"
             else:
                 nouveau = _norm(t).replace(_norm(r["citation"]), _norm(x.get("reformulation") or r["reformulation"]), 1)
                 edition.modifie_bloc(slug, version, r["bloc"], nouveau, t, "lecture naïve %s (%s)" % (ident, TYPES.get(r["type"])))
@@ -144,7 +146,9 @@ def decide(slug, ident, corps):
                 livre.cree_annotation(slug, {"version": version, "bloc": bloc, "citation": r["citation"],
                                              "type": "a-reecrire", "auteur": "lecture naïve",
                                              "texte": "%s — %s. Proposition : « %s »" % (TYPES.get(r["type"], r["type"]), r["devine"], r["reformulation"])})
-        faits.append({"i": i, "action": action})
+            else:                                      # une note n'a pas de paragraphe où ancrer l'annotation
+                action, note = "ignorer", "relevé sur une note : pas d'annotation possible — à reprendre à la main"
+        faits.append({"i": i, "action": action, "voulu": voulu, "note": note})
     traites = sum(1 for f in faits if f["action"] in ("appliquer", "annoter"))
     harnais.enregistre_naive(slug, version, ident, len(R), traites)
     d.update(etat="decidee", decision={"proposition": "close", "faits": faits, "date": livre._maintenant()})

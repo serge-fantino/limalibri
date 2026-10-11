@@ -72,12 +72,14 @@ parts: []
 # Les champs que la page du livre peut modifier ; le reste (versions, héritage) se
 # change à la main, dans le fichier.
 EDITABLES = ("titre", "sous_titre", "auteur", "langue", "synopsis", "quatrieme", "couverture",
-             "numerotation_essai", "claude")
+             "numerotation_essai", "claude", "versions")
 CLAUDE_GENRES = {"verification": ("tours", "recherches", "pages", "modele"), "reecriture": ("tours", "modele"),
                  "fiche": ("tours", "recherches", "pages", "modele"), "pistes": ("tours", "modele"),
                  "reference": ("tours", "recherches", "pages", "modele"), "naive": ("modele",),
                  "document": ("tours", "recherches", "pages", "modele"), "plan": ("tours", "modele"),
-                 "conversation": ("tours", "recherches", "pages", "modele"), "redaction": ("tours", "modele")}
+                 "conversation": ("tours", "recherches", "pages", "modele"), "redaction": ("tours", "modele"),
+                 "cadrage": ("tours", "modele"), "relecture": ("tours", "modele"),
+                 "storyboard": ("tours", "modele"), "recit": ("tours", "modele")}
 NUMEROTATIONS = ("aucune", "sections", "paragraphes")
 
 
@@ -143,6 +145,13 @@ class Conflit(Exception):
     pass
 
 
+def intention_version(version):
+    """Ce que l'auteur dit d'une version dans livre.yaml (son titre, son rôle) : l'intention à donner à Claude."""
+    v = (meta().get("versions") or {}).get(version) or {}
+    role = " ".join(str(v.get("role") or "").split())
+    return ("%s — %s" % (v.get("titre") or version, role)) if role else ""
+
+
 def ecrit_meta(champs, version):
     """Modifie des champs de livre.yaml en gardant ses commentaires et sa mise en forme.
 
@@ -158,6 +167,24 @@ def ecrit_meta(champs, version):
         raise KeyError("numerotation_essai : %s" % "|".join(NUMEROTATIONS))
     y = yaml_rt()
     doc = y.load(p.read_text(encoding="utf-8")) or {}
+    if "versions" in champs:                  # le titre et le rôle des deux versions — l'atelier n'en connaît pas d'autres
+        vs = champs.pop("versions") or {}
+        cible = doc.get("versions")
+        if cible is None:
+            doc["versions"] = cible = CommentedMap()
+        for v, d in vs.items():
+            if v not in VERSIONS:
+                raise KeyError("versions : seules %s sont prises en charge" % ", ".join(VERSIONS))
+            x = cible.get(v)
+            if x is None:
+                cible[v] = x = CommentedMap()
+            for k in ("titre", "role"):
+                if k in (d or {}):
+                    t = " ".join(str(d[k] or "").split())
+                    if t:
+                        x[k] = t
+                    else:
+                        x.pop(k, None)
     if "claude" in champs:                    # les réglages de Claude : fusionnés, commentaires gardés
         c = champs.pop("claude") or {}
         cible = doc.get("claude")
@@ -518,6 +545,8 @@ def cree_annotation(slug, a):
          "regles": [r for r in (a.get("regles") or []) if isinstance(r, str)],
          "etat": "ouverte", "auteur": a.get("auteur") or meta().get("auteur") or "auteur",
          "cree": _maintenant()}
+    if isinstance(a.get("origine"), dict):              # posée par Claude : sa demande, la sorte de constat, sa gravité
+        e["origine"] = {k: v for k, v in a["origine"].items() if v}
     _ajoute(slug, e)
     return e
 
@@ -549,7 +578,7 @@ def supprime_annotation(slug, ident):
 # fichier, et note chaque changement au journal. La réécriture relit brief.yaml à chaque
 # demande : recadrer le storyboard, c'est recadrer ce que Claude recevra.
 
-CHAMPS_PLAN = ("title", "lieu", "temps", "ambiance", "attaque", "chute", "note", "sequence")
+CHAMPS_PLAN = ("title", "lieu", "temps", "ambiance", "attaque", "chute", "note", "sequence", "ajouts")
 
 
 def empreinte_brief(slug):
@@ -572,6 +601,11 @@ def modifie_plan(slug, pid, champs, recits, empreinte, motif=""):
     for k, v in champs.items():
         if k == "sequence":
             v = [s.strip() for s in (v if isinstance(v, list) else str(v).split("/")) if s.strip()]
+        elif k == "ajouts":
+            try:
+                v = max(0, int(str(v).strip() or 0))
+            except ValueError:
+                raise ValueError("ajouts : un nombre de paragraphes hors verrou (0, 1, 2…)")
         else:
             v = (v or "").strip() or None
         avant = plan.get(k)
@@ -598,6 +632,81 @@ def modifie_plan(slug, pid, champs, recits, empreinte, motif=""):
                 f.write(json.dumps(dict(c, date=quand, type="storyboard", plan=pid, motif=motif),
                                    ensure_ascii=False) + "\n")
     return {"changes": changes, "empreinte": empreinte_brief(slug)}
+
+
+# La forme du storyboard, à la main : ajouter, retirer, déplacer un micro-récit ; ajouter ou retirer un plan.
+# Une ligne, c'est un micro-récit et son paragraphe : les paragraphes du récit suivent leur micro-récit (leur
+# rang, dans links.yaml, est mis à jour) ; retirer un micro-récit retire son paragraphe (texte au journal).
+
+def forme_plan(slug, op, corps, empreinte, motif=""):
+    p = dossier(slug) / "brief.yaml"
+    if _version(p) != empreinte:
+        raise Conflit("brief.yaml a changé depuis son ouverture")
+    y = yaml_rt()
+    doc = y.load(p.read_text(encoding="utf-8"))
+    beats = doc.get("beats")
+    if beats is None:
+        from ruamel.yaml.comments import CommentedSeq
+        beats = doc["beats"] = CommentedSeq()
+    pid = str(corps.get("plan") or "")
+    plan = next((b for b in beats if str(b.get("id")) == pid), None)
+    if op.startswith("recit_") and plan is None:
+        raise KeyError(pid)
+    liste = list(plan.get("recits") or []) if plan is not None else []
+    rang = int(corps.get("rang") or 0)                     # 0, 1… : la position dans le plan
+    e = {"op": op, "plan": pid}
+    if op == "recit_ajoute":
+        texte = " ".join((corps.get("texte") or "").split())
+        if not texte:
+            raise ValueError("un micro-récit ne peut pas être vide")
+        rang = max(0, min(rang, len(liste)))
+        liste.insert(rang, texte)
+        e.update(rang=rang, apres=texte)
+    elif op == "recit_retire":
+        if not 0 <= rang < len(liste):
+            raise ValueError("micro-récit %d hors du plan %s" % (rang + 1, pid))
+        from . import narration
+        narration.retrait_permis(slug, pid, rang, corps.get("force"))
+        e.update(rang=rang, avant=liste.pop(rang))
+    elif op == "recit_deplace":
+        vers = int(corps.get("vers"))
+        if not (0 <= rang < len(liste) and 0 <= vers < len(liste)):
+            raise ValueError("déplacement hors du plan %s" % pid)
+        liste.insert(vers, liste.pop(rang))
+        e.update(rang=rang, vers=vers)
+    elif op == "plan_ajoute":
+        pris = {str(b.get("id")) for b in beats}
+        nid = next(c for c in (chr(65 + i) for i in range(26)) if c not in pris) if len(pris) < 26 else "P%d" % len(pris)
+        from ruamel.yaml.comments import CommentedMap
+        nouveau = CommentedMap()
+        nouveau["id"] = nid
+        nouveau["title"] = " ".join((corps.get("title") or "").split()) or "Nouveau plan"
+        nouveau["recits"] = []
+        apres = str(corps.get("apres") or "")
+        i = next((k + 1 for k, b in enumerate(beats) if str(b.get("id")) == apres), len(beats))
+        beats.insert(i, nouveau)
+        e.update(plan=nid, apres=apres or None)
+    elif op == "plan_retire":
+        if plan is None:
+            raise KeyError(pid)
+        lp = dossier(slug) / "links.yaml"
+        liens = (yaml.safe_load(lp.read_text(encoding="utf-8")) or {}).get("recit") or {} if lp.exists() else {}
+        n = sum(1 for l in liens.values() if str((l or {}).get("plan")) == pid)
+        if n:
+            raise ValueError("le plan %s porte %d paragraphe(s) du récit : réécris ces paragraphes dans un autre plan d'abord" % (pid, n))
+        beats.remove(plan)
+        e.update(avant=plan.get("title"))
+    else:
+        raise ValueError("opération inconnue : %s" % op)
+    if op.startswith("recit_"):
+        plan["recits"] = liste
+    p.write_text(rt_texte(y, doc), encoding="utf-8")
+    if op.startswith("recit_"):                         # les paragraphes du récit suivent leur micro-récit
+        from . import narration
+        narration.suit_micro_recits(slug, pid, op, rang, corps.get("vers"), len(liste))
+    with (dossier(slug) / "journal.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps(dict(e, date=_maintenant(), type="storyboard", motif=motif), ensure_ascii=False) + "\n")
+    return {"forme": e, "empreinte": empreinte_brief(slug)}
 
 
 # L'en-tête du storyboard : ce qui est suivi, l'intention, la tenue, les contraintes, les mots
