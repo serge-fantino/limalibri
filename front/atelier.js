@@ -4244,6 +4244,7 @@ function barreLivre() {
   b("présentation", etat.ongletLivre === "presentation" || !etat.ongletLivre, "livre", "titre, auteur, couverture ; synopsis, idée, arc, quatrième");
   b("récit · essai", etat.ongletLivre === "versions", "livre/versions", "les deux versions du texte : leur titre (exports, intitulés), leur rôle, la numérotation de l'essai");
   b("révisions", etat.ongletLivre === "revisions", "livre/revisions", "git : marquer une version du livre, voir ce qui a changé depuis, les derniers commits");
+  b("site public", etat.ongletLivre === "public", "livre/public", "le mini-site du livre, en lecture seule : aperçu et publication sur Cloudflare Pages");
   for (const v of Object.keys(etat.regles ?? {})) {
     const n = etat.regles[v].elements.filter((e) => e.type === "regle").length;
     b(`garde-fous · ${(etat.livre.versions?.[v]?.titre ?? v).toLowerCase()} (${n})`, etat.ongletLivre === "regles" && etat.reglesVue === v,
@@ -4357,6 +4358,12 @@ async function accueil() {
   const page = document.getElementById("page");
   if (etat.ongletLivre === "versions") {
     page.replaceChildren(ongletsLivre(), el("h1", null, "Récit et essai"), blocVersions(L));
+    colonneLivre();
+    zone().scrollTo(0, 0);
+    return;
+  }
+  if (etat.ongletLivre === "public") {
+    page.replaceChildren(ongletsLivre(), el("h1", null, "Le site public"), blocPublication(false));
     colonneLivre();
     zone().scrollTo(0, 0);
     return;
@@ -4804,7 +4811,7 @@ function depuisAdresse() {
     etat.accueil = true;
     if (vue === "consommation") { location.replace("#consommation"); return; }        // les anciennes adresses
     if (vue === "claude") { location.replace("#parametrage"); return; }
-    etat.ongletLivre = ["regles", "versions", "revisions"].includes(vue) ? vue : "presentation";
+    etat.ongletLivre = ["regles", "versions", "revisions", "public"].includes(vue) ? vue : "presentation";
     if (vue === "regles") { etat.reglesVue = mode ?? etat.reglesVue; etat.regleCible = decodeURIComponent(location.hash).split("/")[3]; }
     return accueil();
   }
@@ -8786,6 +8793,97 @@ async function vueSuivi(version) {
   if (!S || etat.suiviVersion !== version || !etat.enSuivi) return;
   page.replaceChildren(el("h1", null, `Suivi — ${version === "essai" ? "l'essai" : "le récit"}`), objectifsSuivi(S, version),
     globalSuivi(S), blocSeries(version), actionsSuivi(S, version), chapitresSuivi(S, version, F));
+}
+
+// ------------------------------------------------------------------ le site public du livre
+// Un mini-site statique, en lecture seule (atelier/public.py) : le suivi, le récit et l'essai de chaque chapitre
+// écrit, avec leur statut, les fiches citées, la bibliographie. Aperçu en local ; publier = Cloudflare Pages.
+function blocPublication(titre = true) {
+  const d = el("section", "suivi-publication");
+  const remplit = async () => {
+    const P = await api("/publication").catch(() => null);
+    d.replaceChildren(...(titre ? [el("h2", "oeuvre-section", "Le site public")] : []));
+    if (!P) return;
+    const C = P.config, D = P.derniere;
+    d.append(el("p", "mut petit", "Une image du livre en lecture seule, pour le suivre et le lire depuis un téléphone : la progression, " +
+      "le récit et l'essai de chaque chapitre écrit (avec leur statut), les fiches citées, la bibliographie. Ni coûts, ni demandes, " +
+      "ni annotations. Le travail reste ici ; le site ne change que quand on le publie."));
+    // la configuration : livre.yaml, section « publication »
+    const conf = el("div", "pub-config");
+    const champ_ = (lib, valeur, aide, ph) => {
+      const l = el("label", "pub-champ");
+      const x = el("input");
+      x.type = "text"; x.value = valeur ?? ""; x.placeholder = ph; x.spellcheck = false; x.autocomplete = "off";
+      l.append(el("span", null, lib), x);
+      l.title = aide;
+      conf.append(l);
+      return x;
+    };
+    const fp = champ_("Projet Cloudflare", (etat.livre.publication ?? {}).projet,
+      `minuscules, chiffres, tirets — le site est d'abord en ligne sur https://<projet>.pages.dev (par défaut : ${C.projet})`, C.projet);
+    const fa = champ_("Adresse publique", C.adresse,
+      "le sous-domaine rattaché au projet dans Cloudflare (Workers & Pages → le projet → Custom domains)", "un-monde.awen-project.org");
+    conf.append(el("p", "mut petit", "Le site est d'abord en ligne sur https://" + (C.projet) + ".pages.dev ; l'adresse publique " +
+      "se rattache une fois dans Cloudflare (Workers & Pages → le projet → Custom domains)."));
+    const enr = el("button", "bouton", "Enregistrer");
+    const etatConf = el("span", "mut petit");
+    enr.onclick = async () => {
+      enr.disabled = true;
+      const r = await fetch("/api/livre", { method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ champs: { publication: { projet: fp.value.trim(), adresse: fa.value.trim() } },
+          version: etat.livre._version }) });
+      enr.disabled = false;
+      if (!r.ok) { etatConf.textContent = (await r.json().catch(() => ({}))).detail ?? `échec (${r.status})`; return; }
+      etat.livre = await r.json();
+      etatConf.textContent = "enregistré dans livre.yaml";
+      setTimeout(remplit, 900);
+    };
+    const ac = el("div", "annot-actions");
+    ac.append(enr, etatConf);
+    conf.append(ac);
+    const det = el("details", "replie");
+    det.open = !(etat.livre.publication ?? {}).projet;
+    det.append(el("summary", null, `Configuration — projet « ${C.projet} »` + (C.adresse ? ` · ${C.adresse}` : "")), conf);
+    d.append(det);
+    if (D) {
+      const l = el("p", D.ok ? "verif-ok petit" : "fiche-alerte petit");
+      l.append(`${D.ok ? "Publié" : "Échec"} le ${D.date.slice(0, 16).replace("T", " ")} · ${D.textes} textes · ${D.fiches} fiches` +
+        (D.erreur ? ` — ${D.erreur}` : ""));
+      for (const u of [D.url, C.adresse && "https://" + C.adresse].filter(Boolean)) {
+        const a = el("a", "pan-lien", " " + u.replace("https://", "") + " ↗");
+        a.href = u; a.target = "_blank"; a.rel = "noopener";
+        l.append(a);
+      }
+      d.append(l);
+      if (!D.ok && D.journal) {
+        const j = el("details", "replie");
+        j.append(el("summary", null, "journal de wrangler"), el("pre", "petit", D.journal));
+        d.append(j);
+      }
+    }
+    const act = el("div", "annot-actions");
+    const ap = el("button", "pan-lien", "générer l'aperçu");
+    const voir = el("a", "pan-lien", "ouvrir l'aperçu ↗");
+    voir.href = "/apercu-public/index.html"; voir.target = "_blank"; voir.hidden = !P.apercu;
+    const pub = el("button", "bouton", "Publier");
+    const msg = el("span", "mut petit");
+    ap.onclick = async () => {
+      ap.disabled = pub.disabled = true; msg.textContent = "génération (les PDF sont refaits si le livre a changé : une minute ou deux)…";
+      const r = await poste("/publication/apercu", {}).catch((e) => (msg.textContent = String(e), null));
+      ap.disabled = pub.disabled = false;
+      if (r) { msg.textContent = `${r.pages} pages, ${r.pdf?.length ?? 0} PDF`; voir.hidden = false; window.open("/apercu-public/index.html", "_blank"); }
+    };
+    pub.onclick = async () => {
+      if (!confirm(`Publier le livre en l'état sur Cloudflare Pages (projet « ${C.projet} ») ? Le site public est remplacé.`)) return;
+      ap.disabled = pub.disabled = true; msg.textContent = "génération puis déploiement (une minute environ)…";
+      await poste("/publication/publier", {}).catch((e) => alert(e));
+      remplit();
+    };
+    act.append(pub, ap, voir, msg);
+    d.append(act);
+  };
+  remplit();
+  return d;
 }
 
 // ------------------------------------------------------------------ les objectifs (atelier/objectifs.py)

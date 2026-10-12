@@ -72,7 +72,7 @@ parts: []
 # Les champs que la page du livre peut modifier ; le reste (versions, héritage) se
 # change à la main, dans le fichier.
 EDITABLES = ("titre", "sous_titre", "auteur", "langue", "synopsis", "quatrieme", "couverture",
-             "numerotation_essai", "claude", "versions")
+             "numerotation_essai", "claude", "versions", "publication")
 CLAUDE_GENRES = {"verification": ("tours", "recherches", "pages", "modele"), "reecriture": ("tours", "modele"),
                  "fiche": ("tours", "recherches", "pages", "modele"), "pistes": ("tours", "modele"),
                  "reference": ("tours", "recherches", "pages", "modele"), "naive": ("modele",),
@@ -185,6 +185,25 @@ def ecrit_meta(champs, version):
                         x[k] = t
                     else:
                         x.pop(k, None)
+    if "publication" in champs:               # le site public (atelier/public.py) : projet, adresse, wrangler
+        pub = champs.pop("publication") or {}
+        cible = doc.get("publication")
+        if cible is None:
+            doc["publication"] = cible = CommentedMap()
+        for k, v in pub.items():
+            if k not in ("projet", "adresse", "wrangler"):
+                raise KeyError("publication.%s" % k)
+            v = " ".join(str(v or "").split())
+            if k == "adresse":
+                v = re.sub(r"^https?://", "", v).strip("/")
+            if k == "projet" and v and not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,57}", v):
+                raise KeyError("publication.projet : minuscules, chiffres et tirets (le nom du projet Cloudflare Pages)")
+            if v:
+                cible[k] = v
+            else:
+                cible.pop(k, None)
+        if not cible:
+            doc.pop("publication", None)
     if "claude" in champs:                    # les réglages de Claude : fusionnés, commentaires gardés
         c = champs.pop("claude") or {}
         cible = doc.get("claude")

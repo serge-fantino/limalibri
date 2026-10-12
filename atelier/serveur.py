@@ -750,6 +750,40 @@ def suivi_version(version: str):
         raise HTTPException(404, "version inconnue : %s" % version)
 
 
+@app.get("/api/publication")
+def publication():
+    """Le site public du livre : sa configuration, sa dernière publication, s'il a un aperçu."""
+    from . import public
+    return {"config": public.config(), "derniere": public.derniere(), "apercu": (public.sortie() / "index.html").exists(),
+            "dossier": str(public.sortie())}
+
+
+@app.post("/api/publication/apercu")
+def publication_apercu():
+    """Génère le site public (sans le publier) : l'aperçu, servi sous /apercu-public/."""
+    from . import public
+    return public.genere()
+
+
+@app.post("/api/publication/publier")
+def publication_publier():
+    """Génère le site public et le déploie sur Cloudflare Pages (wrangler)."""
+    from . import public
+    return public.publie()
+
+
+@app.get("/apercu-public/{chemin:path}")
+def apercu_public(chemin: str):
+    from . import public
+    base = public.sortie().resolve()
+    p = (base / (chemin or "index.html")).resolve()
+    if p.is_dir():
+        p = p / "index.html"
+    if base not in p.parents and p != base or not p.is_file():
+        raise HTTPException(404, "pas dans l'aperçu : %s" % chemin)
+    return FileResponse(p)
+
+
 @app.get("/api/series")
 def series():
     return serie.liste()

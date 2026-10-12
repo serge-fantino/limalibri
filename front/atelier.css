@@ -1256,3 +1256,10 @@ a.obj-titre:hover{text-decoration:underline}
 .par-texte.ligne:hover .sb-outils,.par-texte.ligne.choisi .sb-outils,.par-texte.ligne.survol .sb-outils{opacity:1}
 .sb-outils-para{margin-top:.2rem}
 .sb-a-ecrire .pan-lien{display:inline;padding:0}
+/* la configuration du site public : des champs simples, libellé à gauche */
+.pub-config{max-width:36rem;margin:.6rem 0 1rem}
+.pub-champ{display:grid;grid-template-columns:10rem 1fr;align-items:center;gap:.8rem;margin:.35rem 0;font-size:.85rem}
+.pub-champ span{color:var(--mut)}
+.pub-champ input{font:inherit;padding:.3rem .5rem;border:1px solid var(--rule);border-radius:4px;background:var(--bg,transparent);color:inherit;min-width:0}
+.pub-champ input:focus{outline:none;border-color:var(--acc)}
+@media (max-width:640px){.pub-champ{grid-template-columns:1fr;gap:.2rem}}

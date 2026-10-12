@@ -700,6 +700,49 @@ poetry run uvicorn atelier.serveur:app --reload --port 8765
 Puis <http://localhost:8765>. Le récit d'un chapitre migré montre ses plans en marge ; un
 clic sur un paragraphe ouvre sa fiche : plan, micro-récit, assertions du verrou.
 
+## Le site public d'un livre
+
+`atelier/public.py` génère un mini-site statique, en lecture seule et lisible sur mobile, pour suivre un livre et le
+lire. Le livre y est publié en l'état.
+
+**Ce que le site contient :**
+- la progression de chaque version, par étape ;
+- les objectifs en cours ;
+- les dernières avancées ;
+- le sommaire par partie, chaque chapitre avec son statut et sa jauge ;
+- le récit et l'essai de chaque chapitre écrit, avec un sélecteur récit / essai et les chapitres précédent et
+  suivant ;
+- les fiches que les chapitres citent ;
+- la bibliographie des œuvres citées.
+
+**Sur le site :**
+- un sélecteur de thème (◐ auto, ☀ clair, ☾ sombre), retenu par le navigateur ;
+- la carte des fiches par cluster thématique dans `fiches/index.html`, à gauche les chapitres et à droite les fiches.
+  C'est le dessin de l'édition « essai + base », avec des liens vers les pages du site ;
+- la carte du chapitre sous l'essai de chaque chapitre.
+
+**Ce qui ne sort pas :** coûts, consignes, demandes, annotations. Les liens internes, les renvois entre chapitres et
+les citations sont réécrits. Un lien vers une fiche non publiée devient du texte.
+
+**Où le site est écrit :** hors du dépôt, dans `~/.cache/atelier-public/<livre>/site`.
+
+**Depuis la vue Livre, onglet « site public » (`#livre/public`) :**
+- « générer l'aperçu » génère le site et l'ouvre sous `/apercu-public/` ;
+- « Publier » génère le site, puis le déploie sur Cloudflare Pages avec `wrangler pages deploy`. Le projet est créé
+  au premier déploiement. La dernière publication (date, URL, journal en cas d'échec) est affichée.
+
+**Réglages** (`livre.yaml`, facultatif ; ils se modifient aussi dans l'onglet, rubrique « Configuration ») :
+```yaml
+publication:
+  projet: un-monde                       # le projet Cloudflare Pages (par défaut : le titre en slug)
+  adresse: un-monde.awen-project.org     # le domaine personnalisé, à rattacher dans Cloudflare
+  wrangler: /chemin/vers/wrangler        # sinon : wrangler du PATH, ou npx wrangler@4
+```
+
+**Une fois :**
+1. Lancer `npx wrangler login`.
+2. Après le premier déploiement, dans Cloudflare : Workers & Pages → le projet → Custom domains → le sous-domaine.
+
 ## Les trois lieux
 
 | | rôle | l'atelier… |
