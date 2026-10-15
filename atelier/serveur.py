@@ -750,6 +750,23 @@ def suivi_version(version: str):
         raise HTTPException(404, "version inconnue : %s" % version)
 
 
+@app.get("/api/frise")
+def frise_livre():
+    """La frise du livre (frise.yaml) : échelles, bandes, repères, la place de chaque chapitre, les frises internes."""
+    from . import frise
+    return frise.lit()
+
+
+@app.post("/api/frise/amorcer")
+def frise_amorcer():
+    """Écrit un premier frise.yaml depuis les périodes des chapitres ; jamais par-dessus un fichier existant."""
+    from . import frise
+    try:
+        return frise.amorce()
+    except FileExistsError:
+        raise HTTPException(409, "frise.yaml existe déjà : on l'édite à la main")
+
+
 @app.get("/api/publication")
 def publication():
     """Le site public du livre : sa configuration, sa dernière publication, s'il a un aperçu."""

@@ -118,10 +118,10 @@ CSS = """
   --barre:#2b271f;--essai:#7fb0dc;--recit:#e0a96d;--ok:#7cc29c;--trait:#e0a96d;--trait2:#7fb0dc;color-scheme:dark}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--fond);color:var(--texte);font:17px/1.65 "Iowan Old Style",Charter,Georgia,serif}
+body{margin:0;background:var(--fond);color:var(--texte);font:var(--lec-taille,17px)/1.65 "Iowan Old Style",Charter,Georgia,serif}
 a{color:var(--acc)}
 .ui,nav,.meta,.barre-haut,.pied,.chip,.carte-ch,.suivi,.evts,h1.titre-livre+p{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:42rem;margin:0 auto;padding:1rem 16px 4rem}
+main{max-width:var(--lec-largeur,42rem);margin:0 auto;padding:1rem 16px 4rem}
 .barre-haut{position:sticky;top:0;z-index:2;background:var(--fond);border-bottom:1px solid var(--filet);
   display:flex;gap:.6rem;align-items:center;padding:.55rem 16px;font-size:.85rem;overflow-x:auto;white-space:nowrap}
 .barre-haut a{text-decoration:none}
@@ -186,7 +186,21 @@ details[open].partie summary::before{content:"▾ ";}
 .avert{font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mut);border-left:3px solid var(--acc);padding:.3rem .8rem;margin:1rem 0}
 .theme{margin-left:auto;font:inherit;font-size:.8rem;background:none;color:var(--mut);border:1px solid var(--filet);
   border-radius:999px;padding:.12rem .65rem;cursor:pointer;flex:none}
-.barre-haut .bascule+.theme{margin-left:.4rem}
+.barre-haut .bascule+.lecture{margin-left:.4rem}
+.lecture{margin-left:auto;font:inherit;font-size:.8rem;background:none;color:var(--mut);border:1px solid var(--filet);
+  border-radius:999px;padding:.12rem .65rem;cursor:pointer;flex:none}
+.lecture+.theme{margin-left:.4rem}
+.lecture-pop{position:fixed;z-index:5;right:12px;top:2.9rem;background:var(--carte);border:1px solid var(--filet);border-radius:10px;
+  padding:.7rem .8rem;box-shadow:0 6px 24px rgba(0,0,0,.18);font-family:system-ui,-apple-system,sans-serif;font-size:.82rem;min-width:15rem}
+.lecture-pop[hidden]{display:none}
+.lecture-pop .ligne{display:flex;align-items:center;gap:.4rem;margin:.35rem 0}
+.lecture-pop .nom{color:var(--mut);min-width:4.2rem}
+.lecture-pop button{font:inherit;background:none;color:var(--texte);border:1px solid var(--filet);border-radius:6px;padding:.15rem .55rem;cursor:pointer}
+.lecture-pop button.actif{background:var(--acc);color:var(--fond);border-color:var(--acc)}
+.lecture-pop .val{min-width:2.6rem;text-align:center;color:var(--mut)}
+.lecture-pop .raz{border:0;color:var(--acc);padding:0;margin-top:.2rem}
+@media (max-width:480px){.barre-haut{gap:.45rem;padding:.5rem 12px}.barre-haut .meta{display:none}.theme .lib{display:none}
+  .barre-haut .bascule a,.barre-haut .bascule span{padding:.15rem .55rem}}
 /* la carte des fiches (le dessin vient de l'édition « essai + base », atelier/compagnon.py) */
 .carte-defile{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:.4rem -16px 1.2rem;padding:0 16px}
 .carte{position:relative;margin:.6em 0 1em;font-size:12px}
@@ -203,17 +217,71 @@ details[open].partie summary::before{content:"▾ ";}
 .pastille-c{display:inline-block;width:.6rem;height:.6rem;border-radius:50%;margin-right:.35rem;vertical-align:middle}
 .cluster h3{font-family:system-ui,sans-serif;font-size:.9rem;font-weight:600;margin:1.6rem 0 .2rem}
 .legende{font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mut)}
+/* la frise (le dessin vient de l'atelier) */
+.frise-barre{display:flex;flex-wrap:wrap;gap:.5rem .9rem;align-items:center;margin:.8rem 0;font-size:.85rem}
+.frise-barre select{font:inherit;background:var(--carte);color:var(--texte);border:1px solid var(--filet);border-radius:6px;padding:.2rem .4rem;max-width:100%}
+.frise-barre label[hidden]{display:none}
+.frise-zone{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--filet);border-radius:10px;background:var(--carte);
+  padding:.4rem 0;margin:0 -16px;width:calc(100% + 32px)}
+@media (min-width:56rem){main:has(.frise-zone){max-width:min(96vw,80rem)}.frise-zone{margin:0;width:100%}}
+.frise-svg{display:block;font-family:system-ui,-apple-system,sans-serif}
+.frise-svg .fr-axe line{stroke:var(--mut)}
+.frise-svg .fr-axe text,.frise-svg .fr-lib{fill:var(--mut);font-size:10.5px}
+.frise-svg .fr-seg{opacity:.55}
+.frise-svg .fr-seg-lib,.frise-svg .fr-val,.frise-svg .fr-titre{fill:var(--texte);font-size:10.5px}
+.frise-svg .fr-titre{font-size:11.5px}
+@media (max-width:620px){.frise-svg .fr-lib{font-size:9px}.frise-svg .fr-titre{font-size:10.5px}.frise-svg .fr-axe text{font-size:9.5px}}
+.frise-svg .fr-rep{fill:var(--acc)}
+.frise-svg .fr-rep-ligne{stroke:var(--acc);stroke-dasharray:2 3;opacity:.35}
+.frise-svg a.fr-item:hover .fr-titre{fill:var(--acc);text-decoration:underline}
+.frise-svg .fr-fleche{fill:none;stroke:var(--mut);stroke-width:1.1;opacity:.55}
+.frise-svg .fr-fleche.arriere{stroke:#c0622f;opacity:.85}
+.frise-svg .fl-tete{fill:var(--mut)}.frise-svg .fl-tete.arriere{fill:#c0622f}
+.frise-legende{display:flex;flex-wrap:wrap;gap:.3rem .9rem;font-size:.78rem;color:var(--mut);margin:.7rem 0}
+.frise-svg .fr-item.ici rect,.frise-svg .fr-item.ici circle{stroke:var(--acc);stroke-width:2.5}
+.frise-svg .fr-item.ici .fr-titre{font-weight:700;fill:var(--acc)}
+.mini-frise{background:var(--carte);border:1px solid var(--filet);border-radius:10px;padding:.5rem .8rem .3rem;margin:.6rem 0 1.4rem}
+.mini-frise .sur{margin:0 0 .2rem}
+.mini-frise .mini-tete{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.3rem .6rem;margin-bottom:.2rem}
+.mini-frise .mini-tete .sur{margin:0}
+.mini-echelle{font:inherit;font-size:.75rem;background:var(--fond);color:var(--texte);border:1px solid var(--filet);border-radius:6px;
+  padding:.1rem .3rem;max-width:100%}
+.mini-frise p{margin:.15rem 0;font-size:.78rem}
+.mini-svg{display:block;overflow:visible}
+.mini-svg .mini-axe{stroke:var(--filet)}
+.mini-svg .mini-autre{stroke:var(--mut);opacity:.55}
+.mini-svg .mini-ici{fill:var(--acc)}
+.mini-svg .mini-lib{fill:var(--mut);font-size:10px;font-family:system-ui,sans-serif}
+.frise-legende i{display:inline-block;width:.7rem;height:.7rem;border-radius:2px;margin-right:.35rem;vertical-align:-1px}
 footer.site{font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mut);text-align:center;padding:2rem 16px}
 """
 
 
-THEME = """<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>"""
-BOUTON_THEME = '<button class="theme" type="button" title="thème : celui du système, clair, sombre">◐ auto</button>'
+THEME = """<script>try{var r=document.documentElement,t=localStorage.getItem("theme");if(t)r.dataset.theme=t;
+var l=JSON.parse(localStorage.getItem("lecture")||"{}");if(l.taille)r.style.setProperty("--lec-taille",l.taille+"px");
+if(l.largeur)r.style.setProperty("--lec-largeur",l.largeur+"rem")}catch(e){}</script>"""
+BOUTON_THEME = ('<button class="lecture" type="button" title="taille du texte et largeur de la colonne">Aa</button>'
+                '<button class="theme" type="button" title="thème : celui du système, clair, sombre">◐ auto</button>'
+                '<div class="lecture-pop" hidden><div class="ligne"><span class="nom">Taille</span><button data-t="-1">A−</button>'
+                '<span class="val" data-v="taille"></span><button data-t="1">A+</button></div>'
+                '<div class="ligne"><span class="nom">Largeur</span><button data-l="34">étroite</button><button data-l="42">moyenne</button>'
+                '<button data-l="54">large</button></div><button class="raz" type="button">réinitialiser</button></div>')
 SCRIPT = """<script>
 (function(){var M=["auto","clair","sombre"],r=document.documentElement;
-function lib(){var t=r.dataset.theme||"auto";document.querySelectorAll(".theme").forEach(function(b){b.textContent=(t=="clair"?"☀ ":t=="sombre"?"☾ ":"◐ ")+t})}
+function lib(){var t=r.dataset.theme||"auto";document.querySelectorAll(".theme").forEach(function(b){b.innerHTML=(t=="clair"?"☀":t=="sombre"?"☾":"◐")+'<span class="lib"> '+t+"</span>"})}
 document.addEventListener("click",function(e){if(!e.target.closest(".theme"))return;var t=M[(M.indexOf(r.dataset.theme||"auto")+1)%3];
 if(t=="auto")delete r.dataset.theme;else r.dataset.theme=t;try{t=="auto"?localStorage.removeItem("theme"):localStorage.setItem("theme",t)}catch(x){}lib()});lib();
+var L={};try{L=JSON.parse(localStorage.getItem("lecture")||"{}")}catch(x){}
+function pose(){var ta=L.taille||17,la=L.largeur||42;r.style.setProperty("--lec-taille",ta+"px");r.style.setProperty("--lec-largeur",la+"rem");
+try{(L.taille||L.largeur)?localStorage.setItem("lecture",JSON.stringify(L)):localStorage.removeItem("lecture")}catch(x){}
+document.querySelectorAll('[data-v="taille"]').forEach(function(v){v.textContent=ta+" px"});
+document.querySelectorAll("[data-l]").forEach(function(b){b.classList.toggle("actif",+b.dataset.l==la)})}
+document.addEventListener("click",function(e){var p=document.querySelector(".lecture-pop");if(!p)return;
+if(e.target.closest(".lecture")){p.hidden=!p.hidden;return}
+var b=e.target.closest(".lecture-pop button");
+if(b){if(b.dataset.t)L.taille=Math.max(13,Math.min(26,(L.taille||17)+ +b.dataset.t));
+else if(b.dataset.l)L.largeur=+b.dataset.l;else if(b.classList.contains("raz"))L={};pose();return}
+if(!e.target.closest(".lecture-pop"))p.hidden=true});pose();
 document.querySelectorAll(".carte").forEach(function(c){function f(e){var n=e.target.closest("[data-n]");if(!n)return;var id=n.getAttribute("data-n"),v={};v[id]=1;
 c.classList.add("focus");c.querySelectorAll("path").forEach(function(p){var on=p.getAttribute("data-a")==id||p.getAttribute("data-b")==id;p.classList.toggle("on",on);
 if(on){v[p.getAttribute("data-a")]=1;v[p.getAttribute("data-b")]=1}});c.querySelectorAll("[data-n]").forEach(function(x){x.classList.toggle("on",!!v[x.getAttribute("data-n")])})}
@@ -261,6 +329,9 @@ class Site:
         des = kb._fiches_de_tous_les_chapitres()
         self.fiches_de = {s: [x for x in c["fiches"] if x in self.fiches] for s, c in des.items()}
         self.inclus = {x for L in self.fiches_de.values() for x in L}
+        from . import frise
+        F = frise.lit()
+        self.frise = F if F.get("existe") and any(c.get("place") for c in F["chapitres"]) else None
 
     # ---------------------------------------------------------------- la carte des fiches
     @property
@@ -409,8 +480,9 @@ class Site:
                 '<a href="pdf/%s" download>%s<span class="meta">PDF · %s Mo · %s</span></a>' % (
                     p["fichier"], html.escape(p["titre"]), str(round(p["octets"] / 1e6, 1)).replace(".", ","), p["date"][:10])
                 for p in self.pdf))
-        corps.append('<p class="sur">Et aussi</p><p class="ui"><a href="fiches/index.html">Les fiches (%d)</a> · '
-                     '<a href="bibliographie.html">La bibliographie</a></p>' % len(self.inclus))
+        corps.append('<p class="sur">Et aussi</p><p class="ui">%s<a href="fiches/index.html">Les fiches (%d)</a> · '
+                     '<a href="bibliographie.html">La bibliographie</a></p>' % (
+                         '<a href="frise.html">La frise</a> · ' if self.frise else "", len(self.inclus)))
         return _page(m.get("titre") or "Livre", "".join(corps), "", description=str(m.get("synopsis") or "")[:200])
 
     def chapitre(self, slug, v, ordre):
@@ -424,6 +496,7 @@ class Site:
             base, html.escape(self.meta.get("titre") or "Sommaire"), c.get("numero") or "", bascule)
         mots = len(re.sub(r"<[^>]+>", " ", self.textes[(slug, v)]).split())
         corps = ['<p class="meta">%s · %s mots</p>' % (self.statut(c, v), format(mots, ",").replace(",", " ")),
+                 self.mini_frise(slug, base),
                  '<article class="texte">%s</article>' % self.liens(self.textes[(slug, v)], base,
                                                                      ("%s ch. %s" % (NOM_VERSION[v].lower(), c.get("numero") or ""),
                                                                       "chapitres/%s/%s.html" % (slug, v)))]
@@ -523,6 +596,38 @@ class Site:
         corps.append("</div>")
         return _page("Bibliographie — %s" % (self.meta.get("titre") or ""), "".join(corps), "", barre)
 
+    def donnees_frise(self):
+        """window.FRISE : la frise du livre, chaque chapitre avec le lien de son texte publié (depuis la racine)."""
+        F = dict(self.frise)
+        for c in F["chapitres"]:
+            v = "recit" if (c["slug"], "recit") in self.textes else "essai" if (c["slug"], "essai") in self.textes else None
+            c["lien"] = "chapitres/%s/%s.html" % (c["slug"], v) if v else None
+        F.pop("fichier", None)
+        return "window.FRISE = %s;\n" % json.dumps(F, ensure_ascii=False)
+
+    def mini_frise(self, slug, base):
+        """Le bandeau d'un chapitre : où il se place (dessiné par frise.js), et ses frises internes."""
+        if not self.frise:
+            return ""
+        internes = [f for f in self.frise["frises"] if f.get("chapitre") == slug]
+        liens = "".join(' · <a href="%sfrise.html?frise=%s">%s</a>' % (base, f["id"], html.escape(f["titre"])) for f in internes)
+        return ('<div class="mini-frise ui"><span class="sur">Dans le temps</span><div class="mini-zone" data-slug="%s" data-base="%s"></div>'
+                '<p class="meta mini-texte"></p><p class="meta"><a href="%sfrise.html?ch=%s">la frise du livre →</a>%s</p></div>'
+                '<script src="%sfrise-donnees.js"></script><script src="%sfrise.js"></script>') % (slug, base, base, slug, liens, base, base)
+
+    def page_frise(self):
+        """La frise du livre (frise.yaml) : la même que dans l'atelier, dessinée par le même moteur."""
+        barre = '<nav class="barre-haut"><a href="index.html">← %s</a></nav>' % html.escape(self.meta.get("titre") or "Sommaire")
+        corps = ['<h1>La frise</h1><p class="meta">Où se place chaque chapitre dans le temps de l\'histoire. Plusieurs échelles '
+                 'pour la même histoire ; les frises internes suivent un chapitre. Touchez un chapitre pour le lire.</p>',
+                 '<div class="frise-barre ui"><select id="fr-frise"></select><select id="fr-echelle"></select>'
+                 '<label><input type="checkbox" id="fr-bandes" checked> bandes</label>'
+                 '<label><input type="checkbox" id="fr-reperes" checked> repères</label>'
+                 '<label><input type="checkbox" id="fr-fleches"> flèches</label></div>',
+                 '<div class="frise-zone" id="fr-zone"></div><div class="frise-notes ui" id="fr-notes"></div>',
+                 '<script src="frise-donnees.js"></script><script src="frise.js"></script>']
+        return _page("La frise — %s" % (self.meta.get("titre") or ""), "".join(corps), "", barre)
+
     def etat(self):
         return {"titre": self.meta.get("titre"), "genere": livre._maintenant(),
                 "versions": {v: {"score": self.suivi[v]["score"], "repartition": self.suivi[v]["repartition"]} for v in livre.VERSIONS},
@@ -530,6 +635,137 @@ class Site:
                                "niveaux": {v: avancement.niveau(c, v) for v in livre.VERSIONS},
                                "publie": [v for v in livre.VERSIONS if (c["slug"], v) in self.textes]} for c in self.chapitres],
                 "fiches": len(self.inclus)}
+
+
+def script_frise():
+    """Le moteur de dessin de l'atelier (front/atelier.js, de COULEURS_FRISE à pageFrise), et la page publique."""
+    js = (pathlib.Path(__file__).resolve().parent.parent / "front" / "atelier.js").read_text(encoding="utf-8")
+    a, b = js.index("const COULEURS_FRISE"), js.index("async function pageFrise")
+    return js[a:b] + PAGE_FRISE
+
+
+PAGE_FRISE = r"""
+// l'échelle retenue par le lecteur (le bandeau des chapitres et la page Frise la partagent)
+function echelleRetenue(F) {
+  var id = null; try { id = localStorage.getItem("frise-echelle"); } catch (e) {}
+  return F.echelles.find(function (e) { return e.id === id; }) || F.echelles[0];
+}
+function retientEchelle(id) { try { localStorage.setItem("frise-echelle", id); } catch (e) {} }
+
+// le bandeau d'un chapitre : tous les chapitres en traits discrets, celui-ci en évidence, sur l'échelle choisie
+function miniFrises() {
+  var F = window.FRISE;
+  document.querySelectorAll(".mini-zone").forEach(function (div) {
+    var slug = div.dataset.slug, base = div.dataset.base || "";
+    var c = F.chapitres.find(function (x) { return x.slug === slug; });
+    var txt = div.parentNode.querySelector(".mini-texte");
+    var places = F.chapitres.filter(function (x) { return x.place; });
+    if (!c || !c.place) { txt.textContent = "Ce chapitre n'est pas placé sur la frise."; div.hidden = true; return; }
+    var ech = echelleRetenue(F);
+    var bloc = div.parentNode, sel = bloc.querySelector(".mini-echelle");
+    if (!sel && F.echelles.length > 1) {                    // le sélecteur de vue : une fois par bandeau
+      sel = document.createElement("select"); sel.className = "mini-echelle"; sel.title = "l'échelle de la frise";
+      F.echelles.forEach(function (e) { var o = document.createElement("option"); o.value = e.id; o.textContent = e.titre; sel.append(o); });
+      sel.onchange = function () { retientEchelle(sel.value); miniFrises(); };
+      var tete = document.createElement("div"); tete.className = "mini-tete";
+      bloc.querySelector(".sur").replaceWith(tete);
+      var s = document.createElement("span"); s.className = "sur"; s.textContent = "Dans le temps";
+      tete.append(s, sel);
+    }
+    if (sel) sel.value = ech.id;
+    var ts = []; places.forEach(function (x) { ts.push(x.place.debut, x.place.fin); });
+    var E = echelleFrise(ech, F, ts);
+    var W = Math.max(div.clientWidth, 260), G = 6, L = W - 12;
+    var X = function (t) { return G + Math.max(0, Math.min(1, E.x(t))) * L; };
+    var svg = svgEl("svg", { width: W, height: 58, class: "mini-svg" });
+    var bande = (F.bandes || []).find(function (b) { return b.rendu !== "gradient" && (!ech.bandes || ech.bandes.indexOf(b.id) >= 0); });
+    if (bande) bande.segments.forEach(function (s, i) {
+      var a = X(Math.min(s.debut, s.fin)), b = X(Math.max(s.debut, s.fin));
+      var r = svgEl("rect", { x: a, y: 6, width: Math.max(b - a, 1), height: 7, fill: s.couleur || COULEURS_FRISE[i % COULEURS_FRISE.length], opacity: 0.45 });
+      r.append(svgEl("title", {}, s.nom)); svg.append(r);
+    });
+    svg.append(svgEl("line", { x1: G, x2: G + L, y1: 30, y2: 30, class: "mini-axe" }));
+    places.forEach(function (x) {
+      if (x.slug === slug) return;
+      var a = x.place.debut == null ? G : X(x.place.debut), b = x.place.fin == null ? G + L : X(x.place.fin);
+      svg.append(svgEl("line", { x1: (a + b) / 2, x2: (a + b) / 2, y1: 25, y2: 35, class: "mini-autre" }));
+    });
+    var a = c.place.debut == null ? G : X(c.place.debut), b = c.place.fin == null ? G + L : X(c.place.fin);
+    svg.append(svgEl("rect", { x: Math.min(a, b - 5), y: 23, width: Math.max(b - a, 6), height: 14, rx: 3, class: "mini-ici" }));
+    var k = E.ticks, premier = k[0], dernier = k[k.length - 1];
+    if (premier) svg.append(svgEl("text", { x: G, y: 54, class: "mini-lib" }, premier.texte || libelleT(premier.t, F, E.variable)));
+    if (dernier) svg.append(svgEl("text", { x: G + L, y: 54, "text-anchor": "end", class: "mini-lib" }, dernier.texte || libelleT(dernier.t, F, E.variable)));
+    var lien = document.createElement("a"); lien.href = base + "frise.html?ch=" + slug; lien.title = "la frise du livre"; lien.append(svg);
+    div.replaceChildren(lien);
+    txt.textContent = c.place.texte.replace(/…/g, "").replace(/^ → | → $/g, "");
+  });
+}
+if (!document.getElementById("fr-zone") && window.FRISE) {
+  miniFrises();
+  var m_; window.addEventListener("resize", function () { clearTimeout(m_); m_ = setTimeout(miniFrises, 150); });
+}
+
+(function () {
+  var F = window.FRISE, $ = function (i) { return document.getElementById(i); };
+  if (!$("fr-zone")) return;
+  var Q = new URLSearchParams(location.search), ici = Q.get("ch");
+  var sf = $("fr-frise"), se = $("fr-echelle"), zone = $("fr-zone"), notes = $("fr-notes");
+  var opt = function (s, v, t) { var o = document.createElement("option"); o.value = v; o.textContent = t; s.append(o); };
+  opt(sf, "", "Les chapitres");
+  F.frises.forEach(function (f) { opt(sf, f.id, f.titre); });
+  if (Q.get("frise") && F.frises.some(function (f) { return f.id === Q.get("frise"); })) sf.value = Q.get("frise");
+  var parties = Array.from(new Set(F.chapitres.map(function (c) { return c.partie; })));
+  function echelles() {
+    var fr = F.frises.find(function (f) { return f.id === sf.value; });
+    return fr ? [fr.echelle] : F.echelles;
+  }
+  function remplit() {
+    se.replaceChildren();
+    echelles().forEach(function (e, i) { opt(se, String(i), "échelle : " + e.titre); });
+    if (!sf.value) se.value = String(Math.max(0, F.echelles.indexOf(echelleRetenue(F))));
+    var fr = F.frises.find(function (f) { return f.id === sf.value; });
+    $("fr-fleches").checked = fr ? fr.rendu === "fleche" : F.rendu === "fleche";
+    ["fr-bandes", "fr-reperes"].forEach(function (i) { $(i).parentNode.hidden = !!fr; });
+  }
+  function dessine() {
+    var fr = F.frises.find(function (f) { return f.id === sf.value; });
+    var ech = echelles()[Number(se.value)] || echelles()[0];
+    var items = fr ? fr.evenements.map(function (e, i) {
+      return { debut: e.debut, fin: e.fin == null ? e.debut : e.fin, titre: e.titre, sous: [e.date, e.texte].filter(Boolean).join(" — "),
+        couleur: COULEURS_FRISE[1], ordre: i, lien: e.lien };
+    }) : F.chapitres.filter(function (c) { return c.place; }).map(function (c, i) {
+      return { debut: c.place.debut, fin: c.place.fin, ouvert_debut: c.place.ouvert_debut, ouvert_fin: c.place.ouvert_fin,
+        approx: c.place.approx, titre: ((c.numero || "") + " " + c.titre).trim(), sous: c.place.texte,
+        couleur: COULEURS_FRISE[parties.indexOf(c.partie) % COULEURS_FRISE.length], ordre: i, lien: c.lien, ici: c.slug === ici };
+    });
+    var bandes = fr || !$("fr-bandes").checked ? [] : F.bandes.filter(function (b) { return !ech.bandes || ech.bandes.indexOf(b.id) >= 0; });
+    zone.replaceChildren(dessineFrise(F, ech, items, { bandes: bandes, reperes: !fr && $("fr-reperes").checked ? F.reperes : [],
+      fleches: $("fr-fleches").checked, largeur: Math.max(zone.clientWidth - 4, 340) }));
+    notes.replaceChildren();
+    if (fr) { if (fr.note) { var p = document.createElement("p"); p.className = "meta"; p.textContent = fr.note; notes.append(p); } return; }
+    var leg = document.createElement("p"); leg.className = "frise-legende";
+    parties.forEach(function (p, k) {
+      var c0 = F.chapitres.find(function (c) { return c.partie === p; });
+      var s = document.createElement("span"), i = document.createElement("i");
+      i.style.background = COULEURS_FRISE[k % COULEURS_FRISE.length];
+      s.append(i, (c0 && c0.partie_titre) || "hors partie"); leg.append(s);
+    });
+    notes.append(leg);
+    var sans = F.chapitres.filter(function (c) { return !c.place; });
+    if (sans.length) {
+      var h = document.createElement("p"); h.className = "sur"; h.textContent = "Hors de la frise (" + sans.length + ")"; notes.append(h);
+      var ul = document.createElement("p"); ul.className = "meta";
+      ul.textContent = sans.map(function (c) { return ((c.numero || "") + " " + c.titre).trim(); }).join(" · ");
+      notes.append(ul);
+    }
+  }
+  sf.onchange = function () { remplit(); dessine(); };
+  se.onchange = function () { if (!sf.value) retientEchelle(F.echelles[Number(se.value)].id); dessine(); };
+  ["fr-bandes", "fr-reperes", "fr-fleches"].forEach(function (i) { $(i).onchange = dessine; });
+  var minuteur; window.addEventListener("resize", function () { clearTimeout(minuteur); minuteur = setTimeout(dessine, 150); });
+  remplit(); dessine();
+})();
+"""
 
 
 def genere(avec_pdf=True):
@@ -550,6 +786,10 @@ def genere(avec_pdf=True):
     ecrit("fiches/index.html", S.index_fiches())
     ecrit("index.html", S.accueil())                 # après les textes et les fiches : les citations sont recueillies
     ecrit("bibliographie.html", S.bibliographie())
+    if S.frise:
+        ecrit("frise.html", S.page_frise())
+        ecrit("frise-donnees.js", S.donnees_frise())
+        ecrit("frise.js", script_frise())
     ecrit("etat.json", json.dumps(S.etat(), ensure_ascii=False, indent=1))
     for p in S.pdf:
         (tmp / "pdf").mkdir(exist_ok=True)

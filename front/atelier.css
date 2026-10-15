@@ -1263,3 +1263,34 @@ a.obj-titre:hover{text-decoration:underline}
 .pub-champ input{font:inherit;padding:.3rem .5rem;border:1px solid var(--rule);border-radius:4px;background:var(--bg,transparent);color:inherit;min-width:0}
 .pub-champ input:focus{outline:none;border-color:var(--acc)}
 @media (max-width:640px){.pub-champ{grid-template-columns:1fr;gap:.2rem}}
+/* la frise du livre (Plan → frise) */
+.frise-barre{display:flex;flex-wrap:wrap;gap:.8rem;align-items:center;margin:.4rem 0 .8rem}
+.frise-zone{overflow-x:auto;border:1px solid var(--rule);border-radius:8px;background:var(--bar);padding:.4rem 0}
+.frise-svg{display:block;font-family:system-ui,-apple-system,sans-serif}
+.frise-svg .fr-axe line{stroke:var(--mut)}
+.frise-svg .fr-axe text{fill:var(--mut);font-size:10.5px}
+.frise-svg .fr-lib{fill:var(--mut);font-size:11px}
+.frise-svg .fr-seg{opacity:.55}
+.frise-svg .fr-seg-lib{fill:var(--fg);font-size:10px;pointer-events:none}
+.frise-svg .fr-val{fill:var(--fg);font-size:10px}
+.frise-svg .fr-rep{fill:var(--acc)}
+.frise-svg .fr-rep-ligne{stroke:var(--acc);stroke-dasharray:2 3;opacity:.35}
+.frise-svg .fr-titre{fill:var(--fg);font-size:11.5px}
+.frise-svg a.fr-item:hover .fr-titre{fill:var(--acc);text-decoration:underline}
+.frise-svg .fr-fleche{fill:none;stroke:var(--mut);stroke-width:1.1;opacity:.55}
+.frise-svg .fr-fleche.arriere{stroke:#c0622f;opacity:.85}
+.frise-svg .fl-tete{fill:var(--mut)}.frise-svg .fl-tete.arriere{fill:#c0622f}
+.frise-legende{display:flex;flex-wrap:wrap;gap:.4rem 1rem;font-size:.8rem;color:var(--mut);margin:.7rem 0}
+.frise-legende i{display:inline-block;width:.7rem;height:.7rem;border-radius:2px;margin-right:.35rem;vertical-align:-1px}
+.frise-notes h5{margin:1rem 0 .3rem}
+.frise-svg .fr-item.ici rect,.frise-svg .fr-item.ici circle{stroke:var(--acc);stroke-width:2.5}
+.frise-svg .fr-item.ici .fr-titre{font-weight:700;fill:var(--acc)}
+/* la frise réduite, sous la progression des vues de lecture */
+.mini-frise-at{border:1px solid var(--rule);border-radius:8px;background:var(--bar);padding:.4rem .7rem .2rem;margin:.6rem 0 1rem}
+.mini-frise-at .mini-tete{display:flex;flex-wrap:wrap;gap:.3rem .8rem;align-items:baseline}
+.mini-frise-at .mini-tete .pan-lien{font-size:.78rem}
+.mini-svg-at{display:block;overflow:visible;font-family:system-ui,-apple-system,sans-serif}
+.mini-svg-at .mini-axe{stroke:var(--rule)}
+.mini-svg-at .mini-autre{stroke:var(--mut);opacity:.55}
+.mini-svg-at .mini-ici{fill:var(--acc)}
+.mini-svg-at .mini-lib{fill:var(--mut);font-size:10px}

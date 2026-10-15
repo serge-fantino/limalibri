@@ -700,6 +700,47 @@ poetry run uvicorn atelier.serveur:app --reload --port 8765
 Puis <http://localhost:8765>. Le récit d'un chapitre migré montre ses plans en marge ; un
 clic sur un paragraphe ouvre sa fiche : plan, micro-récit, assertions du verrou.
 
+## La frise du livre
+
+`atelier/frise.py` et la vue Plan → **frise** (`#plan/frise`) montrent où se place chaque chapitre dans le temps de
+l'histoire. On peut aussi y dessiner des frises internes, par exemple les scènes d'un chapitre dans l'histoire des
+découvertes.
+
+Tout vient de **`frise.yaml`**, à la racine du livre. Ce fichier s'édite à la main ; l'atelier le lit et le
+dessine. Un bouton « Amorcer » le crée à partir des périodes des chapitres, et ne remplace jamais un fichier
+existant.
+
+- **Le temps du livre.** Il n'y a qu'une seule variable : t, en années depuis l'origine de l'histoire.
+  - `temps.age` donne le présent.
+  - `temps.lecture` dit comment lire une durée seule : `depuis_origine` (Un Monde) ou `avant_present` (Une Vie).
+  - Les dates s'écrivent en clair : « 4,5 Ga », « il y a 66 Ma », « 10⁻³⁶ s », « 3 min », « an 1781 »,
+    « aujourd'hui », « dans mille ans ».
+  - Dans une liste entre crochets ou accolades, une date avec une virgule s'écrit entre guillemets : `"13,8 Ga"`.
+- **Les échelles.** Un livre peut en avoir plusieurs, et la vue passe de l'une à l'autre :
+  - `lineaire` ;
+  - `log`, pour des temps qui s'étendent sur des ordres de grandeur ;
+  - `fixe`, des intervalles réguliers entre les dates connues.
+
+  Chaque échelle a sa variable : `depuis_origine`, `avant_present` ou `annee` (le calendrier). Elle a aussi
+  son domaine, et des graduations facultatives, éventuellement libellées (`{date, texte}`). C'est ainsi que
+  fonctionne le calendrier cosmique d'Un Monde.
+- **Les bandes.** Ce sont des échelles superposées :
+  - des `segments`, comme les éons et les ères d'Une Vie, ou les époques cosmiques d'Un Monde ;
+  - un `gradient`, comme le décalage vers le rouge.
+- **Les repères.** Ce sont des dates marquées sur l'axe.
+- **Les chapitres.** Chacun a `debut`, `fin` et `approx`. Une borne absente est ouverte : la barre s'estompe.
+  `non_date` le liste sous la frise. Le rendu `fleche` relie les chapitres dans l'ordre de lecture, et les
+  retours en arrière sont en couleur.
+- **Les frises internes.** Ce sont des listes d'événements, liées ou non à un chapitre, avec leur échelle. Le
+  rendu `fleche` montre l'ordre du récit, et donc ses voyages dans le temps.
+
+Les avertissements (date illisible, domaine faux) s'affichent sous la frise.
+
+Dans les vues de lecture (le récit, l'essai en mode texte), une **frise réduite** se place sous la progression.
+Elle montre tous les chapitres en traits discrets et celui-ci en évidence, sur la première échelle, avec sa
+période. Un clic ouvre la frise du livre, le chapitre mis en avant. Les frises internes du chapitre y ont leur
+lien. Un chapitre pas encore daté le dit.
+
 ## Le site public d'un livre
 
 `atelier/public.py` génère un mini-site statique, en lecture seule et lisible sur mobile, pour suivre un livre et le
@@ -716,10 +757,18 @@ lire. Le livre y est publié en l'état.
 - la bibliographie des œuvres citées.
 
 **Sur le site :**
-- un sélecteur de thème (◐ auto, ☀ clair, ☾ sombre), retenu par le navigateur ;
+- un sélecteur de thème (◐ auto, ☀ clair, ☾ sombre) et un bouton **Aa** pour la taille du texte (13 à 26 px) et la
+  largeur de la colonne (étroite, moyenne, large). Les choix sont retenus par le navigateur ;
 - la carte des fiches par cluster thématique dans `fiches/index.html`, à gauche les chapitres et à droite les fiches.
   C'est le dessin de l'édition « essai + base », avec des liens vers les pages du site ;
-- la carte du chapitre sous l'essai de chaque chapitre.
+- la carte du chapitre sous l'essai de chaque chapitre ;
+- **la frise** (`frise.html`, si le livre a un `frise.yaml`), dessinée par le même moteur que l'atelier,
+  extrait de `front/atelier.js` à la génération. Ses données sont dans `frise-donnees.js`, partagé par toutes
+  les pages. Elle a les mêmes réglages : la frise (globale ou interne), l'échelle, les bandes, les repères,
+  les flèches. `?ch=<slug>` met un chapitre en avant, `?frise=<id>` ouvre une frise interne ;
+- sur chaque page de chapitre, le bandeau **« Dans le temps »** : une mini-frise où le chapitre est en évidence
+  parmi les autres, sur la première échelle. Elle donne sa période, un lien vers la frise du livre et vers ses
+  frises internes.
 
 **Ce qui ne sort pas :** coûts, consignes, demandes, annotations. Les liens internes, les renvois entre chapitres et
 les citations sont réécrits. Un lien vers une fiche non publiée devient du texte.

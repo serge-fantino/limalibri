@@ -5418,7 +5418,8 @@ function barrePlan(niveau, cible, actions) {
   const P = etat.plan;
   const b = (lib, h, actif) => { const x = el("button", actif ? "actif" : null, lib); x.onclick = () => { location.hash = h; }; g.append(x); };
   b("le livre", "plan", niveau === "livre");
-  if (niveau !== "livre") {
+  b("frise", "plan/frise", niveau === "frise");
+  if (niveau !== "livre" && niveau !== "frise") {
     const pid = niveau === "partie" ? cible : P.parties.find((p) => p.chapitres.some((c) => c.slug === cible))?.id;
     const p = P.parties.find((x) => x.id === pid);
     if (p) b(p.title.slice(0, 32), `plan/p/${p.id}`, niveau === "partie");
@@ -5502,6 +5503,7 @@ async function vuePlan(vue, id) {
   etat.plan = await api("/plan");
   if (vue === "p") return pagePartie(id);
   if (vue === "c") return pageChapitrePlan(id);
+  if (vue === "frise") return pageFrise(id);
   return pageLivrePlan();
 }
 
@@ -5542,6 +5544,7 @@ function listeChapitres(p) {
 
 function vuePlanCourant() {
   const [, vue, id] = decodeURIComponent(location.hash.slice(1)).split("/");
+  if (vue === "frise") return pageFrise(id);
   if (vue === "p") return pagePartie(id);
   if (vue === "c") return pageChapitrePlan(id);
   return pageLivrePlan();
@@ -10591,7 +10594,79 @@ function bandeauEtape(slug, vue) {
     for (const a of reste.filter((x) => x.type !== "relecture" || !ecrit)) act.append(puceAction(a, slug));
     b.replaceChildren(tete, act);
   }).catch(() => b.remove());
-  return [b, zone];
+  return [b, miniFriseAtelier(slug), zone];
+}
+
+// La frise réduite d'un chapitre, sous la progression : tous les chapitres en traits discrets, celui-ci en
+// évidence, sur la première échelle de frise.yaml ; un clic ouvre la frise du livre, le chapitre mis en avant.
+async function donneesFrise() {
+  if (etat.friseDonnees && Date.now() - etat.friseDonnees.quand < 60000) return etat.friseDonnees.F;
+  const F = await api("/frise").catch(() => null);
+  etat.friseDonnees = { F, quand: Date.now() };
+  return F;
+}
+
+function miniFriseAtelier(slug) {
+  const d = el("div", "mini-frise-at");
+  d.hidden = true;
+  donneesFrise().then((F) => {
+    if (!F?.existe || etat.slug !== slug || !d.isConnected) return;
+    const c = F.chapitres.find((x) => x.slug === slug);
+    const places = F.chapitres.filter((x) => x.place);
+    if (!c || !places.length) return;
+    d.hidden = false;
+    const tete = el("div", "mini-tete");
+    tete.append(el("span", "etiq", "dans le temps"));
+    const txt = el("span", "mut petit");
+    const ouvre = (e) => { e?.preventDefault(); etat.friseIci = slug; location.hash = "plan/frise"; };
+    const lien = el("a", "pan-lien", "la frise ↗");
+    lien.href = "#plan/frise";
+    lien.onclick = ouvre;
+    tete.append(txt, lien);
+    for (const f of F.frises.filter((x) => x.chapitre === slug)) {
+      const a = el("a", "pan-lien", f.titre + " ↗");
+      a.href = `#plan/frise/${f.id}`;
+      tete.append(a);
+    }
+    const zone_ = el("div", "mini-zone-at");
+    d.replaceChildren(tete, zone_);
+    if (!c.place) {
+      txt.textContent = c.non_date ? "hors du temps de l'histoire (non daté)" : "pas encore placé — à dater dans frise.yaml";
+      return;
+    }
+    const ech = F.echelles[0];
+    const E = echelleFrise(ech, F, places.flatMap((x) => [x.place.debut, x.place.fin]));
+    txt.textContent = `${c.place.texte.replace(/…/g, "").replace(/^ → | → $/g, "")} · ${ech.titre}`;
+    const W = Math.max(zone_.clientWidth || d.clientWidth || 600, 260), G = 6, L = W - 12;
+    const X = (t) => G + Math.max(0, Math.min(1, E.x(t))) * L;
+    const svg = svgEl("svg", { width: W, height: 52, class: "mini-svg-at" });
+    const bande = F.bandes.find((b) => b.rendu !== "gradient" && (!ech.bandes || ech.bandes.includes(b.id)));
+    for (const [i, s] of (bande?.segments ?? []).entries()) {
+      const a = X(Math.min(s.debut, s.fin)), b = X(Math.max(s.debut, s.fin));
+      const r = svgEl("rect", { x: a, y: 4, width: Math.max(b - a, 1), height: 6, fill: s.couleur ?? COULEURS_FRISE[i % COULEURS_FRISE.length], opacity: 0.45 });
+      r.append(svgEl("title", {}, s.nom));
+      svg.append(r);
+    }
+    svg.append(svgEl("line", { x1: G, x2: G + L, y1: 25, y2: 25, class: "mini-axe" }));
+    for (const x of places) {
+      if (x.slug === slug) continue;
+      const a = x.place.debut == null ? G : X(x.place.debut), b = x.place.fin == null ? G + L : X(x.place.fin);
+      const l = svgEl("line", { x1: (a + b) / 2, x2: (a + b) / 2, y1: 20, y2: 30, class: "mini-autre" });
+      l.append(svgEl("title", {}, `${x.numero ?? ""} ${x.titre}`));
+      svg.append(l);
+    }
+    const a = c.place.debut == null ? G : X(c.place.debut), b = c.place.fin == null ? G + L : X(c.place.fin);
+    svg.append(svgEl("rect", { x: Math.min(a, b - 5), y: 18, width: Math.max(b - a, 6), height: 14, rx: 3, class: "mini-ici" }));
+    const k = E.ticks;
+    if (k.length) {
+      svg.append(svgEl("text", { x: G, y: 48, class: "mini-lib" }, k[0].texte ?? libelleT(k[0].t, F, E.variable)));
+      svg.append(svgEl("text", { x: G + L, y: 48, "text-anchor": "end", class: "mini-lib" }, k[k.length - 1].texte ?? libelleT(k[k.length - 1].t, F, E.variable)));
+    }
+    svg.style.cursor = "pointer";
+    svg.onclick = ouvre;
+    zone_.append(svg);
+  });
+  return d;
 }
 
 // ------------------------------------------------------------------ rafraîchir
@@ -11489,4 +11564,383 @@ async function panneauManques(slug) {
   window.addEventListener("resize", place);
   window.addEventListener("hashchange", () => setTimeout(place, 300));
   place();
+}
+
+// ------------------------------------------------------------------ la frise du livre
+// frise.yaml (atelier/frise.py) : où se place chaque chapitre dans le temps de l'histoire, et des frises internes.
+// Toutes les dates arrivent en t (années depuis l'origine) ; une échelle les projette : linéaire, logarithmique,
+// ou fixe (des intervalles réguliers entre les dates). Bandes superposées (segments, dégradé), repères, flèches.
+
+const COULEURS_FRISE = ["#8a5a2b", "#2d5f8a", "#2f6f4f", "#7a6ad0", "#c0622f", "#a4561b", "#5b7a2f", "#8a2b5a", "#2b7a8a", "#6b6357"];
+const SEC_AN = 365.25 * 86400;
+const EXP = { "-": "⁻", 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹" };
+const puissance = (n) => "10" + String(n).split("").map((c) => EXP[c] ?? c).join("");
+const nombreFr = (v, d = 1) => {
+  const r = Number(v.toFixed(d));
+  return (Math.abs(r) >= 1e4 ? Math.round(r).toLocaleString("fr-FR") : String(r).replace(".", ",")).replace(/ /g, " ");
+};
+
+// une durée en années, écrite à la bonne unité
+function dureeFr(a) {
+  const s = a * SEC_AN;
+  if (a <= 0) return "0";
+  if (s < 1e-2) return puissance(Math.round(Math.log10(s))) + " s";
+  if (s < 60) return nombreFr(s, s < 1 ? 2 : 0) + " s";
+  if (s < 3600) return nombreFr(s / 60, 0) + " min";
+  if (s < 86400) return nombreFr(s / 3600, 0) + " h";
+  if (a < 1) return nombreFr(s / 86400, 0) + " j";
+  if (a < 1e6) return nombreFr(a, 0) + (Math.round(a) <= 1 ? " an" : " ans");
+  if (a < 1e9) return nombreFr(a / 1e6, a < 1e7 ? 1 : 0) + " Ma";
+  return nombreFr(a / 1e9, 1) + " Ga";
+}
+
+function libelleT(t, F, variable) {
+  const age = F.temps?.age ?? 0;
+  if (variable === "annee") return String(Math.round(F.temps.annee - (age - t)));
+  if (variable === "avant_present") {
+    const bp = age - t;
+    if (Math.abs(bp) < 0.5) return "aujourd'hui";
+    return bp > 0 ? "il y a " + dureeFr(bp) : "dans " + dureeFr(-bp);
+  }
+  return dureeFr(t);
+}
+
+// l'échelle : t → x dans [0, 1], et ses graduations
+function echelleFrise(ech, F, ts) {
+  const age = F.temps?.age ?? 0;
+  const vals = ts.filter((x) => x != null && isFinite(x));
+  let [d0, d1] = ech.domaine ?? [Math.min(...vals), Math.max(...vals)];
+  if (!(d1 > d0)) { d0 = (d0 ?? 0) - 1; d1 = (d1 ?? 0) + 1; }
+  const v = ech.variable;
+  let x, ticks = [];
+  if (ech.type === "log") {
+    if (v === "depuis_origine") {
+      const lo = Math.log10(Math.max(d0, 1e-60)), hi = Math.log10(d1);
+      x = (t) => (Math.log10(Math.max(t, 10 ** lo)) - lo) / (hi - lo);
+      // des valeurs parlantes : 10ⁿ s, puis 1 min, 1 h, 1 j, 1 an, puis 10ⁿ ans
+      const cand = [];
+      for (let k = -60; k <= 0; k++) cand.push(10 ** k / SEC_AN);
+      cand.push(60 / SEC_AN, 3600 / SEC_AN, 86400 / SEC_AN);
+      for (let k = 0; k <= 12; k++) cand.push(10 ** k);
+      const dedans = cand.filter((c) => Math.log10(c) >= lo - 1e-9 && Math.log10(c) <= hi + 1e-9);
+      const pas = Math.max(1, Math.ceil(dedans.length / 16));
+      ticks = dedans.filter((_, i) => i % pas === 0).map((c) => ({ t: c }));
+    } else {                                   // il y a… : le passé lointain à gauche, le présent à droite
+      const b0 = Math.log10(Math.max(age - d0, 1e-9)), b1 = Math.log10(Math.max(age - d1, 1e-9));
+      x = (t) => (b0 - Math.log10(Math.min(Math.max(age - t, 10 ** b1), 10 ** b0))) / (b0 - b1);
+      const pas = Math.max(1, Math.ceil((b0 - b1) / 12));
+      for (let k = Math.floor(b0); k >= b1; k -= pas) ticks.push({ t: age - 10 ** k });
+    }
+  } else if (ech.type === "fixe") {             // des intervalles réguliers entre les dates connues
+    const nœuds = [...new Set(vals)].sort((a, b) => a - b);
+    const n = Math.max(nœuds.length - 1, 1);
+    x = (t) => {
+      if (t <= nœuds[0]) return 0;
+      if (t >= nœuds[nœuds.length - 1]) return 1;
+      const i = nœuds.findIndex((k) => k >= t);
+      const a = nœuds[i - 1], b = nœuds[i];
+      return (i - 1 + (t - a) / (b - a || 1)) / n;
+    };
+    ticks = nœuds.map((t) => ({ t }));
+  } else {
+    const span = d1 - d0;
+    x = (t) => (t - d0) / span;
+    // un pas « rond » dans l'unité affichée
+    const base = v === "avant_present" ? (t) => age - t : v === "annee" ? (t) => F.temps.annee - (age - t) : (t) => t;
+    const brut = span / 8, p = 10 ** Math.floor(Math.log10(brut)), pas = [1, 2, 2.5, 5, 10].map((m) => m * p).find((m) => m >= brut);
+    const a0 = base(d0), a1 = base(d1), lo = Math.min(a0, a1), hi = Math.max(a0, a1);
+    for (let u = Math.ceil(lo / pas) * pas; u <= hi + 1e-9; u += pas) {
+      ticks.push({ t: v === "avant_present" ? age - u : v === "annee" ? age - (F.temps.annee - u) : u });
+    }
+  }
+  if (ech.graduations?.length) ticks = ech.graduations;
+  ticks = [...ticks].sort((a, b) => x(a.t) - x(b.t));              // de gauche à droite, quel que soit le sens du temps
+  return { x, ticks, variable: v, d0, d1 };
+}
+
+// deux couleurs (#rrggbb) mêlées : f = 0 → a, f = 1 → b
+function melange(a, b, f) {
+  const h = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+  const [x, y] = [h(a), h(b)];
+  return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * f).toString(16).padStart(2, "0")).join("");
+}
+
+// des couloirs : chaque élément sur la première ligne où il ne chevauche rien
+function couloirs(items, marge = 6) {
+  const fins = [];
+  for (const it of items) {
+    let k = fins.findIndex((f) => f + marge <= it.g);
+    if (k < 0) { k = fins.length; fins.push(-1e9); }
+    fins[k] = it.d;
+    it.couloir = k;
+  }
+  return fins.length;
+}
+
+function svgEl(nom, attrs = {}, texte) {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", nom);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v);
+  if (texte != null) n.textContent = texte;
+  return n;
+}
+
+// La frise : items = [{debut, fin, titre, sous, couleur, approx, ouvert_debut, ouvert_fin, lien, ordre}]
+function dessineFrise(F, ech, items, { bandes = [], reperes = [], fleches = false, largeur = 1000 } = {}) {
+  const ts = items.flatMap((i) => [i.debut, i.fin]).concat(reperes.map((r) => r.t));
+  const E = echelleFrise(ech, F, ts);
+  const W = Math.max(largeur, 320), G = W < 620 ? 78 : 150, D = W < 620 ? 12 : 30, L = W - G - D;   // étroit : une marge de libellés réduite
+  const X = (t) => G + Math.max(0, Math.min(1, E.x(t))) * L;
+  const svg = svgEl("svg", { class: "frise-svg", width: W, viewBox: null });
+  const defs = svgEl("defs");
+  defs.append(svgEl("marker", { id: "fl-av", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" }));
+  defs.lastChild.append(svgEl("path", { d: "M0,0 L10,5 L0,10 z", class: "fl-tete" }));
+  defs.append(svgEl("marker", { id: "fl-ar", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" }));
+  defs.lastChild.append(svgEl("path", { d: "M0,0 L10,5 L0,10 z", class: "fl-tete arriere" }));
+  svg.append(defs);
+  let y = 8;
+  // l'axe et ses graduations
+  const axe = svgEl("g", { class: "fr-axe" });
+  let dernier = -1e9;
+  for (const k of E.ticks) {
+    const px = X(k.t);
+    axe.append(svgEl("line", { x1: px, x2: px, y1: y + 22, y2: y + 28 }));
+    if (px - dernier > 58) { axe.append(svgEl("text", { x: px, y: y + 16, "text-anchor": "middle" }, k.texte ?? libelleT(k.t, F, E.variable))); dernier = px; }
+  }
+  axe.append(svgEl("line", { x1: G, x2: G + L, y1: y + 28, y2: y + 28 }));
+  svg.append(axe);
+  y += 40;
+  // les bandes
+  for (const b of bandes) {
+    const g = svgEl("g", { class: "fr-bande" });
+    g.append(svgEl("text", { x: G - 8, y: y + 14, "text-anchor": "end", class: "fr-lib" }, b.titre));
+    if (b.rendu === "gradient" && b.points?.length > 1) {
+      const id = "gr-" + b.id;
+      const lg = svgEl("linearGradient", { id, x1: 0, x2: 1, y1: 0, y2: 0 });
+      const P = [...b.points].sort((a, c) => a.t - c.t);
+      const vs = P.map((p) => Math.log10(1 + Math.abs(p.v))), vmin = Math.min(...vs), vmax = Math.max(...vs);
+      const [c0, c1] = b.couleurs;
+      for (const p of P) {
+        const f = vmax > vmin ? (Math.log10(1 + Math.abs(p.v)) - vmin) / (vmax - vmin) : 0;
+        lg.append(svgEl("stop", { offset: ((X(p.t) - G) / L * 100).toFixed(2) + "%", "stop-color": melange(c0, c1, f), "stop-opacity": 0.85 }));
+      }
+      defs.append(lg);
+      const x0 = X(P[0].t), x1 = X(P[P.length - 1].t);
+      g.append(svgEl("rect", { x: G, y, width: L, height: 18, fill: `url(#${id})`, rx: 3 }));
+      let d2 = -1e9;
+      for (const p of P) {
+        const px = X(p.t);
+        if (px - d2 < 46) continue;
+        g.append(svgEl("text", { x: px < G + 30 ? Math.max(px, G + 3) : px, y: y + 13,
+          "text-anchor": px > G + L - 30 ? "end" : px < G + 30 ? "start" : "middle", class: "fr-val" }, b.format.replace("{v}", nombreFr(p.v, 1))));
+        d2 = px;
+      }
+      void x0; void x1;
+    } else {
+      for (const [i, s] of (b.segments ?? []).entries()) {
+        const a = X(Math.min(s.debut, s.fin)), c = X(Math.max(s.debut, s.fin));
+        const r = svgEl("rect", { x: a, y, width: Math.max(c - a, 1), height: 18, fill: s.couleur ?? COULEURS_FRISE[i % COULEURS_FRISE.length], class: "fr-seg" });
+        r.append(svgEl("title", {}, s.nom));
+        g.append(r);
+        if (c - a > s.nom.length * 5.6 + 6) g.append(svgEl("text", { x: (a + c) / 2, y: y + 13, "text-anchor": "middle", class: "fr-seg-lib" }, s.nom));
+      }
+    }
+    svg.append(g);
+    y += 24;
+  }
+  // les repères
+  if (reperes.length) {
+    const g = svgEl("g", { class: "fr-reperes" });
+    for (const r of reperes) {
+      const px = X(r.t);
+      const l = svgEl("line", { x1: px, x2: px, y1: 36, y2: 9999, class: "fr-rep-ligne" });
+      g.append(l);
+      const m = svgEl("path", { d: `M${px - 4},${y + 2} L${px + 4},${y + 2} L${px},${y + 9} z`, class: "fr-rep" });
+      m.append(svgEl("title", {}, `${r.titre} — ${r.texte}`));
+      g.append(m);
+    }
+    svg.append(g);
+    y += 14;
+  }
+  // les éléments, en couloirs
+  const H = 22;
+  for (const it of items) {
+    const a = it.debut ?? E.d0, b = it.fin ?? (it.ouvert_fin ? E.d1 : it.debut);
+    it.x0 = it.debut == null ? G : X(a);
+    it.x1 = it.fin == null && it.ouvert_fin ? G + L : Math.max(X(b), it.x0 + 6);
+    it.largeurTexte = Math.min(it.titre.length * 6.4 + 10, 260);
+    it.aGauche = it.x1 + it.largeurTexte > W - 4 && it.x0 - it.largeurTexte > 4;
+    it.g = it.aGauche ? it.x0 - it.largeurTexte : it.x0;            // l'emprise, titre compris, pour les couloirs
+    it.d = it.aGauche ? it.x1 : it.x1 + it.largeurTexte;
+  }
+  const tri = [...items].sort((p, q) => p.g - q.g);
+  const n = couloirs(tri);
+  const y0 = y;
+  const gI = svgEl("g", { class: "fr-items" });
+  for (const it of items) {
+    const yy = y0 + it.couloir * H;
+    const g = svgEl(it.lien ? "a" : "g", { class: "fr-item" + (it.approx ? " approx" : "") + (it.ici ? " ici" : ""), href: it.lien });
+    const w = it.x1 - it.x0;
+    if (w <= 7 && it.debut != null && it.fin != null && Math.abs(X(it.fin) - X(it.debut)) < 2) {
+      g.append(svgEl("circle", { cx: it.x0 + 3, cy: yy + 8, r: 5, fill: it.couleur }));
+    } else {
+      const r = svgEl("rect", { x: it.x0, y: yy + 2, width: w, height: 13, rx: 3, fill: it.couleur,
+        "fill-opacity": it.approx ? 0.55 : 0.85, "stroke-dasharray": it.approx ? "3 2" : null, stroke: it.couleur });
+      g.append(r);
+      if (it.ouvert_debut || it.ouvert_fin) {
+        const id = "ouv-" + Math.random().toString(36).slice(2, 8);
+        const lg = svgEl("linearGradient", { id, x1: 0, x2: 1 });
+        lg.append(svgEl("stop", { offset: "0%", "stop-color": it.couleur, "stop-opacity": it.ouvert_debut ? 0 : 0.85 }),
+          svgEl("stop", { offset: "100%", "stop-color": it.couleur, "stop-opacity": it.ouvert_fin ? 0 : 0.85 }));
+        defs.append(lg);
+        r.setAttribute("fill", `url(#${id})`);
+      }
+    }
+    g.append(svgEl("text", it.aGauche ? { x: it.x0 - 5, y: yy + 12, class: "fr-titre", "text-anchor": "end" }
+      : { x: it.x1 + 5, y: yy + 12, class: "fr-titre" }, it.titre));
+    g.append(svgEl("title", {}, [it.titre, it.sous].filter(Boolean).join("\n")));
+    gI.append(g);
+    it.cy = yy + 8;
+  }
+  // les flèches : l'ordre de lecture (ou du récit), ses retours en arrière
+  if (fleches) {
+    const gF = svgEl("g", { class: "fr-fleches" });
+    const ord = items.filter((i) => i.ordre != null).sort((p, q) => p.ordre - q.ordre);
+    for (let i = 1; i < ord.length; i++) {
+      const p = ord[i - 1], q = ord[i];
+      const xa = (p.x0 + Math.min(p.x1, p.x0 + 40)) / 2, xb = q.x0 + 3;
+      const arriere = xb < xa - 2;
+      const h = Math.min(60, 14 + Math.abs(xb - xa) * 0.12);
+      gF.append(svgEl("path", { d: `M${xa},${p.cy} C${xa},${p.cy - h} ${xb},${q.cy - h} ${xb},${q.cy - 6}`,
+        class: "fr-fleche" + (arriere ? " arriere" : ""), "marker-end": `url(#${arriere ? "fl-ar" : "fl-av"})` }));
+    }
+    svg.append(gF);
+  }
+  svg.append(gI);
+  const hT = y0 + n * H + 14;
+  svg.setAttribute("height", hT);
+  svg.querySelectorAll(".fr-rep-ligne").forEach((l) => l.setAttribute("y2", hT));
+  return svg;
+}
+
+async function pageFrise(id) {
+  document.body.dataset.vue = "plan";
+  const page = document.getElementById("page");
+  barrePlan("frise", null, null);
+  const F = await api("/frise").catch((e) => ({ erreur: String(e) }));
+  etat.friseDonnees = { F, quand: Date.now() };              // la frise réduite des lectures suit le fichier rechargé
+  const ici = etat.friseIci;                                 // le chapitre d'où l'on vient (la frise réduite), une fois
+  etat.friseIci = null;
+  page.replaceChildren(el("h1", null, "Frise"));
+  colonneFrise(F);
+  if (F.erreur) return page.append(el("p", "err", F.erreur));
+  if (!F.existe) {
+    const b = el("button", "bouton", "Amorcer frise.yaml");
+    b.onclick = async () => { const r = await poste("/frise/amorcer", {}).catch((e) => (alert(e), null)); if (r) pageFrise(); };
+    page.append(el("p", "mut", "Le livre n'a pas encore de frise. « Amorcer » écrit un premier frise.yaml à la racine du livre : le temps " +
+      "de l'histoire, trois échelles, et chaque chapitre placé d'après sa période (ou marqué « à dater »). Ensuite, il s'édite à la main."), b);
+    return;
+  }
+  const frises = [{ id: "", titre: "Les chapitres" }, ...F.frises.map((f) => ({ id: f.id, titre: f.titre + (f.chapitre ? ` — ch. ${etat.chapitres.find((c) => c.slug === f.chapitre)?.numero ?? f.chapitre}` : "") }))];
+  const fr = F.frises.find((f) => f.id === id);
+  const barre = el("div", "frise-barre");
+  const sf = el("select", "livre-select");
+  for (const f of frises) sf.append(new Option(f.titre, f.id, false, (id ?? "") === f.id));
+  sf.onchange = () => { location.hash = sf.value ? `plan/frise/${sf.value}` : "plan/frise"; };
+  barre.append(sf);
+  const echs = fr ? [fr.echelle, ...F.echelles.filter((e) => e.variable === fr.echelle.variable && e.id !== fr.echelle.id)] : F.echelles;
+  const se = el("select", "livre-select");
+  const cleEch = "atelier-frise-echelle-" + (id ?? "");
+  let choisie = null;
+  try { choisie = localStorage.getItem(cleEch); } catch { /* */ }
+  echs.forEach((e, i) => se.append(new Option(`échelle : ${e.titre}`, String(i), false, e.id === choisie)));
+  barre.append(se);
+  const opts = { bandes: !fr, reperes: !fr, fleches: fr ? fr.rendu === "fleche" : F.rendu === "fleche" };
+  const casesOpt = [["bandes", "bandes"], ["reperes", "repères"], ["fleches", fr ? "flèches (ordre du récit)" : "flèches (ordre de lecture)"]];
+  for (const [k, lib] of casesOpt) {
+    if (fr && k !== "fleches") continue;
+    const l = el("label", "dem-consulter");
+    const x = el("input");
+    x.type = "checkbox"; x.checked = opts[k];
+    x.onchange = () => { opts[k] = x.checked; dessine(); };
+    l.append(x, " " + lib);
+    barre.append(l);
+  }
+  const zoneF = el("div", "frise-zone");
+  const notes = el("div", "frise-notes");
+  page.append(barre, zoneF, notes);
+  const parties = [...new Set(F.chapitres.map((c) => c.partie))];
+  const dessine = () => {
+    const ech = echs[Number(se.value)] ?? echs[0];
+    try { localStorage.setItem(cleEch, ech.id); } catch { /* */ }
+    let items;
+    if (fr) {
+      items = fr.evenements.map((e, i) => ({ debut: e.debut, fin: e.fin ?? e.debut, titre: e.titre, sous: [e.date, e.texte].filter(Boolean).join(" — "),
+        couleur: COULEURS_FRISE[1], ordre: i, lien: e.lien }));
+    } else {
+      items = F.chapitres.filter((c) => c.place).map((c, i) => ({
+        debut: c.place.debut, fin: c.place.fin, ouvert_debut: c.place.ouvert_debut, ouvert_fin: c.place.ouvert_fin, approx: c.place.approx,
+        titre: `${c.numero ?? ""} ${c.titre}`.trim(), sous: [c.place.texte, c.note].filter(Boolean).join("\n"),
+        couleur: COULEURS_FRISE[parties.indexOf(c.partie) % COULEURS_FRISE.length], ordre: i, lien: `#plan/c/${c.slug}`,
+        ici: c.slug === ici }));
+    }
+    const bandes = fr ? [] : F.bandes.filter((b) => opts.bandes && (!ech.bandes || ech.bandes.includes(b.id)));
+    zoneF.replaceChildren(dessineFrise(F, ech, items, { bandes, reperes: !fr && opts.reperes ? F.reperes : [], fleches: opts.fleches,
+      largeur: Math.max((zoneF.clientWidth || page.clientWidth) - 4, 640) }));
+    notes.replaceChildren();
+    if (!fr) {
+      const leg = el("p", "frise-legende");
+      for (const p of parties) {
+        const c0 = F.chapitres.find((c) => c.partie === p);
+        const s = el("span");
+        s.append(el("i", null), c0?.partie_titre ?? "hors partie");
+        s.firstChild.style.background = COULEURS_FRISE[parties.indexOf(p) % COULEURS_FRISE.length];
+        leg.append(s);
+      }
+      notes.append(leg);
+      const sans = F.chapitres.filter((c) => !c.place);
+      if (sans.length) {
+        notes.append(el("h5", null, `Pas placés sur la frise (${sans.length})`));
+        const ul = el("ul", "petit");
+        for (const c of sans) {
+          const li = el("li");
+          const a = el("a", null, `${c.numero ?? ""} ${c.titre}`);
+          a.href = `#plan/c/${c.slug}`;
+          li.append(a, el("span", "mut", " — " + (c.non_date ? (c.note || "hors du temps (non daté)") : c.note)));
+          ul.append(li);
+        }
+        notes.append(ul);
+      }
+    } else if (fr.note) notes.append(el("p", "mut petit", fr.note));
+    if (F.avertissements.length) {
+      notes.append(el("h5", null, "À corriger dans frise.yaml"));
+      const ul = el("ul", "petit fiche-alerte");
+      for (const a of F.avertissements) ul.append(el("li", null, a));
+      notes.append(ul);
+    }
+  };
+  se.onchange = dessine;
+  requestAnimationFrame(dessine);
+  // la largeur suit la fenêtre (et le volet de droite)
+  clearTimeout(etat.friseRedim);
+  window.onresize = () => { clearTimeout(etat.friseRedim); etat.friseRedim = setTimeout(() => { if (zoneF.isConnected) dessine(); }, 150); };
+}
+
+function colonneFrise(F) {
+  const f = document.getElementById("fiche");
+  f.replaceChildren(el("h4", null, "La frise"));
+  f.append(el("p", "mut petit", "Tout vient de frise.yaml, à la racine du livre : on l'édite à la main, puis on recharge la vue. " +
+    "Les dates s'écrivent en clair : « 4,5 Ga », « il y a 66 Ma », « 10⁻³⁶ s », « 3 min », « an 1781 », « aujourd'hui », « dans mille ans »."));
+  if (F?.fichier) {
+    const a = el("a", "lien-ext", "frise.yaml ↗");
+    a.href = "vscode://file" + F.fichier;
+    const r = el("button", "pan-lien", "↻ recharger");
+    r.onclick = () => vuePlanCourant();
+    f.append(a, el("br"), r);
+  }
+  f.append(el("h5", null, "Les échelles"), el("p", "mut petit", "lineaire, log (pour des temps qui s'étendent sur des ordres de grandeur), " +
+    "fixe (des intervalles réguliers entre les dates : chaque chapitre a sa place, quelle que soit sa durée)."),
+    el("h5", null, "Les bandes"), el("p", "mut petit", "des échelles superposées : des segments (ères géologiques, époques) ou un dégradé " +
+    "(le décalage vers le rouge)."),
+    el("h5", null, "Les frises internes"), el("p", "mut petit", "une liste d'événements, liée à un chapitre si l'on veut ; « fleche » " +
+    "relie les événements dans l'ordre du récit — les voyages dans le temps se voient."));
 }
