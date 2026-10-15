@@ -3,9 +3,9 @@
 package-mode = false
 
 [project]
-name = "atelier"
+name = "limalibri"
 version = "0.1.0"
-description = "Atelier d'écriture de livres : serveur + front, sur un dossier de livre (ATELIER_LIVRE)."
+description = "LimaLibri — la lime du livre : un atelier d'écriture de livres (serveur + front), sur un dossier de livre."
 requires-python = ">=3.11"
 dependencies = [
     "fastapi (>=0.115,<1.0)",

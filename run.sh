@@ -2,9 +2,9 @@
 # Lance l'atelier sur un livre : installe les dépendances si besoin, démarre le
 # serveur, ouvre le navigateur.
 #
-#   ./run.sh                                  le livre par défaut (UneVie/book-atelier), port 8765
-#   ./run.sh ../../UneVie/book-atelier        un livre, par son dossier (relatif au dossier courant)
+#   ./run.sh ~/livres/mon-livre               un livre, par son dossier, port 8765
 #   ./run.sh ~/livres/autre 9000              un autre livre, un autre port
+#   LIMALIBRI_LIVRE=~/livres/mon-livre ./run.sh   le livre par une variable d'environnement
 #   ./run.sh --no-open                        sans ouvrir le navigateur
 #
 # Un livre est un dossier avec livre.yaml et structure.yaml. Un dossier qui ne les a pas
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 ICI="$(cd "$(dirname "$0")" && pwd)"
-LIVRE="$ICI/../../UneVie/book-atelier"
+LIVRE="${LIMALIBRI_LIVRE:-}"
 PORT=8765
 OUVRIR=1
 for a in "$@"; do
@@ -28,6 +28,10 @@ for a in "$@"; do
     *) PORT="$a" ;;
   esac
 done
+if [ -z "$LIVRE" ]; then
+  echo "LimaLibri — quel livre ? ./run.sh <dossier du livre> [port] [--no-open]" >&2
+  exit 2
+fi
 LIVRE="$(cd "$LIVRE" && pwd)"
 [ -f "$LIVRE/structure.yaml" ] || echo "pas encore un livre : livre.yaml et structure.yaml y seront créés"
 

@@ -1,4 +1,4 @@
-/* Palette reprise du lecteur (noosphereV2/Books/UneVie-book/outils/lecteur.gabarit.html). */
+/* Palette reprise du lecteur d'Une vie (son gabarit HTML d'origine). */
 :root{--bg:#faf8f4;--fg:#1f1c17;--mut:#6b6357;--acc:#8a5a2b;--rule:#ddd6c8;--bar:#f3efe6;
  --pf:"Iowan Old Style",Palatino,Georgia,serif;--ui:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 /* Le thème : « auto » suit le système (et ses bascules jour/nuit), « clair » et « sombre » le fixent. */

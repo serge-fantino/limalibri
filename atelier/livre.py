@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Accès à un livre vu par l'atelier.
 
-Le livre est un dossier (ATELIER_LIVRE, par défaut UneVie/book-atelier) qui porte :
+Le livre est un dossier (ATELIER_LIVRE, par défaut le dossier courant) qui porte :
   livre.yaml       ce qui décrit le livre (titre, auteur, synopsis, couverture, héritage)
   structure.yaml   l'ordre et le découpage des chapitres
   chapters/<slug>/ un chapitre migré (brief, verrou, liens, recit.md, essai.md ancrés en ^id)
@@ -26,8 +26,7 @@ from ruamel.yaml.constructor import RoundTripConstructor
 from ruamel.yaml.scalarstring import LiteralScalarString
 from ruamel.yaml.comments import CommentedMap
 
-AWEN = pathlib.Path(__file__).resolve().parents[3]
-LIVRE = pathlib.Path(os.environ.get("ATELIER_LIVRE", AWEN / "UneVie" / "book-atelier")).resolve()
+LIVRE = pathlib.Path(os.environ.get("ATELIER_LIVRE") or os.getcwd()).resolve()   # le dossier du livre (run.sh le passe)
 
 VERSIONS = ("recit", "essai")
 ENTETE = re.compile(r"^---\n.*?\n---\n", re.S)

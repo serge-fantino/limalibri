@@ -1,27 +1,43 @@
-# Atelier — Une vie
+# LimaLibri
 
-L'outillage d'écriture du livre *Une vie* : une application web (serveur Python + front sans
-build) qui travaille sur la représentation du livre dans `UneVie/book-atelier/`.
+> *… carmen reprehendite quod non*
+> *multa dies et multa litura coercuit atque*
+> *praesectum deciens non castigavit ad unguem.*
+>
+> « … blâmez le poème que de longs jours et beaucoup de ratures n'ont pas contenu, et qu'on n'a pas
+> repris dix fois, jusqu'à l'ongle. » — Horace, *Art poétique*, v. 292–294
 
-- `docs/cadrage.md` — l'objectif et les pistes d'architecture
-- `docs/audit.md` — ce que l'existant fait déjà, ce qui ne colle pas, les décisions proposées
-- `docs/essai-structure.md` — proposition : l'essai en texte + métadonnées, et la base de faits
+**La lime du livre.** Horace appelle *labor limae*, le travail de la lime, ce qui sépare un texte jeté d'un
+texte tenu : le reprendre, le resserrer, le vérifier, jusqu'à ce qu'il tienne. LimaLibri est un atelier
+d'écriture de livres, fait pour ce travail-là : un serveur Python et un front web sans build, qui travaillent
+sur un dossier de livre — ses versions (un récit, un essai), sa base de connaissance (fiches, sources), son
+plan, ses règles — avec Claude comme aide d'atelier : il propose, l'auteur retient.
+
+Né pour deux livres, *Une vie* et *Un monde* ; tout ce qui est propre à un livre vit dans son dossier.
+
+- `docs/cadrage.md` — l'objectif et les pistes d'architecture d'origine
+- `docs/audit.md` — l'audit de départ (sur *Une vie*, son ancien dépôt et ses outils)
+- `docs/essai-structure.md` — l'essai en texte + métadonnées, et la base de faits
 
 ## Stack
 
 - **Serveur** : Python, FastAPI + uvicorn. Toute la chaîne existante (manifeste, cadre, style,
   cycle, appareil) est en Python et doit être réutilisée, pas réécrite.
 - **Front** : HTML/CSS/JS en modules ES, servis tels quels. Palette et gestes repris du lecteur
-  (`noosphereV2/Books/UneVie-book/outils/lecteur.gabarit.html`).
+  d'*Une vie*.
 - **Données** : fichiers texte versionnés dans git (YAML, Markdown, JSONL). Pas de base.
 
 ## Lancer
 
 ```bash
-./run.sh                                              # le livre par défaut : UneVie/book-atelier
-./run.sh ../../UneVie/book-atelier                    # un livre, par son dossier (relatif au dossier courant)
+./run.sh ~/livres/mon-livre                           # un livre, par son dossier (port 8765)
 ./run.sh ~/livres/autre 9000 --no-open                # autre livre, autre port, sans navigateur
+./limalibri ~/livres/mon-livre                        # la même chose (lien possible dans le PATH)
 ```
+
+Il faut Python 3.11+, Poetry (installe les dépendances au premier lancement) et, pour les demandes à
+Claude, Claude Code connecté (le SDK Claude Agent s'appuie sur lui). Pour publier un site de livre :
+Node (`npx wrangler`) et un compte Cloudflare.
 
 Un livre est un dossier avec `structure.yaml` (l'ordre des chapitres) et `livre.yaml` (ce
 qui le décrit, et un éventuel dépôt d'« héritage » lu en lecture seule). Un dossier qui ne
@@ -792,10 +808,12 @@ publication:
 1. Lancer `npx wrangler login`.
 2. Après le premier déploiement, dans Cloudflare : Workers & Pages → le projet → Custom domains → le sous-domaine.
 
-## Les trois lieux
+## Un exemple : *Une vie*
 
 | | rôle | l'atelier… |
 |---|---|---|
-| `noosphereV2/Books/UneVie-book/` | le dépôt d'origine, ses outils et son cycle | le lit, n'y écrit jamais |
-| `UneVie/book-atelier/` | la nouvelle représentation du livre | la lit et l'écrit |
-| `tools/atelier/` | l'application | — |
+| l'ancien dépôt du livre (héritage, déclaré dans `livre.yaml`) | ses outils et son cycle d'origine | le lit, n'y écrit jamais |
+| le dossier du livre (`book-atelier/`) | la représentation du livre | la lit et l'écrit |
+| LimaLibri | l'application | — |
+
+Les scripts qui ont importé *Une vie* depuis son ancien dépôt (`migrer/`) sont restés avec le livre.
