@@ -10598,7 +10598,8 @@ function bandeauEtape(slug, vue) {
 }
 
 // La frise réduite d'un chapitre, sous la progression : tous les chapitres en traits discrets, celui-ci en
-// évidence, sur la première échelle de frise.yaml ; un clic ouvre la frise du livre, le chapitre mis en avant.
+// évidence, sur l'échelle choisie (la première de frise.yaml, d'abord) ; un clic ouvre la frise du livre, le
+// chapitre mis en avant.
 async function donneesFrise() {
   if (etat.friseDonnees && Date.now() - etat.friseDonnees.quand < 60000) return etat.friseDonnees.F;
   const F = await api("/frise").catch(() => null);
@@ -10634,37 +10635,61 @@ function miniFriseAtelier(slug) {
       txt.textContent = c.non_date ? "hors du temps de l'histoire (non daté)" : "pas encore placé — à dater dans frise.yaml";
       return;
     }
-    const ech = F.echelles[0];
-    const E = echelleFrise(ech, F, places.flatMap((x) => [x.place.debut, x.place.fin]));
-    txt.textContent = `${c.place.texte.replace(/…/g, "").replace(/^ → | → $/g, "")} · ${ech.titre}`;
-    const W = Math.max(zone_.clientWidth || d.clientWidth || 600, 260), G = 6, L = W - 12;
-    const X = (t) => G + Math.max(0, Math.min(1, E.x(t))) * L;
-    const svg = svgEl("svg", { width: W, height: 52, class: "mini-svg-at" });
-    const bande = F.bandes.find((b) => b.rendu !== "gradient" && (!ech.bandes || ech.bandes.includes(b.id)));
-    for (const [i, s] of (bande?.segments ?? []).entries()) {
-      const a = X(Math.min(s.debut, s.fin)), b = X(Math.max(s.debut, s.fin));
-      const r = svgEl("rect", { x: a, y: 4, width: Math.max(b - a, 1), height: 6, fill: s.couleur ?? COULEURS_FRISE[i % COULEURS_FRISE.length], opacity: 0.45 });
-      r.append(svgEl("title", {}, s.nom));
-      svg.append(r);
-    }
-    svg.append(svgEl("line", { x1: G, x2: G + L, y1: 25, y2: 25, class: "mini-axe" }));
-    for (const x of places) {
-      if (x.slug === slug) continue;
-      const a = x.place.debut == null ? G : X(x.place.debut), b = x.place.fin == null ? G + L : X(x.place.fin);
-      const l = svgEl("line", { x1: (a + b) / 2, x2: (a + b) / 2, y1: 20, y2: 30, class: "mini-autre" });
-      l.append(svgEl("title", {}, `${x.numero ?? ""} ${x.titre}`));
-      svg.append(l);
-    }
-    const a = c.place.debut == null ? G : X(c.place.debut), b = c.place.fin == null ? G + L : X(c.place.fin);
-    svg.append(svgEl("rect", { x: Math.min(a, b - 5), y: 18, width: Math.max(b - a, 6), height: 14, rx: 3, class: "mini-ici" }));
-    const k = E.ticks;
-    if (k.length) {
-      svg.append(svgEl("text", { x: G, y: 48, class: "mini-lib" }, k[0].texte ?? libelleT(k[0].t, F, E.variable)));
-      svg.append(svgEl("text", { x: G + L, y: 48, "text-anchor": "end", class: "mini-lib" }, k[k.length - 1].texte ?? libelleT(k[k.length - 1].t, F, E.variable)));
-    }
-    svg.style.cursor = "pointer";
-    svg.onclick = ouvre;
-    zone_.append(svg);
+    txt.textContent = c.place.texte.replace(/…/g, "").replace(/^ → | → $/g, "");
+    // l'échelle : la même clé que la grande frise des chapitres, qui s'ouvre donc sur celle choisie ici
+    const cleEch = "limalibri-frise-echelle-";
+    const se = el("select", "livre-select mini-echelle");
+    const choisie = lirePref(cleEch, null);
+    F.echelles.forEach((e, i) => se.append(new Option(e.titre, String(i), false, e.id === choisie)));
+    se.title = "l'échelle de la frise (la même que sur la grande frise)";
+    se.onchange = () => { ecrisPref(cleEch, F.echelles[Number(se.value)].id); dessine(); };
+    if (F.echelles.length > 1) tete.insertBefore(se, lien);
+    const dessine = () => {
+      const ech = F.echelles[Number(se.value)] ?? F.echelles[0];
+      const E = echelleFrise(ech, F, places.flatMap((x) => [x.place.debut, x.place.fin]));
+      const W = Math.max(zone_.clientWidth || d.clientWidth || 600, 260), G = 6, L = W - 12;
+      const X = (t) => G + Math.max(0, Math.min(1, E.x(t))) * L;
+      const svg = svgEl("svg", { width: W, height: 52, class: "mini-svg-at" });
+      const bande = F.bandes.find((b) => b.rendu !== "gradient" && (!ech.bandes || ech.bandes.includes(b.id)));
+      for (const [i, s] of (bande?.segments ?? []).entries()) {
+        const a = X(Math.min(s.debut, s.fin)), b = X(Math.max(s.debut, s.fin));
+        const r = svgEl("rect", { x: a, y: 4, width: Math.max(b - a, 1), height: 6, fill: s.couleur ?? COULEURS_FRISE[i % COULEURS_FRISE.length], opacity: 0.45 });
+        r.append(svgEl("title", {}, s.nom));
+        svg.append(r);
+      }
+      svg.append(svgEl("line", { x1: G, x2: G + L, y1: 25, y2: 25, class: "mini-axe" }));
+      for (const x of places) {
+        if (x.slug === slug) continue;
+        const a = x.place.debut == null ? G : X(x.place.debut), b = x.place.fin == null ? G + L : X(x.place.fin);
+        const l = svgEl("line", { x1: (a + b) / 2, x2: (a + b) / 2, y1: 20, y2: 30, class: "mini-autre" });
+        l.append(svgEl("title", {}, `${x.numero ?? ""} ${x.titre}`));
+        svg.append(l);
+      }
+      const a = c.place.debut == null ? G : X(c.place.debut), b = c.place.fin == null ? G + L : X(c.place.fin);
+      svg.append(svgEl("rect", { x: Math.min(a, b - 5), y: 18, width: Math.max(b - a, 6), height: 14, rx: 3, class: "mini-ici" }));
+      // toutes les graduations : un trait sur l'axe, et leur valeur tant qu'elle ne chevauche pas sa voisine
+      // (la première et la dernière, calées sur les bords, sont toujours écrites)
+      const k = E.ticks.filter((g) => { const f = E.x(g.t); return f >= -1e-9 && f <= 1 + 1e-9; })
+        .map((g) => ({ px: X(g.t), texte: g.texte ?? libelleT(g.t, F, E.variable) }));
+      const larg = (s) => s.length * 5.6 + 8;                 // à 10 px : une estimation, le SVG n'est pas encore dans la page
+      const bords = (g, i) => i === 0 ? [g.px, g.px + larg(g.texte)] : i === k.length - 1 ? [g.px - larg(g.texte), g.px]
+        : [g.px - larg(g.texte) / 2, g.px + larg(g.texte) / 2];
+      const finDernier = k.length > 1 ? bords(k[k.length - 1], k.length - 1)[0] : Infinity;
+      let fin = -Infinity;
+      k.forEach((g, i) => {
+        svg.append(svgEl("line", { x1: g.px, x2: g.px, y1: 25, y2: 29, class: "mini-axe" }));
+        const [a, b] = bords(g, i);
+        const extreme = i === 0 || i === k.length - 1;
+        if (!extreme && (a < fin || b > finDernier)) return;
+        const ancre = i === 0 ? "start" : i === k.length - 1 ? "end" : "middle";
+        svg.append(svgEl("text", { x: g.px, y: 48, "text-anchor": ancre, class: "mini-lib" }, g.texte));
+        fin = b;
+      });
+      svg.style.cursor = "pointer";
+      svg.onclick = ouvre;
+      zone_.replaceChildren(svg);
+    };
+    dessine();
   });
   return d;
 }

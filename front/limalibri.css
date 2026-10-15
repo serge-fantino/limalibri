@@ -1289,6 +1289,7 @@ a.obj-titre:hover{text-decoration:underline}
 .mini-frise-at{border:1px solid var(--rule);border-radius:8px;background:var(--bar);padding:.4rem .7rem .2rem;margin:.6rem 0 1rem}
 .mini-frise-at .mini-tete{display:flex;flex-wrap:wrap;gap:.3rem .8rem;align-items:baseline}
 .mini-frise-at .mini-tete .pan-lien{font-size:.78rem}
+.mini-frise-at .mini-echelle{font-size:.74rem;padding:.05rem .3rem;margin-left:auto}
 .mini-svg-at{display:block;overflow:visible;font-family:system-ui,-apple-system,sans-serif}
 .mini-svg-at .mini-axe{stroke:var(--rule)}
 .mini-svg-at .mini-autre{stroke:var(--mut);opacity:.55}

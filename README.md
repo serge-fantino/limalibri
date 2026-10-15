@@ -753,8 +753,10 @@ existant.
 Les avertissements (date illisible, domaine faux) s'affichent sous la frise.
 
 Dans les vues de lecture (le récit, l'essai en mode texte), une **frise réduite** se place sous la progression.
-Elle montre tous les chapitres en traits discrets et celui-ci en évidence, sur la première échelle, avec sa
-période. Un clic ouvre la frise du livre, le chapitre mis en avant. Les frises internes du chapitre y ont leur
+Elle montre tous les chapitres en traits discrets et celui-ci en évidence, avec sa période, sur l'échelle
+choisie dans son menu (la première de `frise.yaml`, d'abord), avec toutes ses graduations (une valeur qui
+chevaucherait sa voisine est omise, faute de place). Le choix est retenu d'un chapitre à l'autre, et
+c'est celui de la grande frise des chapitres. Un clic ouvre la frise du livre, le chapitre mis en avant. Les frises internes du chapitre y ont leur
 lien. Un chapitre pas encore daté le dit.
 
 ## Le site public d'un livre
