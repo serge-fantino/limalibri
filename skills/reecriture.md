@@ -1,6 +1,6 @@
 # Réécriture — la consigne donnée à Claude
 
-<!-- Gabarit compilé par atelier/reecriture.py. Les {{…}} sont remplis à chaque demande ;
+<!-- Gabarit compilé par limalibri/reecriture.py. Les {{…}} sont remplis à chaque demande ;
      le résultat complet est archivé dans la demande (contexte.systeme), pour qu'on puisse
      toujours relire exactement ce que Claude a reçu. -->
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Le serveur de l'atelier.
+"""Le serveur de LimaLibri.
 
-    poetry run uvicorn atelier.serveur:app --reload --port 8765
+    poetry run uvicorn limalibri.serveur:app --reload --port 8765
 
 L'API vit sous /api ; tout le reste sert le front (front/), sans étape de build.
 """
@@ -15,15 +15,15 @@ from fastapi.staticfiles import StaticFiles
 from . import livre, reecriture, regles, essai, verification, edition, validation, verrou, kb, creation, confiance, pistes, file, renvois, export, references, sources, harnais, naif, documents, plan, planif, refs, conversation, consommation, redaction, suivi, serie, evenements, objectifs, execution, capacites, cadrage, pilotage
 from . import versions as depot          # git : marquer une version du livre (le nom « versions » est pris)
 
-FRONT = pathlib.Path(__file__).resolve().parent.parent / "front"
+FRONT = pathlib.Path(__file__).resolve().parents[2] / "front"
 
-app = FastAPI(title="Atelier")
+app = FastAPI(title="LimaLibri")
 
 
 @app.middleware("http")
 async def _sans_cache_du_front(request, appel):
-    """Le front (index, atelier.js, atelier.css) : toujours revalidé. Sans cette directive, le navigateur
-    gardait un atelier.js périmé après une mise à jour ; avec, il redemande et reçoit un 304 si rien n'a changé."""
+    """Le front (index, limalibri.js, limalibri.css) : toujours revalidé. Sans cette directive, le navigateur
+    gardait un limalibri.js périmé après une mise à jour ; avec, il redemande et reçoit un 304 si rien n'a changé."""
     r = await appel(request)
     if not request.url.path.startswith("/api/"):
         r.headers["Cache-Control"] = "no-cache"
@@ -31,9 +31,9 @@ async def _sans_cache_du_front(request, appel):
 
 # Un dossier qui n'est pas encore un livre le devient : livre.yaml et structure.yaml vides.
 for nom in livre.initialise() + regles.initialise():
-    print("atelier : %s créé dans %s" % (nom, livre.LIVRE))
+    print("limalibri : %s créé dans %s" % (nom, livre.LIVRE))
 if reecriture.interrompues():
-    print("atelier : des demandes en cours ont été interrompues par le redémarrage (marquées en erreur)")
+    print("limalibri : des demandes en cours ont été interrompues par le redémarrage (marquées en erreur)")
 conversation.interrompues()
 
 
@@ -68,11 +68,11 @@ async def _reprend_la_file():
         serie.avance()                          # une série dont l'étape a été interrompue s'arrête, et le dit
         pilotage.avance()                       # un plan d'objectif aussi (bloqué sur l'action interrompue)
     except Exception as e:                      # noqa: BLE001
-        print("atelier : séries —", e)
+        print("limalibri : séries —", e)
     try:
         file.suivante()
     except Exception as e:                      # noqa: BLE001
-        print("atelier : file d'attente —", e)
+        print("limalibri : file d'attente —", e)
 
 
 def _meta(m):
@@ -82,7 +82,7 @@ def _meta(m):
 
 @app.get("/api/livre")
 def meta():
-    """Ce qui décrit le livre, plus son dossier (pour savoir sur quoi l'atelier travaille)."""
+    """Ce qui décrit le livre, plus son dossier (pour savoir sur quoi LimaLibri travaille)."""
     return _meta(livre.meta())
 
 
@@ -153,7 +153,7 @@ def fichier(chemin: str):
 
 @app.post("/api/ouvrir")
 def ouvrir(chemin: str):
-    """Ouvre un fichier du livre dans l'application par défaut du poste (l'atelier est local)."""
+    """Ouvre un fichier du livre dans l'application par défaut du poste (LimaLibri est local)."""
     try:
         p = livre.fichier(chemin)
     except KeyError:
@@ -546,7 +546,7 @@ def relecture_annotations(ident: str):
 
 @app.get("/api/capacites")
 def capacites_liste():
-    """Le catalogue : ce que l'atelier sait faire (capacités, propositions de cadre), avec le coût moyen dans ce livre."""
+    """Le catalogue : ce que LimaLibri sait faire (capacités, propositions de cadre), avec le coût moyen dans ce livre."""
     return capacites.catalogue()
 
 

@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """Le site public d'un livre : un mini-site statique, en lecture seule, pour suivre sa progression et le lire.
 
-Généré depuis l'atelier, publié tel quel (« en l'état ») : le suivi (où en est chaque chapitre, dans chaque
+Généré depuis LimaLibri, publié tel quel (« en l'état ») : le suivi (où en est chaque chapitre, dans chaque
 version ; les objectifs ; les dernières avancées), le récit et l'essai de chaque chapitre écrit, avec leur
 statut (brouillon, relu, validé), les fiches que les chapitres citent, la bibliographie. Rien d'autre : ni
 coûts, ni consignes, ni demandes, ni annotations. Le développement reste local ; le site n'est qu'une image.
 
-    genere()   écrit le site dans un dossier hors du dépôt (~/.cache/atelier-public/<livre>/site) — l'aperçu
+    genere()   écrit le site dans un dossier hors du dépôt (~/.cache/limalibri-public/<livre>/site) — l'aperçu
     publie()   le génère, puis le déploie sur Cloudflare Pages (wrangler pages deploy), projet du livre
 
 livre.yaml, section facultative :
@@ -46,7 +46,7 @@ def config():
 
 
 def racine():
-    return pathlib.Path.home() / ".cache" / "atelier-public" / ("%s-%s" % (livre.LIVRE.parent.name, livre.LIVRE.name))
+    return pathlib.Path.home() / ".cache" / "limalibri-public" / ("%s-%s" % (livre.LIVRE.parent.name, livre.LIVRE.name))
 
 
 def sortie():
@@ -59,7 +59,7 @@ def derniere():
 
 
 # ------------------------------------------------------------------ les PDF
-# Les mêmes que dans l'atelier (atelier/export.py : Chrome sans tête) : faits une fois, gardés dans le cache tant
+# Les mêmes que dans LimaLibri (limalibri/export.py : Chrome sans tête) : faits une fois, gardés dans le cache tant
 # que les fichiers du livre n'ont pas changé — l'aperçu reste rapide, la publication les emporte.
 
 PDFS = [("recit", "recit", None, "Le récit"), ("essai", "essai", None, "L'essai"),
@@ -201,7 +201,7 @@ details[open].partie summary::before{content:"▾ ";}
 .lecture-pop .raz{border:0;color:var(--acc);padding:0;margin-top:.2rem}
 @media (max-width:480px){.barre-haut{gap:.45rem;padding:.5rem 12px}.barre-haut .meta{display:none}.theme .lib{display:none}
   .barre-haut .bascule a,.barre-haut .bascule span{padding:.15rem .55rem}}
-/* la carte des fiches (le dessin vient de l'édition « essai + base », atelier/compagnon.py) */
+/* la carte des fiches (le dessin vient de l'édition « essai + base », limalibri/compagnon.py) */
 .carte-defile{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:.4rem -16px 1.2rem;padding:0 16px}
 .carte{position:relative;margin:.6em 0 1em;font-size:12px}
 .carte svg{position:absolute;left:0;top:0;overflow:visible}
@@ -217,7 +217,7 @@ details[open].partie summary::before{content:"▾ ";}
 .pastille-c{display:inline-block;width:.6rem;height:.6rem;border-radius:50%;margin-right:.35rem;vertical-align:middle}
 .cluster h3{font-family:system-ui,sans-serif;font-size:.9rem;font-weight:600;margin:1.6rem 0 .2rem}
 .legende{font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mut)}
-/* la frise (le dessin vient de l'atelier) */
+/* la frise (le dessin vient de LimaLibri) */
 .frise-barre{display:flex;flex-wrap:wrap;gap:.5rem .9rem;align-items:center;margin:.8rem 0;font-size:.85rem}
 .frise-barre select{font:inherit;background:var(--carte);color:var(--texte);border:1px solid var(--filet);border-radius:6px;padding:.2rem .4rem;max-width:100%}
 .frise-barre label[hidden]{display:none}
@@ -296,7 +296,7 @@ def _page(titre, corps, base, barre="", description=""):
     return """<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>%s</title>%s%s<link rel="stylesheet" href="%sstyle.css"></head>
-<body>%s<main>%s</main><footer class="site">%s — publié en l'état, depuis l'atelier d'écriture · %s</footer>%s</body></html>
+<body>%s<main>%s</main><footer class="site">%s — publié en l'état, depuis LimaLibri · %s</footer>%s</body></html>
 """ % (html.escape(titre), '<meta name="description" content="%s">' % html.escape(description) if description else "", THEME,
        base, barre, corps, html.escape(livre.meta().get("titre") or ""), livre._maintenant()[:10], SCRIPT)
 
@@ -616,7 +616,7 @@ class Site:
                 '<script src="%sfrise-donnees.js"></script><script src="%sfrise.js"></script>') % (slug, base, base, slug, liens, base, base)
 
     def page_frise(self):
-        """La frise du livre (frise.yaml) : la même que dans l'atelier, dessinée par le même moteur."""
+        """La frise du livre (frise.yaml) : la même que dans LimaLibri, dessinée par le même moteur."""
         barre = '<nav class="barre-haut"><a href="index.html">← %s</a></nav>' % html.escape(self.meta.get("titre") or "Sommaire")
         corps = ['<h1>La frise</h1><p class="meta">Où se place chaque chapitre dans le temps de l\'histoire. Plusieurs échelles '
                  'pour la même histoire ; les frises internes suivent un chapitre. Touchez un chapitre pour le lire.</p>',
@@ -638,8 +638,8 @@ class Site:
 
 
 def script_frise():
-    """Le moteur de dessin de l'atelier (front/atelier.js, de COULEURS_FRISE à pageFrise), et la page publique."""
-    js = (pathlib.Path(__file__).resolve().parent.parent / "front" / "atelier.js").read_text(encoding="utf-8")
+    """Le moteur de dessin de LimaLibri (front/limalibri.js, de COULEURS_FRISE à pageFrise), et la page publique."""
+    js = (pathlib.Path(__file__).resolve().parents[2] / "front" / "limalibri.js").read_text(encoding="utf-8")
     a, b = js.index("const COULEURS_FRISE"), js.index("async function pageFrise")
     return js[a:b] + PAGE_FRISE
 
@@ -815,7 +815,7 @@ def publie():
     cfg = config()
     g = genere()
     w = _wrangler(cfg)
-    env = dict(__import__("os").environ, CI="1", WRANGLER_SEND_METRICS="false")   # jamais de question : l'atelier ne peut pas répondre
+    env = dict(__import__("os").environ, CI="1", WRANGLER_SEND_METRICS="false")   # jamais de question : LimaLibri ne peut pas répondre
     deploie = w + ["pages", "deploy", g["dossier"], "--project-name", cfg["projet"], "--branch", "main", "--commit-dirty=true"]
     sortie_, cree = "", False
     # le projet d'abord : sans lui, wrangler demanderait lequel choisir (impossible ici). Déjà créé : il le dit, on continue.

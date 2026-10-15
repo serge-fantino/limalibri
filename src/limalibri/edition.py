@@ -8,7 +8,7 @@ chapitre (avant, après, motif) — la trace fine, par paragraphe.
 
 L'essai accepte aussi un paragraphe nouveau (après un autre) et la suppression d'un
 paragraphe — refusée s'il étaie une assertion du verrou. Le récit aussi, rangé par plan
-(atelier/narration.py : le nouveau paragraphe entre dans le plan de celui d'avant ; retirer un
+(limalibri/narration.py : le nouveau paragraphe entre dans le plan de celui d'avant ; retirer un
 paragraphe qui porte des assertions demande de le confirmer).
 
 Les versions : un commit git des seuls fichiers du livre, quand l'auteur le demande — jamais

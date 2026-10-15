@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Les outils de l'atelier donnés à Claude (un serveur MCP en mémoire, par demande) : agir sur le livre
+"""Les outils de LimaLibri donnés à Claude (un serveur MCP en mémoire, par demande) : agir sur le livre
 par les mêmes fonctions que l'auteur, avec leurs garde-fous.
 
     annoter    pose une annotation sur un paragraphe (^id) d'un chapitre, avec un extrait exact du
@@ -8,7 +8,7 @@ par les mêmes fonctions que l'auteur, avec leurs garde-fous.
                sorte de constat, sa gravité) : on la retrouve, on la classe en bloc.
 
 Les annotations sont des notes : elles n'écrivent rien dans le texte ; la révision d'un chapitre les lit et
-les traite (atelier/redaction.py). Le nom vu par Claude : mcp__atelier__annoter.
+les traite (limalibri/redaction.py). Le nom vu par Claude : mcp__limalibri__annoter.
 """
 import re
 
@@ -16,7 +16,7 @@ from claude_agent_sdk import tool, create_sdk_mcp_server
 
 from . import livre
 
-NOM = "atelier"
+NOM = "limalibri"
 SORTES = ("regle", "repetition", "recherche", "fait", "coherence", "clarte", "rythme", "remarque")
 
 

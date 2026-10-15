@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Accès à un livre vu par l'atelier.
+"""Accès à un livre vu par LimaLibri.
 
-Le livre est un dossier (ATELIER_LIVRE, par défaut le dossier courant) qui porte :
+Le livre est un dossier (LIMALIBRI_LIVRE, par défaut le dossier courant) qui porte :
   livre.yaml       ce qui décrit le livre (titre, auteur, synopsis, couverture, héritage)
   structure.yaml   l'ordre et le découpage des chapitres
   chapters/<slug>/ un chapitre migré (brief, verrou, liens, recit.md, essai.md ancrés en ^id)
@@ -26,7 +26,8 @@ from ruamel.yaml.constructor import RoundTripConstructor
 from ruamel.yaml.scalarstring import LiteralScalarString
 from ruamel.yaml.comments import CommentedMap
 
-LIVRE = pathlib.Path(os.environ.get("ATELIER_LIVRE") or os.getcwd()).resolve()   # le dossier du livre (run.sh le passe)
+LIVRE = pathlib.Path(os.environ.get("LIMALIBRI_LIVRE") or os.environ.get("ATELIER_LIVRE")   # le dossier du livre
+                     or os.getcwd()).resolve()            # (run.sh le passe ; ATELIER_LIVRE : l'ancien nom)
 
 VERSIONS = ("recit", "essai")
 ENTETE = re.compile(r"^---\n.*?\n---\n", re.S)
@@ -41,7 +42,7 @@ RENVOI = re.compile(r"\[chap:([a-z0-9-]+)\]")
 GABARIT_LIVRE = """# Le livre — ce qui le décrit en entier. L'ordre et le découpage des chapitres sont
 # dans structure.yaml ; ici, l'identité du livre et ce qu'il faut pour le publier
 # (page de titre, EPUB, couverture). Les chemins sont relatifs à ce dossier.
-# Modifiable dans l'atelier (page du livre) ou à la main.
+# Modifiable dans LimaLibri (page du livre) ou à la main.
 
 titre: {titre}
 sous_titre: null
@@ -166,7 +167,7 @@ def ecrit_meta(champs, version):
         raise KeyError("numerotation_essai : %s" % "|".join(NUMEROTATIONS))
     y = yaml_rt()
     doc = y.load(p.read_text(encoding="utf-8")) or {}
-    if "versions" in champs:                  # le titre et le rôle des deux versions — l'atelier n'en connaît pas d'autres
+    if "versions" in champs:                  # le titre et le rôle des deux versions — LimaLibri n'en connaît pas d'autres
         vs = champs.pop("versions") or {}
         cible = doc.get("versions")
         if cible is None:
@@ -184,7 +185,7 @@ def ecrit_meta(champs, version):
                         x[k] = t
                     else:
                         x.pop(k, None)
-    if "publication" in champs:               # le site public (atelier/public.py) : projet, adresse, wrangler
+    if "publication" in champs:               # le site public (limalibri/public.py) : projet, adresse, wrangler
         pub = champs.pop("publication") or {}
         cible = doc.get("publication")
         if cible is None:
@@ -222,7 +223,7 @@ def ecrit_meta(champs, version):
                     fi[k] = bool(v)
                 elif k == "simultanees":
                     fi["simultanees"] = max(1, int(v))
-                elif k in ("profondeur", "enfants"):    # les plafonds de la filiation (atelier/filiation.py)
+                elif k in ("profondeur", "enfants"):    # les plafonds de la filiation (limalibri/filiation.py)
                     fi[k] = max(0, min(9, int(v)))
                 else:
                     raise KeyError("claude.file.%s" % k)
@@ -591,7 +592,7 @@ def supprime_annotation(slug, ident):
 
 # ------------------------------------------------------------------ storyboard (brief.yaml)
 
-# Le storyboard vit dans brief.yaml (beats). L'atelier en modifie les plans — lieu, temps,
+# Le storyboard vit dans brief.yaml (beats). LimaLibri en modifie les plans — lieu, temps,
 # ambiance, attaque, chute, note, séquence, micro-récits — en gardant la mise en forme du
 # fichier, et note chaque changement au journal. La réécriture relit brief.yaml à chaque
 # demande : recadrer le storyboard, c'est recadrer ce que Claude recevra.

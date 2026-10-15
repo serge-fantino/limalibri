@@ -3,13 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Atelier</title>
-<link rel="stylesheet" href="atelier.css">
-<script>try { document.documentElement.dataset.theme = localStorage.getItem("atelier-theme") || "auto"; } catch (e) {}</script>
+<title>LimaLibri</title>
+<link rel="stylesheet" href="limalibri.css">
+<script>try {   // les réglages d'avant le nom LimaLibri (« atelier-… ») passent sous le nouveau nom, une fois
+  for (const k of Object.keys(localStorage)) if (k.startsWith("atelier-")) {
+    const n = "limalibri-" + k.slice(8); if (localStorage.getItem(n) === null) localStorage.setItem(n, localStorage.getItem(k)); localStorage.removeItem(k); }
+} catch (e) {}
+try { document.documentElement.dataset.theme = localStorage.getItem("limalibri-theme") || "auto"; } catch (e) {}</script>
 </head>
 <body>
 <header id="barre">
-  <strong>Atelier</strong> <span class="mut" id="titre-livre"></span>
+  <strong>LimaLibri</strong> <span class="mut" id="titre-livre"></span>
   <nav id="versions">
     <button id="b-livre" title="Le livre : présentation, versions, garde-fous, réglages de Claude">Livre</button>
     <button id="b-plan" title="Le plan et le synopsis : le livre, ses parties, ses chapitres">Plan</button>
@@ -45,6 +49,6 @@
 </div>
 <aside id="tiroir" hidden></aside>
 <aside id="dialogue" hidden></aside>
-<script type="module" src="atelier.js"></script>
+<script type="module" src="limalibri.js"></script>
 </body>
 </html>

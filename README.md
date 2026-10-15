@@ -43,24 +43,24 @@ Un livre est un dossier avec `structure.yaml` (l'ordre des chapitres) et `livre.
 qui le décrit, et un éventuel dépôt d'« héritage » lu en lecture seule). Un dossier qui ne
 les a pas les reçoit, vides, au démarrage ; un dossier inexistant est créé après confirmation.
 
-## Ce que l'atelier écrit
+## Ce que LimaLibri écrit
 
 La **page du livre** (ouverture de l'appli, ou clic sur le titre) modifie `livre.yaml` sur
 place : titre, sous-titre, auteur, langue, synopsis, quatrième, couverture (`media/`). Chaque
 champ s'enregistre seul ; les commentaires du fichier sont conservés (ruamel.yaml). Si le
 fichier a changé ailleurs depuis l'ouverture de la page, l'écriture est refusée (409) et la
-page se recharge : l'atelier n'écrase jamais une modification faite à la main. Rien n'est
+page se recharge : LimaLibri n'écrase jamais une modification faite à la main. Rien n'est
 commité automatiquement.
 
 La barre de la page a deux modes pour le texte : **annoter** (sélectionner un passage) et
-**corriger** (cliquer un paragraphe pour le modifier sur place ; `atelier/edition.py`). Une
+**corriger** (cliquer un paragraphe pour le modifier sur place ; `limalibri/edition.py`). Une
 correction garde le ^id du paragraphe, refuse d'écraser un paragraphe changé ailleurs, et est
 notée au journal du chapitre (avant, après, motif). L'essai accepte aussi un paragraphe
 nouveau et la suppression (refusée si le paragraphe étaie le verrou) ; le récit garde ses
 paragraphes, dont le découpage suit le storyboard. **⎇ versions** fait, à la demande, un
 commit git des seuls fichiers du livre — jamais automatiquement.
 
-Le **verrou** se modifie dans le détail d'une assertion (`atelier/verrou.py`) : texte, statut
+Le **verrou** se modifie dans le détail d'une assertion (`limalibri/verrou.py`) : texte, statut
 (obligatoire, supprimable, retirée — avec motif), note ; « ＋ assertion après » crée un
 identifiant suffixé (1.8a, 1.8b…) sans renuméroter ; « ＋ assertion » sur une ligne du
 storyboard l'ajoute à la fin de la liste du paragraphe (même vide : elle se place après celles
@@ -70,9 +70,9 @@ chaque changement est au journal (et rend « cadre modifié » les paragraphes q
 
 Note technique : les écritures « aller-retour » en YAML (`livre.yaml_rt`) lisent `07e2` ou
 `5e56` comme du texte — ce sont des ^id de paragraphe, que YAML 1.2 prendrait pour des nombres —
-et les écrivent entre guillemets ; l'atelier ne crée plus d'identifiant de cette forme.
+et les écrivent entre guillemets ; LimaLibri ne crée plus d'identifiant de cette forme.
 
-L'**état de validation** (`atelier/validation.py`) compare chaque paragraphe à son empreinte
+L'**état de validation** (`limalibri/validation.py`) compare chaque paragraphe à son empreinte
 de dernière validation : **modifié**, **nouveau**, ou **cadre modifié** (son plan du storyboard
 ou une assertion qu'il porte a changé depuis, d'après le journal). La référence de départ est
 l'état à la migration, relu dans git. Marques dans la marge, compte dans la barre (◐) et le
@@ -106,7 +106,7 @@ bibliographie et la numérotation (aucune, sections, paragraphes — calculée �
 
 Le **plan de l'essai** (identifiants `{#id}` dans les intertitres, posés par la migration) :
 glisser-déposer un paragraphe ou une section entière, monter/descendre d'un niveau, renommer,
-insérer ou retirer un intertitre (`atelier/essai.py`). Le titre choisi se synchronise entre le
+insérer ou retirer un intertitre (`limalibri/essai.py`). Le titre choisi se synchronise entre le
 plan et le texte ; un double-clic sur un intertitre du texte le renomme. Aucun identifiant ne
 change ; chaque opération est au journal.
 
@@ -117,7 +117,7 @@ pastilles (établi, débattu, récent…, détail au survol ou déplié), son te
 `[[liens]]` cliquables, son plan à gauche, et à droite ce qui la relie au livre — les
 chapitres qui la listent, les fiches qu'elle cite et qui la citent, les œuvres qu'y exploite
 l'essai avec un lien vers chaque note qui les cite. Un lien hors fiches (le cadre poétique de
-l'ancien dépôt) est marqué, et s'ouvre en lecture seule dans l'éditeur (`atelier/kb.py`).
+l'ancien dépôt) est marqué, et s'ouvre en lecture seule dans l'éditeur (`limalibri/kb.py`).
 
 Le **graphe** (`#fiches/graphe`, onglet de l'index) : les fiches en cercles, les chapitres
 en carrés reliés à leurs fiches, trois sortes de liens — `[[lien]]`, œuvres partagées (la
@@ -129,7 +129,7 @@ chapitres. Glisser, zoomer, survoler (les voisins), cliquer (le détail), double
 (ouvrir) ; un clic dans la légende isole un cluster. La disposition est gardée d'une visite
 à l'autre.
 
-**Créer une fiche** est une demande à Claude, comme une vérification (`atelier/creation.py`,
+**Créer une fiche** est une demande à Claude, comme une vérification (`limalibri/creation.py`,
 `skills/fiche.md`) : une question, les chapitres qu'elle sert, une longueur, un modèle. Elle
 part de l'index des fiches (« ◇ nouvelle fiche… »), des fiches d'un chapitre (« il manque une
 fiche… »), ou d'une vérification (« en faire une fiche… », avec ses sources). Claude lit
@@ -146,7 +146,7 @@ poursuivre la recherche et relancer fonctionnent comme pour une vérification.
 La **confiance par paragraphe** d'une fiche : « ◐ lire la confiance par paragraphe » demande à
 Claude (sans outils ni recherche, modèle de `claude.fiche`) un degré pour chaque paragraphe —
 établi, débattu, récent, hypothèse, projeté, ou raisonnement — et une raison brève, d'après son
-texte et la ligne de confiance de la fiche (`atelier/confiance.py`). Le résultat va dans
+texte et la ligne de confiance de la fiche (`limalibri/confiance.py`). Le résultat va dans
 `kb/fiches/<slug>.confiance.json`, jamais dans la fiche : chaque paragraphe y est désigné par
 l'empreinte de son texte, et perd sa marque s'il change. Affiché en marge (couleur, raison au
 survol), avec une légende et un interrupteur. Une fiche créée par Claude reçoit d'office le
@@ -163,7 +163,7 @@ pas (en rouge) propose de la créer.
 **Creuser une fiche** (« ◇ creuser… » sous sa confiance) : Claude lit la fiche, cherche ce
 qu'elle effleure sans le traiter, et, pour chaque piste, vérifie dans la base (Grep, index,
 voisines, cluster du graphe) si elle est déjà couverte, avant de la classer : **nouvelle**,
-**à compléter** (telle fiche, telle section) ou **déjà couverte** (`atelier/pistes.py`,
+**à compléter** (telle fiche, telle section) ou **déjà couverte** (`limalibri/pistes.py`,
 `skills/pistes.md`). Pas de web : c'est une lecture (budget `claude.pistes`, 20 tours). Le
 tiroir montre les pistes par statut, avec la section qui les appelle, la priorité et les
 chapitres servis ; on coche, on retouche la question, et chaque piste cochée lance une
@@ -178,14 +178,14 @@ avant les sources ; le texte de la voisine n'est pas touché. Les paragraphes
 sans source [@…] sont signalés en marge ; « 🔎 sourcer les paragraphes signalés » relance la recherche dans
 la même session, sur ces paragraphes.
 
-Le **fil des événements** (`atelier/evenements.py`, `/api/evenements`, Server-Sent Events) : le serveur
+Le **fil des événements** (`limalibri/evenements.py`, `/api/evenements`, Server-Sent Events) : le serveur
 prévient les pages ouvertes quand une demande est créée, change d'état ou avance, quand une série avance,
 quand une conversation change ; la page redessine ce qui est concerné (le tiroir d'une demande en cours, la
 liste des demandes, le bloc des séries, la conversation, les compteurs) — plus de sondage. Le navigateur se
 reconnecte seul ; pendant une coupure, un sondage lent prend le relais. Les flux se ferment dès le signal
 d'arrêt, pour ne pas retenir le rechargement automatique du serveur.
 
-La **file d'attente** (`atelier/file.py`) : les fiches retenues depuis « creuser » ne partent
+La **file d'attente** (`limalibri/file.py`) : les fiches retenues depuis « creuser » ne partent
 pas toutes seules, elles sont **en attente**. On les lance à la main (▶, dans Fiches › En création
 ou dans leur tiroir), ou on les retire. L'**enchaînement automatique** est une option
 à activer explicitement (case « enchaîner automatiquement », ou `claude.file.auto` dans
@@ -200,7 +200,7 @@ demande en erreur se clôt en la relançant (elle passe à « remplacée ») ou 
 (« abandonnée »). La Liste marque les fiches écrites par Claude (brouillon, relue) et les filtre.
 
 Une fiche écrite par Claude se **marque comme relue** (« ✓ », son en-tête passe de `etat:
-brouillon` à `etat: relue`). Les **renvois** (`atelier/renvois.py`) : pour une fiche, les
+brouillon` à `etat: relue`). Les **renvois** (`limalibri/renvois.py`) : pour une fiche, les
 voisines qu'elle cite et qui ne la citent pas encore ; « ⇄ renvois… » (sur la fiche, ou après
 sa création) demande à Claude, sans web, où poser dans chacune une phrase qui renvoie vers
 elle — la section, le paragraphe (par ses premiers mots), phrase en fin de paragraphe ou
@@ -217,7 +217,7 @@ demandes comme non relue. On la **confirme** (elle passe en brouillon et rejoint
 cochés) ou on ne la garde pas (corbeille), depuis sa demande (onglet En création, groupe « À
 confirmer ») ou depuis la fiche.
 
-**Supprimer une fiche** (le ménage, « supprimer… » sur la fiche) : l'atelier montre d'abord ce
+**Supprimer une fiche** (le ménage, « supprimer… » sur la fiche) : LimaLibri montre d'abord ce
 qui en dépend — les fiches qui la citent, les chapitres qui la listent, les œuvres rattachées.
 La fiche va à `kb/corbeille/` (récupérable, avec sa confiance), sort des briefs et des
 bibliographies ; les liens qui la visaient restent (morts, en rouge, qui proposent de la
@@ -225,12 +225,12 @@ recréer) ou sont défaits, le texte gardé, au choix. Tout va à `kb/journal.js
 
 Les vues des fiches ont la **barre de vue** du récit et de l'essai : liste · en création · graphe ·
 bibliographie, puis, sur une fiche, ses actions (creuser, renvois, supprimer), et les actions sur la
-base : nouvelle fiche, **⎙ PDF** et version **imprimable** (`atelier/export.py`, `/api/kb/pdf`,
+base : nouvelle fiche, **⎙ PDF** et version **imprimable** (`limalibri/export.py`, `/api/kb/pdf`,
 `/api/kb/imprimable`). Le document : une couverture (titre, « base de connaissance », synopsis,
 date, nombre de fiches), un sommaire par cluster thématique, chaque fiche (confiance, texte, fiches
 qui la citent, chapitres, œuvres), la bibliographie des œuvres exploitées en annexe ; tous les liens
 (fiche à fiche, vers une section, citation vers son œuvre, sommaire) tiennent dans le document. Le PDF
-est imprimé par Chrome sans interface (`ATELIER_CHROME` pour un autre chemin) ; sans Chrome, la
+est imprimé par Chrome sans interface (`LIMALIBRI_CHROME` pour un autre chemin) ; sans Chrome, la
 version imprimable s'imprime depuis le navigateur. De quoi faire relire la base par un tiers.
 
 L'**essai** s'exporte de même (**⎙ essai PDF** dans la barre du livre, **⎙ PDF** dans celle de l'essai ;
@@ -243,7 +243,7 @@ avancement : le **texte**, avec son statut (brief, brouillon, en relecture, vali
 seul, avec sa question. La numérotation (sections, sections + §) suit le réglage du livre. En annexe,
 la bibliographie des œuvres citées.
 
-**L'essai et la base de connaissance** (`atelier/compagnon.py` ; **⎙ essai + base…** dans la barre de
+**L'essai et la base de connaissance** (`limalibri/compagnon.py` ; **⎙ essai + base…** dans la barre de
 l'essai ; `/api/complet/pdf?portee=…`, `/api/complet/imprimable?portee=…`) : l'essai imprimable, relié à ses
 fiches. Chaque chapitre se termine par **« Pour aller plus loin »** : ses fiches (son brief), les fiches qui
 partagent ses sources, et une **mini-carte** (le chapitre, ses fiches, leurs voisines). En annexe, **la
@@ -265,20 +265,20 @@ ses micro-récits. Pas de numérotation (elle est propre à l'essai) ; la biblio
 récit cite une œuvre.
 
 La **bibliographie du livre** vit dans `kb/sources/<cle>.yaml`, une œuvre par fichier
-(`atelier/sources.py`) : clé stable, référence, DOI (lu, jamais de mémoire), fiches où l'œuvre est
+(`limalibri/sources.py`) : clé stable, référence, DOI (lu, jamais de mémoire), fiches où l'œuvre est
 exploitée, **statut** — importée (venue de la base centrale, jamais vérifiée une à une), à vérifier,
 vérifiée, corrigée, introuvable, mal attribuée, doublon —, origine, dernière vérification. Migrée par
 `migrer/sources.py` (base centrale de l'ancien dépôt, œuvres citées hors base par l'essai, sources
 des fiches). Une fiche créée y fait entrer ses sources, à vérifier. Sur une œuvre : ✎ modifier
 (journal), ＋ ajouter à la base (une œuvre hors base), et **🔎 vérifier la référence**
-(`atelier/references.py`) : Claude retrouve l'œuvre (éditeur, PubMed, arXiv…), cherche un doublon
+(`limalibri/references.py`) : Claude retrouve l'œuvre (éditeur, PubMed, arXiv…), cherche un doublon
 parmi les œuvres proches, et contrôle à chaque endroit qui la cite (notes de l'essai, fiches) ce
 qu'on lui fait dire ; verdict confirmée, corrigée, introuvable, mal attribuée ou doublon (budget
 `claude.reference` : 14 tours, 3 recherches, 4 pages). Retenir écrit l'œuvre (référence, DOI,
 statut, la vérification) et la bibliographie des chapitres qui la citent. La vue bibliographie
 filtre par statut ; « vérifier la sélection » met en file une vérification par œuvre affichée.
 
-Le **harnais** (« ✓ harnais » dans la barre d'un chapitre, `atelier/harnais.py`) : les portes qu'une
+Le **harnais** (« ✓ harnais » dans la barre d'un chapitre, `limalibri/harnais.py`) : les portes qu'une
 version doit passer avant d'être validée, reprises de l'ancien cycle. Récit : verrou (obligatoires
 portées, retirées absentes, paragraphes hors verrou, quotas d'ajouts), séquence déclarée par plan,
 budget (mots, paragraphes, phrases longues, tics plafonnés du brief), mots interdits, garde-fous,
@@ -289,7 +289,7 @@ garde-fous, répétitions, lecture naïve. Chaque relevé désigne son paragraph
 sa règle. Les **contrôles** des garde-fous vivent dans `regles/<version>.md`, en fin de règle :
 un bloc ```controle (libelle, motif, plafond, niveau), lisible et modifiable comme la règle
 (`migrer/controles.py` y a reporté les motifs de l'ancien harnais) ; ils sont retirés de ce qu'on
-donne à Claude. La **lecture naïve** (`atelier/naif.py`) : Claude lit le texte du chapitre et rien
+donne à Claude. La **lecture naïve** (`limalibri/naif.py`) : Claude lit le texte du chapitre et rien
 d'autre, et relève chaque endroit où il doit deviner (référent, ellipse, formule cassée, chiffre,
 contradiction, à relire) avec une reformulation minimale ; relevé par relevé, on l'applique (le
 paragraphe est corrigé, au journal), on en fait une annotation, ou on l'ignore ; clore enregistre
@@ -301,7 +301,7 @@ sa référence et son statut ; ses **documents** (`kb/documents/<cle>/`, le text
 livre, avec son texte extrait par pdftotext) — téléverser un fichier, le télécharger depuis une
 adresse, ou **⤓ texte original** : Claude cherche une version en accès libre (PMC, arXiv, dépôts,
 éditeur en libre accès ; jamais une bibliothèque pirate, refusée aussi par le serveur), propose des
-candidats, et le serveur télécharge celui qu'on choisit (`atelier/documents.py` ; les PDF de PMC,
+candidats, et le serveur télécharge celui qu'on choisit (`limalibri/documents.py` ; les PDF de PMC,
 gardés contre les robots, sont remplacés par le texte intégral XML d'Europe PMC) ; ses **citations**,
 les passages cités mot pour mot, chacune contrôlée contre les documents (trouvée, page N ; absente ;
 pas de document) — une vérification retenue et une fiche créée y ajoutent leurs extraits ; ses
@@ -309,7 +309,7 @@ pas de document) — une vérification retenue et une fiche créée y ajoutent l
 est citée (notes de l'essai, fiches, bibliographies de chapitre) ; les doublons possibles ; son
 historique (journal). Une vérification de référence lit d'abord le texte rangé dans le livre.
 
-Le **plan** (bouton « Plan » de l'en-tête, `atelier/plan.py`, `atelier/planif.py`) : le livre
+Le **plan** (bouton « Plan » de l'en-tête, `limalibri/plan.py`, `limalibri/planif.py`) : le livre
 s'écrit de haut en bas. `#plan` — le livre : synopsis court (livre.yaml), idée maîtresse, arc,
 synopsis développé (`synopsis.yaml`), et la structure (parties et chapitres, rangés à la main :
 monter, descendre, changer de partie, ajouter, supprimer un chapitre sans texte). `#plan/p/<id>`
@@ -339,7 +339,7 @@ La **vérification** (🔎 sur une assertion ou une annotation) confie à Claude
 WebFetch en plus de la lecture du livre, la recherche des sources selon les règles du livre
 (`skills/verification.md`) : verdict par assertion avec extraits, passage proposé pour l'essai
 (emplacement modifiable), œuvres à ajouter, changements du verrou, avis sur le récit.
-Retenir écrit l'essai, la bibliographie du chapitre et le verrou (`atelier/verification.py`).
+Retenir écrit l'essai, la bibliographie du chapitre et le verrou (`limalibri/verification.py`).
 Depuis une annotation, on coche les assertions à vérifier (pré-cochées : celles que la citation
 vise), plutôt que tout le paragraphe.
 
@@ -380,10 +380,10 @@ code change) interrompt les demandes en cours : elles sont marquées « interrom
 
 L'**avancement** de chaque chapitre, par version, s'affiche dans le plan du livre (colonne de gauche,
 selon la version lue) et sur les pages du plan : vide, synopsis, brief (squelette ou verrou de l'essai,
-storyboard du récit), brouillon, relu, validé (`atelier/avancement.py`). Un chapitre sans texte dans
+storyboard du récit), brouillon, relu, validé (`limalibri/avancement.py`). Un chapitre sans texte dans
 la version lue montre ce qu'on sait de lui : synopsis, question, fiches — et de quoi l'écrire.
 
-La **file d'attente** (`atelier/file.py`) vaut pour toutes les demandes, de la base comme des chapitres :
+La **file d'attente** (`limalibri/file.py`) vaut pour toutes les demandes, de la base comme des chapitres :
 une seule tourne à la fois (`claude.file.simultanees`, 1 par défaut), les suivantes passent « en attente »
 dans l'ordre d'arrivée. Quand une demande finit, la suivante d'une série part toujours ; les autres partent
 si l'enchaînement est activé (`claude.file.auto`), sinon elles attendent leur ▶. Le tiroir d'une demande en
@@ -396,7 +396,7 @@ réel » dans son tiroir (2 min de grâce après le départ). Tous les départs 
 `reecriture.tache()`, qui lance sur la boucle du serveur même depuis une route synchrone ; un départ qui
 échoue met la demande en erreur. Sous l'en-tête de chaque demande : son identifiant, « ⧉ réf », « ⧉ fichier ».
 
-La **filiation** (`atelier/filiation.py`) : une demande née d'une autre porte son `origine` et sa
+La **filiation** (`limalibri/filiation.py`) : une demande née d'une autre porte son `origine` et sa
 `generation` ; la mère garde ses `enfants`. Naissent d'une autre : les fiches retenues d'un « creuser »,
 la vérification des sources qu'une fiche n'a pas pu lire, les actions lancées depuis l'assistant
 (génération 1) ; une relance garde la filiation de la demande remplacée. Deux plafonds
@@ -407,7 +407,7 @@ retenir davantage ; les sources en surnombre restent à vérifier à la main (`v
 que l'auteur lance lui-même repart de la génération 0. Le tiroir montre « génération n · issue de … » et
 « a engendré … », chaque identifiant ouvrant sa demande.
 
-Les **séries** (`atelier/serie.py`, `kb/series/`) enchaînent des actions sur plusieurs chapitres :
+Les **séries** (`limalibri/serie.py`, `kb/series/`) enchaînent des actions sur plusieurs chapitres :
 développer le brief, écrire l'essai, lecture naïve. Depuis le suivi, un groupe d'actions lançable
 (« Développer le brief », « Écrire le texte », « Lectures naïves ») a une case par chapitre et « ▶ lancer
 pour la sélection… ». Les étapes vont chapitre par chapitre (le brief du premier, son texte, puis le
@@ -444,7 +444,7 @@ structure seule : parties et chapitres), Récit, Essai, Fiches, puis Annotations
 tiroir), et deux pages : **Paramétrage des demandes à Claude** (modèle, tours, recherches, pages par sorte de
 demande ; la file) et **Consommation** —, ⟳, le thème et l'assistant.
 
-Le **suivi** (en-tête, `#suivi/recit`, `#suivi/essai` ; `atelier/suivi.py`) : où en est chaque
+Le **suivi** (en-tête, `#suivi/recit`, `#suivi/essai` ; `limalibri/suivi.py`) : où en est chaque
 chapitre, où en est le livre, ce qu'il reste à faire. La note est une progression par étapes pondérées,
 lue dans les fichiers — ce qui a été fait, pas ce qui est bon : cadre 10 (synopsis, question),
 préparation 15 (essai : fiches et un plan, verrou ou squelette ; récit : storyboard), texte 30 (au
@@ -455,7 +455,7 @@ qui mène au bon endroit (la vue, et le tiroir : harnais, annotations, demande) 
 regroupent pour le livre, avec ce que chacune ferait gagner. Le rapport du harnais est gardé en cache
 tant que les fichiers du chapitre n'ont pas changé.
 
-Les **objectifs** (en tête du suivi ; `atelier/objectifs.py`, `objectifs.yaml` à la racine du livre, dans
+Les **objectifs** (en tête du suivi ; `limalibri/objectifs.py`, `objectifs.yaml` à la racine du livre, dans
 l'ordre de priorité) : jusqu'où on veut aller. Un objectif a une version, un périmètre (le livre, une
 partie, des chapitres) et des critères tenus sur chaque chapitre du périmètre — niveau ≥, score ≥,
 manques ouverts ≤, portes du harnais passées, lecture naïve à jour, annotations ouvertes ≤, fiches au
@@ -469,7 +469,7 @@ objectif montre ses critères (tenus / total) et les chapitres en écart, avec l
 
 La **vue d'un objectif** (`#objectif/<id>`, le titre d'un objectif dans le suivi y mène) : sa tête
 (progression, chapitres à faire, intention, budget, échéance), son avancement, ses critères, son
-intention à juger, puis le **plan d'exécution** (`atelier/execution.py`), tiré de ses écarts sans Claude,
+intention à juger, puis le **plan d'exécution** (`limalibri/execution.py`), tiré de ses écarts sans Claude,
 chapitre par chapitre dans l'ordre du travail : brief, écrire (chapitre sans texte), réviser (portes du
 harnais en échec, ou visées par « relu » — la consigne nomme les portes et reprend l'intention), lecture
 naïve (après la révision), puis ce qui revient à l'auteur (✋ passer en relu, manques, fiches, annotations,
@@ -483,7 +483,7 @@ d'un chapitre révisé est retirée). Au-delà du budget restant, il faut confir
 suit les séries de l'objectif (arrêter, reprendre, ouvrir l'étape en cours) ; la vue se redessine quand
 une étape ou une demande avance, et la sélection en cours survit au redessin.
 
-**Cadrer un objectif avec Claude** (`atelier/cadrage.py`, demandes `k-…`, genre `cadrage` : 40 tours, sans
+**Cadrer un objectif avec Claude** (`limalibri/cadrage.py`, demandes `k-…`, genre `cadrage` : 40 tours, sans
 web) : « ✦ cadrer avec Claude… » dans la vue de l'objectif. Claude reçoit l'objectif (titre, critères,
 intention, consigne commune, budget), les mesures du suivi par chapitre (niveau, score, portes en échec,
 lecture naïve, fiches, manques, à décider), le travail en attente, le plan du livre, l'index des fiches,
@@ -497,7 +497,7 @@ dépendances connues et sans cycle, coût estimé, et **couverture** (les écart
 traite). La proposition s'affiche dans la vue de l'objectif : tout se coche ; « Retenir » applique le
 cadre coché (une règle déjà présente n'est pas doublée), retire les demandes à couper, et pose le plan.
 
-**Piloter le plan** (`atelier/pilotage.py`, `kb/plans/<objectif>.json` ; l'ancien est archivé) : ▶ démarrer,
+**Piloter le plan** (`limalibri/pilotage.py`, `kb/plans/<objectif>.json` ; l'ancien est archivé) : ▶ démarrer,
 ⏸ pause (ce qui tourne finit, rien de neuf ne part), ▶ continuer après un point d'arrêt, arrêter. Une action
 part quand ses dépendances sont faites (`capacites.lance`), marquée du plan : ses demandes passent la file
 d'elles-mêmes, comme celles d'une série ; les fiches sont créées d'office (à confirmer) et les révisions
@@ -506,7 +506,7 @@ sa demande a rendu son résultat (prête, à confirmer, décidée) ; ce qui atte
 point d'arrêt. Une action en erreur bloque le plan (relancer, sauter) ; une tâche de l'auteur attend son
 « ✓ fait ». Le pilotage avance à la fin de chaque demande, au démarrage du serveur et à chaque geste.
 
-Les **lots** (`atelier/file.py`) : une phase d'un plan, une série. Leurs demandes partent d'elles-mêmes tant
+Les **lots** (`limalibri/file.py`) : une phase d'un plan, une série. Leurs demandes partent d'elles-mêmes tant
 que le lot est actif (plan en cours, série en cours) — un plan en pause retient ses demandes en file, un
 plan arrêté (ou remplacé) les retire, et leurs actions passent « sautées ». Un lot s'enchaîne d'un bloc : la
 place libérée va d'abord au lot de la dernière demande partie. Au démarrage, plans et séries avancent avant
@@ -516,11 +516,11 @@ inactif) ; chaque demande lancée par un plan porte ◫ son action et sa phase, 
 l'objectif → ». Dans la vue de l'objectif, une action lancée montre l'état réel de sa demande (en file n° k,
 en cours, à décider).
 
-La **relecture critique** (`atelier/relecture.py`, demandes `q-…`, capacité `relire` ; « ✦ relecture critique… »
+La **relecture critique** (`limalibri/relecture.py`, demandes `q-…`, capacité `relire` ; « ✦ relecture critique… »
 dans la barre du suivi) : Claude relit EN ENTIER une partie (ou des chapitres), en connaissant les règles de
 la version, le plan du livre et l'index des fiches, et va voir ailleurs (Grep, lecture) ce que le livre dit
-déjà. Il **annote lui-même** chaque constat avec l'outil `annoter` (`atelier/outils_livre.py`, un serveur MCP
-en mémoire : `mcp__atelier__annoter`) — sur le paragraphe (^id), avec un extrait exact ; l'outil refuse une
+déjà. Il **annote lui-même** chaque constat avec l'outil `annoter` (`limalibri/outils_livre.py`, un serveur MCP
+en mémoire : `mcp__limalibri__annoter`) — sur le paragraphe (^id), avec un extrait exact ; l'outil refuse une
 ancre ou un extrait introuvables, Claude corrige. Sortes : répétition (avec l'autre chapitre et son ^id),
 écart à une règle (son numéro), incohérence, fait à vérifier, manque de recherche, clarté, rythme ; gravité
 majeur / mineur. L'annotation garde son `origine` (la demande, la sorte, la gravité). Fable 5.1 par défaut
@@ -529,7 +529,7 @@ majeur / mineur. L'annotation garde son `origine` (la demande, la sorte, la grav
 La **révision** d'un chapitre reçoit ses annotations ouvertes, les traite, et donne les identifiants de
 celles qu'elle règle : à la pose, elles passent résolues.
 
-Le **storyboard d'un chapitre** (`atelier/storyboard.py`, demandes `b-…`, capacité `storyboard` ; « ✦
+Le **storyboard d'un chapitre** (`limalibri/storyboard.py`, demandes `b-…`, capacité `storyboard` ; « ✦
 storyboard… » dans la barre du récit) : Claude prépare les plans du récit depuis l'**essai** (révisé) et le
 **verrou** du chapitre, selon les règles du récit (la voix, le registre), en enchaînant sur le storyboard du
 chapitre précédent. Chaque plan : lieu, temps, ambiance, attaque, chute, les **assertions** qu'il met en
@@ -538,7 +538,7 @@ assertion obligatoire est portée et si les identifiants existent. Retenir (ou p
 plan) écrit `brief.yaml` — `beats`, `intent`, `tenue` ; synopsis, question et fiches gardés ; l'ancien
 storyboard dans `historique/`. Fable 5.1 par défaut.
 
-Le **récit d'un chapitre** s'écrit depuis son storyboard (`atelier/narration.py`, demandes `t-…`, capacité
+Le **récit d'un chapitre** s'écrit depuis son storyboard (`limalibri/narration.py`, demandes `t-…`, capacité
 `ecrire_recit`, action de série `recit`). La portée est soit le chapitre entier, soit un plan, soit un seul
 paragraphe : son rang dans le plan, c'est-à-dire le micro-récit qu'il réalise.
 
@@ -567,8 +567,8 @@ titre et son texte nouveaux), et un plan peut **dépendre d'une action du plan d
 (`o-xxxx:a8`) : le cadrage reçoit les plans des autres objectifs ; le pilotage attend que l'action visée
 soit faite ; chaque geste fait avancer tous les plans.
 
-Les **capacités** (`atelier/capacites.py`, page `#capacites` sous Demandes) : le catalogue unique de ce
-que l'atelier sait lancer — créer une fiche, creuser, relier, vérifier une référence, lire un texte
+Les **capacités** (`limalibri/capacites.py`, page `#capacites` sous Demandes) : le catalogue unique de ce
+que LimaLibri sait lancer — créer une fiche, creuser, relier, vérifier une référence, lire un texte
 original, développer un brief, une partie, revoir la structure du livre, écrire, réviser, lecture naïve,
 vérifier des assertions, une tâche de l'auteur — avec ses paramètres, ce qu'il faut à la fin (décision,
 pose, rapport), ce qu'elle **produit ou modifie** dans le livre — à la réponse de Claude et à la décision de
@@ -591,7 +591,7 @@ date, leur message, les objectifs qui en partent, « ce qui a changé depuis » 
 chapitre) —, et les derniers commits qui touchent le livre (`GET /api/versions/historique`). L'onglet voisin
 « récit · essai » (anciennement « versions ») règle les versions du texte et la numérotation de l'essai.
 
-**Marquer une version** (`atelier/versions.py`, seulement si le livre est dans un dépôt git) : un commit du
+**Marquer une version** (`limalibri/versions.py`, seulement si le livre est dans un dépôt git) : un commit du
 seul dossier du livre (ce qui est déjà indexé ailleurs dans le dépôt n'est pas emporté), puis un tag
 annoté local — jamais poussé. Livre dans son propre dépôt : `v1`, `v2`… ; dans un dépôt plus grand : le
 nom du livre en préfixe (`unmonde/v1`). À la création d'un objectif, « 🏷 marquer d'abord la version
@@ -600,13 +600,13 @@ maintenant, ou partir d'une version déjà marquée. « Ce qui a changé depuis 
 modifiés, ajoutés, supprimés (commités ou non), et les mots du texte, chapitre par chapitre. API :
 `GET/POST /api/versions`, `GET /api/versions/depuis?tag=…`, `POST /api/objectifs/{id}/depart`.
 
-Le **travail** de chaque chapitre (`atelier/travail.py`), sur sa ligne du suivi : ⏳ demandes en file ou
+Le **travail** de chaque chapitre (`limalibri/travail.py`), sur sa ligne du suivi : ⏳ demandes en file ou
 en cours, ✋ résultats à décider, ◌ manques de la dernière rédaction — un clic déplie la liste (chaque
 demande s'ouvre). Une demande de la base compte pour les chapitres qu'elle sert (rédaction, plan : le
 chapitre visé ; fiche : les chapitres de la question ou de la réponse ; creuser : ceux des pistes, sinon
 ceux qui utilisent la fiche) ; les autres vont dans « sans chapitre », en fin de liste.
 
-**Écrire l'essai** (✎, `atelier/redaction.py`) : Claude rédige l'essai d'un chapitre depuis son brief
+**Écrire l'essai** (✎, `limalibri/redaction.py`) : Claude rédige l'essai d'un chapitre depuis son brief
 (synopsis, question, fiches ; squelette et verrou s'il est amorcé), en lisant ses fiches et les chapitres
 déjà écrits — sans web. Il suit le squelette, cite en [@cle] les seules sources lues, renvoie en
 [chap:slug], met ses notes en [^slug-…] (préfixées au besoin). Ce que les fiches n'établissent pas, il
@@ -621,8 +621,8 @@ Les **références** désignent un morceau du livre par une adresse courte. Le b
 barre d'une fiche, d'une œuvre, d'un chapitre, d'une partie du plan ; titre d'une section de fiche
 (au survol) ; paragraphe, plan, assertion, annotation, note, garde-fou. Collée dans une consigne,
 une question, une annotation, elle donne à Claude **la partie visée** (l'extrait exact) et son
-fichier pour lire autour (`atelier/refs.py`, section « Les références données par l'auteur » du
-contexte). Sous un champ, l'atelier montre ce que Claude lira (✓) ou ce qui ne se résout pas (✗) ;
+fichier pour lire autour (`limalibri/refs.py`, section « Les références données par l'auteur » du
+contexte). Sous un champ, LimaLibri montre ce que Claude lira (✓) ou ce qui ne se résout pas (✗) ;
 dans une annotation ou une consigne affichée, une référence est un lien.
 
 ```
@@ -639,7 +639,7 @@ réécriture, une lecture naïve, un plan (trois au plus) ; l'auteur relit la co
 l'action devient une demande ordinaire, qu'on ouvre depuis la conversation. La case « joindre ici »
 donne à Claude la référence de ce que l'auteur regarde (le paragraphe choisi, la fiche, l'œuvre…).
 Une conversation se poursuit dans la même session : Claude garde ce qu'il a lu. Elles vivent dans
-`kb/conversations/<id>.json` (`atelier/conversation.py`) ; budget et modèle dans les réglages Claude
+`kb/conversations/<id>.json` (`limalibri/conversation.py`) ; budget et modèle dans les réglages Claude
 du livre (`claude.conversation` : 30 tours, 4 recherches, 6 pages par question).
 
 La **consommation** de Claude est journalisée dans `consommation.jsonl`, à la racine du livre : une
@@ -647,7 +647,7 @@ ligne JSON par exécution (demande, reprise, « chercher encore », tour de conv
 confiance), écrite en fin d'exécution et jamais réécrite, avec ses propres chiffres — date et durée,
 type, phase, demande et chapitre, modèle choisi et modèle réel, issue, tours, recherches et pages web,
 jetons (neufs, cache créé, cache relu, sortie), coût au tarif API, détail par modèle, session
-(`atelier/consommation.py`). L'onglet « consommation » de la page du livre le résume sur une période
+(`limalibri/consommation.py`). L'onglet « consommation » de la page du livre le résume sur une période
 (par jour, type, modèle, chapitre, phase) ; le fichier se lit aussi tel quel (duckdb, pandas).
 `migrer/consommation.py` reconstitue le travail d'avant le journal depuis les demandes (lignes
 « reconstitue », les reprises y sont cumulées) ; le rejouer ne crée pas de doublon.
@@ -693,7 +693,7 @@ remplace plus brief, textes ni liens sans `--ecraser`. Claude rend des propositi
 montre mot à mot. « Retenir » réécrit les paragraphes visés (^id conservés), écrit le
 journal, résout les annotations traitées ; « aucune ne convient » garde le motif. Claude ne
 touche jamais au texte lui-même. Le serveur le
-reçoit par la variable `ATELIER_LIVRE`. Les scripts de `migrer/` restent propres à
+reçoit par la variable `LIMALIBRI_LIVRE`. Les scripts de `migrer/` restent propres à
 l'import d'Une Vie depuis son ancien dépôt.
 
 À la main :
@@ -710,7 +710,7 @@ poetry run python3 migrer/liens_essai.py la-mer <analyse.json>   # liens verrou 
 poetry run python3 migrer/bibliographie.py la-mer <analyse.json>  # bibliographie du chapitre
 poetry run python3 migrer/fiches.py                   # science/*.md -> book-atelier/kb/fiches/
 poetry run python3 migrer/liens_fiches.py             # fiches des chapitres et des œuvres
-poetry run uvicorn atelier.serveur:app --reload --port 8765
+poetry run uvicorn limalibri.serveur:app --reload --port 8765
 ```
 
 Puis <http://localhost:8765>. Le récit d'un chapitre migré montre ses plans en marge ; un
@@ -718,11 +718,11 @@ clic sur un paragraphe ouvre sa fiche : plan, micro-récit, assertions du verrou
 
 ## La frise du livre
 
-`atelier/frise.py` et la vue Plan → **frise** (`#plan/frise`) montrent où se place chaque chapitre dans le temps de
+`limalibri/frise.py` et la vue Plan → **frise** (`#plan/frise`) montrent où se place chaque chapitre dans le temps de
 l'histoire. On peut aussi y dessiner des frises internes, par exemple les scènes d'un chapitre dans l'histoire des
 découvertes.
 
-Tout vient de **`frise.yaml`**, à la racine du livre. Ce fichier s'édite à la main ; l'atelier le lit et le
+Tout vient de **`frise.yaml`**, à la racine du livre. Ce fichier s'édite à la main ; LimaLibri le lit et le
 dessine. Un bouton « Amorcer » le crée à partir des périodes des chapitres, et ne remplace jamais un fichier
 existant.
 
@@ -759,7 +759,7 @@ lien. Un chapitre pas encore daté le dit.
 
 ## Le site public d'un livre
 
-`atelier/public.py` génère un mini-site statique, en lecture seule et lisible sur mobile, pour suivre un livre et le
+`limalibri/public.py` génère un mini-site statique, en lecture seule et lisible sur mobile, pour suivre un livre et le
 lire. Le livre y est publié en l'état.
 
 **Ce que le site contient :**
@@ -778,8 +778,8 @@ lire. Le livre y est publié en l'état.
 - la carte des fiches par cluster thématique dans `fiches/index.html`, à gauche les chapitres et à droite les fiches.
   C'est le dessin de l'édition « essai + base », avec des liens vers les pages du site ;
 - la carte du chapitre sous l'essai de chaque chapitre ;
-- **la frise** (`frise.html`, si le livre a un `frise.yaml`), dessinée par le même moteur que l'atelier,
-  extrait de `front/atelier.js` à la génération. Ses données sont dans `frise-donnees.js`, partagé par toutes
+- **la frise** (`frise.html`, si le livre a un `frise.yaml`), dessinée par le même moteur que LimaLibri,
+  extrait de `front/limalibri.js` à la génération. Ses données sont dans `frise-donnees.js`, partagé par toutes
   les pages. Elle a les mêmes réglages : la frise (globale ou interne), l'échelle, les bandes, les repères,
   les flèches. `?ch=<slug>` met un chapitre en avant, `?frise=<id>` ouvre une frise interne ;
 - sur chaque page de chapitre, le bandeau **« Dans le temps »** : une mini-frise où le chapitre est en évidence
@@ -789,7 +789,7 @@ lire. Le livre y est publié en l'état.
 **Ce qui ne sort pas :** coûts, consignes, demandes, annotations. Les liens internes, les renvois entre chapitres et
 les citations sont réécrits. Un lien vers une fiche non publiée devient du texte.
 
-**Où le site est écrit :** hors du dépôt, dans `~/.cache/atelier-public/<livre>/site`.
+**Où le site est écrit :** hors du dépôt, dans `~/.cache/limalibri-public/<livre>/site`.
 
 **Depuis la vue Livre, onglet « site public » (`#livre/public`) :**
 - « générer l'aperçu » génère le site et l'ouvre sous `/apercu-public/` ;
@@ -810,7 +810,7 @@ publication:
 
 ## Un exemple : *Une vie*
 
-| | rôle | l'atelier… |
+| | rôle | LimaLibri… |
 |---|---|---|
 | l'ancien dépôt du livre (héritage, déclaré dans `livre.yaml`) | ses outils et son cycle d'origine | le lit, n'y écrit jamais |
 | le dossier du livre (`book-atelier/`) | la représentation du livre | la lit et l'écrit |

@@ -263,7 +263,7 @@ def ecrit_confiance(slug, donnees):
 # ------------------------------------------------------------------ les œuvres (la bibliographie)
 
 def _refs_de_fiche(corps):
-    """Les sources d'une fiche écrite par l'atelier : « - `cle` — référence … — « extrait » »."""
+    """Les sources d'une fiche écrite par LimaLibri : « - `cle` — référence … — « extrait » »."""
     out = {}
     m = re.search(r"^## Sources[^\n]*\n(.*?)(?=^## |\Z)", corps, re.S | re.M)
     for l in (m.group(1).splitlines() if m else []):
@@ -284,7 +284,7 @@ def _refs_de_fiche(corps):
 
 def oeuvres():
     """Toutes les œuvres du livre : la bibliographie centrale (héritage), celles des chapitres
-    (bibliographie.yaml, avec les notes de l'essai), celles des fiches écrites par l'atelier.
+    (bibliographie.yaml, avec les notes de l'essai), celles des fiches écrites par LimaLibri.
     Une œuvre, une clé ; ce qui la cite est rassemblé."""
     out = {}
 

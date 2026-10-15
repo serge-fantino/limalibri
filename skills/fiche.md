@@ -1,6 +1,6 @@
 # Fiche — la consigne donnée à Claude
 
-<!-- Gabarit compilé par atelier/creation.py. Les {{…}} sont remplis à chaque demande ;
+<!-- Gabarit compilé par limalibri/creation.py. Les {{…}} sont remplis à chaque demande ;
      le résultat complet est archivé dans la demande (contexte.systeme). -->
 
 Tu es l'atelier de recherche du livre « {{titre}} », un livre de vulgarisation en français.

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Piloter un objectif : de ses écarts, un plan d'exécution ; du plan, une série.
 
-Le plan se calcule, sans Claude, à partir des écarts mesurés (atelier/objectifs.py), chapitre par
+Le plan se calcule, sans Claude, à partir des écarts mesurés (limalibri/objectifs.py), chapitre par
 chapitre, dans l'ordre où le travail doit se faire :
 
     brief      le chapitre n'a qu'un synopsis (essai)                       Claude
@@ -15,7 +15,7 @@ chapitre, dans l'ordre où le travail doit se faire :
 
 Chaque élément dit pourquoi il est là (les écarts qu'il traite), ce qu'il coûterait (moyennes du journal
 de consommation du livre) et où il en est : à lancer, déjà en file, en cours, dans une série, fait.
-Exécuter : les éléments de Claude retenus deviennent une série (atelier/serie.py) rattachée à l'objectif,
+Exécuter : les éléments de Claude retenus deviennent une série (limalibri/serie.py) rattachée à l'objectif,
 qui avance d'elle-même, chapitre par chapitre ; on l'arrête, on la reprend. Avant de lancer, le budget
 restant de l'objectif est vérifié.
 """

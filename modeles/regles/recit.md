@@ -1,6 +1,6 @@
 ---
 version: recit
-source: modèle par défaut de l'atelier (inspiré des garde-fous d'« Une Vie »)
+source: modèle par défaut de LimaLibri (inspiré des garde-fous d'« Une Vie »)
 ---
 
 # Garde-fous d'écriture — récit

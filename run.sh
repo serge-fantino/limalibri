@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lance l'atelier sur un livre : installe les dépendances si besoin, démarre le
+# Lance LimaLibri sur un livre : installe les dépendances si besoin, démarre le
 # serveur, ouvre le navigateur.
 #
 #   ./run.sh ~/livres/mon-livre               un livre, par son dossier, port 8765
@@ -48,12 +48,12 @@ fi
 
 URL="http://localhost:$PORT"
 TITRE="$(sed -n 's/^titre: *//p' "$LIVRE/livre.yaml" 2>/dev/null | head -1 || true)"   # pas de livre.yaml : pas de titre
-echo "Atelier — ${TITRE:-$(basename "$LIVRE")}"
+echo "LimaLibri — ${TITRE:-$(basename "$LIVRE")}"
 echo "  livre   $LIVRE"
 echo "  adresse $URL   (ctrl-C pour arrêter)"
 if [ "$OUVRIR" = 1 ]; then
   ( for _ in $(seq 20); do curl -s "$URL/api/chapitres" >/dev/null && break; sleep 0.5; done
     open "$URL" 2>/dev/null || xdg-open "$URL" 2>/dev/null || true ) &
 fi
-export ATELIER_LIVRE="$LIVRE"
-exec poetry run uvicorn atelier.serveur:app --reload --port "$PORT"
+export LIMALIBRI_LIVRE="$LIVRE"
+exec poetry run uvicorn limalibri.serveur:app --app-dir src --reload --port "$PORT"

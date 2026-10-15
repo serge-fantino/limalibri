@@ -69,7 +69,7 @@ def note(source, genre, ident, chapitre=None, phase="initiale", debut=None, dure
         with fichier().open("a", encoding="utf-8") as f:
             f.write(json.dumps(e, ensure_ascii=False) + "\n")
     except Exception as x:                             # noqa: BLE001
-        print("atelier : journal de consommation —", x)
+        print("limalibri : journal de consommation —", x)
 
 
 def depuis_resultat(resultat):

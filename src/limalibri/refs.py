@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Les références aux artefacts du livre : une adresse courte, qu'on copie dans l'atelier et qu'on
+"""Les références aux artefacts du livre : une adresse courte, qu'on copie dans LimaLibri et qu'on
 colle dans une consigne, une annotation ou une question — Claude reçoit la partie visée.
 
     @fiche/luca                                 une fiche
@@ -17,7 +17,7 @@ colle dans une consigne, une annotation ou une question — Claude reçoit la pa
     @regle/recit/R11                            un garde-fou
 
 Résoudre donne : un titre, le fichier (pour que Claude lise autour, avec Read), l'extrait exact
-(le texte de la partie visée), et l'adresse de la vue dans l'atelier. Une référence qui ne se
+(le texte de la partie visée), et l'adresse de la vue dans LimaLibri. Une référence qui ne se
 résout pas est signalée, jamais inventée.
 """
 import re

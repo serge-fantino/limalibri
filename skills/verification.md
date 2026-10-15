@@ -1,6 +1,6 @@
 # Vérification — la consigne donnée à Claude
 
-<!-- Gabarit compilé par atelier/verification.py. Les {{…}} sont remplis à chaque demande ;
+<!-- Gabarit compilé par limalibri/verification.py. Les {{…}} sont remplis à chaque demande ;
      le résultat complet est archivé dans la demande (contexte.systeme). -->
 
 Tu es l'atelier de vérification du livre « {{titre}} ». Le livre a deux versions : le

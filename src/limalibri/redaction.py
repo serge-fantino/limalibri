@@ -124,7 +124,7 @@ def _mots(texte):
 
 
 def _apercu(slug, texte):
-    """Le texte rendu comme dans l'atelier : intertitres numérotés, renvois résolus, citations courtes."""
+    """Le texte rendu comme dans LimaLibri : intertitres numérotés, renvois résolus, citations courtes."""
     from . import export
     C = livre.chapitres()
     numeros = {c["slug"]: c["numero"] for c in C if c.get("numero")}

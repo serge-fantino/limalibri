@@ -207,7 +207,7 @@ def fiche_html(s, par, slugs, heritage, O, inclus=None, chapitres_liens=False, a
 
 
 def chrome():
-    for p in [os.environ.get("ATELIER_CHROME", "")] + CHROMES:
+    for p in [os.environ.get("LIMALIBRI_CHROME", "")] + CHROMES:
         if p and os.path.exists(p):
             return p
     for n in ("google-chrome", "chromium", "chromium-browser", "chrome"):
@@ -223,11 +223,11 @@ async def pdf(quoi="kb", portee="utilisees"):
     exe = chrome()
     if not exe:
         raise RuntimeError("Chrome ou Chromium introuvable : utiliser la version imprimable (⌘P) — "
-                           "ou indiquer le programme par la variable ATELIER_CHROME")
+                           "ou indiquer le programme par la variable LIMALIBRI_CHROME")
     with tempfile.TemporaryDirectory() as tmp:
         src, out = os.path.join(tmp, "kb.html"), os.path.join(tmp, "kb.pdf")
         with open(src, "w", encoding="utf-8") as f:
-            if quoi == "complet":                       # l'essai et la base de connaissance (atelier/compagnon.py)
+            if quoi == "complet":                       # l'essai et la base de connaissance (limalibri/compagnon.py)
                 from . import compagnon
                 f.write(compagnon.imprimable(portee))
             else:
@@ -416,7 +416,7 @@ def essai_imprimable():
 
 
 def version_imprimable(version="essai", compagnon=None):
-    """compagnon (atelier/compagnon.py) : l'édition « essai + base de connaissance » — il ajoute un intitulé
+    """compagnon (limalibri/compagnon.py) : l'édition « essai + base de connaissance » — il ajoute un intitulé
     de couverture, des entrées de sommaire, un encart à la fin de chaque chapitre, l'annexe (la carte du
     livre, les fiches) et remplace la bibliographie par une bibliographie commune."""
     from . import plan

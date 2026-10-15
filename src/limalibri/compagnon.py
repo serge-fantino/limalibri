@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """L'édition « essai + base de connaissance » : l'essai, et en annexe les fiches qui le portent, reliés.
 
-Le document part de l'essai imprimable (atelier/export.py, version_imprimable) et y ajoute :
+Le document part de l'essai imprimable (limalibri/export.py, version_imprimable) et y ajoute :
   · à la fin de chaque chapitre, « Pour aller plus loin » : ses fiches (son brief), les fiches qui
     partagent ses sources, et une mini-carte — le chapitre, ses fiches, leurs voisines ;
   · l'annexe : la carte du livre (une carte par cluster thématique : les chapitres à gauche dans l'ordre

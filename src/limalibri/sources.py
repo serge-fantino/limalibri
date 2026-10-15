@@ -163,7 +163,7 @@ def tout_html():
 
 
 def html(cle):
-    """La référence en HTML (une ligne), pour les citations de l'atelier."""
+    """La référence en HTML (une ligne), pour les citations de LimaLibri."""
     import markdown
     o = toutes().get(cle)
     if not o:

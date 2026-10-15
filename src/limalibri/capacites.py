@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Les capacités de l'atelier : tout ce qu'on peut demander à Claude (ou à l'auteur), en un seul endroit.
+"""Les capacités de LimaLibri : tout ce qu'on peut demander à Claude (ou à l'auteur), en un seul endroit.
 
 Une capacité a un identifiant, ce qu'elle fait, ses paramètres, le genre de demande qu'elle crée (pour
 le budget, le modèle et le coût moyen) et ce qu'il faut à la fin (une décision de l'auteur ?). Le
 catalogue sert à trois choses :
-  · le cadrage d'un objectif (atelier/cadrage.py) : Claude compose son plan avec ces capacités et rien
+  · le cadrage d'un objectif (limalibri/cadrage.py) : Claude compose son plan avec ces capacités et rien
     d'autre — c'est ce qui le rend exécutable ;
-  · le pilotage (atelier/pilotage.py) : chaque action d'un plan se lance par lance() ;
-  · la page « Capacités » de l'interface : ce que l'atelier sait faire, ce que ça coûte dans ce livre.
+  · le pilotage (limalibri/pilotage.py) : chaque action d'un plan se lance par lance() ;
+  · la page « Capacités » de l'interface : ce que LimaLibri sait faire, ce que ça coûte dans ce livre.
 
 Paramètres : « ! » obligatoire ; chapitre, partie, fiche sont vérifiés contre le livre.
 """

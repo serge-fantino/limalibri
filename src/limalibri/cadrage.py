@@ -3,7 +3,7 @@
 
 Une demande « cadrage » (kb/demandes/k-*.json). Claude reçoit l'objectif (titre, critères, intention,
 budget), les mesures du suivi chapitre par chapitre, le travail en attente, le plan du livre, l'index des
-fiches, les règles d'écriture et le catalogue des capacités (atelier/capacites.py) — puis il lit lui-même
+fiches, les règles d'écriture et le catalogue des capacités (limalibri/capacites.py) — puis il lit lui-même
 ce qu'il veut dans le livre (Read, Grep, Glob ; pas de web) pour se faire son idée. Il rend :
 
     lecture      ce qu'il comprend de l'objectif, reformulé
@@ -18,7 +18,7 @@ ce qu'il veut dans le livre (Read, Grep, Glob ; pas de web) pour se faire son id
 Le harnais contrôle la réponse : capacités connues, paramètres valides (chapitres, fiches, parties),
 dépendances connues et sans cycle, coût estimé face au budget, et couverture — chaque critère non tenu,
 sur chaque chapitre, est-il traité par une action ? L'auteur retient ensuite ce qu'il veut
-(atelier/pilotage.py).
+(limalibri/pilotage.py).
 """
 import json
 import time
@@ -287,7 +287,7 @@ def controle(sortie, ident_objectif):
 
 
 def decide(ident, corps):
-    """{action: rejeter, motif} — retenir passe par le pilotage (atelier/pilotage.py)."""
+    """{action: rejeter, motif} — retenir passe par le pilotage (limalibri/pilotage.py)."""
     d = reecriture.lit(SLUG_KB, ident)
     if d["etat"] != "prete":
         raise reecriture.Conflit("le cadrage n'attend pas de décision (%s)" % d["etat"])

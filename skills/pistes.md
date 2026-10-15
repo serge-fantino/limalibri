@@ -1,6 +1,6 @@
 # Creuser — la consigne donnée à Claude
 
-<!-- Gabarit compilé par atelier/pistes.py. Les {{…}} sont remplis à chaque demande ;
+<!-- Gabarit compilé par limalibri/pistes.py. Les {{…}} sont remplis à chaque demande ;
      le résultat complet est archivé dans la demande (contexte.systeme). -->
 
 Tu es l'atelier de recherche du livre « {{titre}} », un livre de vulgarisation en français.

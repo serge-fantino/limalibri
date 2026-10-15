@@ -1,4 +1,4 @@
-// Le front de l'atelier : sommaire (structure.yaml), lecture d'un chapitre, et —
+// Le front de LimaLibri : sommaire (structure.yaml), lecture d'un chapitre, et —
 // pour un chapitre migré — la fiche de chaque bloc : son plan, son micro-récit,
 // les assertions du verrou qu'il porte.
 // Pas de build : modules ES servis tels quels par le serveur.
@@ -7,7 +7,7 @@ const etat = { version: "recit", slug: null, chapitres: [], atelier: null, bloc:
   garde: null, defil: {}, docs: {}, sources: {},
   recitMode: "storyboard",                  // le récit s'ouvre avec son storyboard en regard
   planOn: true,                             // (ancien interrupteur ; le plan est un volet à gauche)
-  edition: lirePref("atelier-edition", "annoter"),   // annoter | corriger : ce que fait un clic dans le texte
+  edition: lirePref("limalibri-edition", "annoter"),   // annoter | corriger : ce que fait un clic dans le texte
   essaiMode: "texte", noteChoisie: null, noteFocus: null, sourceChoisie: null,
   annots: [], annotFocus: null };
 
@@ -323,7 +323,7 @@ function barreOutils() {
       ["corriger", "✐ corriger", "cliquer un paragraphe pour le corriger directement"]]) {
       g.append(bouton(lib, etat.edition === m, () => {
         etat.edition = m;
-        ecrisPref("atelier-edition", m);
+        ecrisPref("limalibri-edition", m);
         document.body.dataset.edition = m;
         barreOutils();
       }, "", titre));
@@ -856,7 +856,7 @@ function quitte() {
 // dans l'ordre du texte ; le rang d'un bloc dans son plan désigne son micro-récit.
 // Les paragraphes de chaque plan, rangés par micro-récit : out[plan][rang - 1] = id (des trous possibles).
 // Un paragraphe qui porte son rang (links.yaml « rang ») tient sa place ; les autres prennent les places
-// libres dans l'ordre du texte — sans rang écrit, c'est l'ordre du texte (atelier/narration.py, _effectifs).
+// libres dans l'ordre du texte — sans rang écrit, c'est l'ordre du texte (limalibri/narration.py, _effectifs).
 function parPlan() {
   const brut = {};
   for (const [id, l] of Object.entries(etat.atelier?.links?.recit ?? {})) (brut[l.plan] ??= []).push([id, Number(l.rang) || 0]);
@@ -1410,7 +1410,7 @@ function outilsRecit(b, i, n, rec, bloc) {
 // Les outils d'un paragraphe du récit (au survol) : corriger, insérer après, monter, descendre, retirer —
 // la même forme que les micro-récits en face. Le paragraphe reste dans son plan.
 // Une ligne, c'est un micro-récit et son paragraphe : insérer, déplacer, retirer une ligne vaut des deux côtés,
-// pour que le texte et le storyboard restent alignés (atelier/narration.py, paragraphe ; livre.forme_plan).
+// pour que le texte et le storyboard restent alignés (limalibri/narration.py, paragraphe ; livre.forme_plan).
 function retireLigne(pid, i, bloc) {
   const l = bloc ? etat.atelier?.links?.recit?.[bloc] : null;
   if (!confirm(bloc ? `Retirer la ligne ${i + 1} du plan ${pid} : le micro-récit et son paragraphe ? Le texte reste au journal.` +
@@ -2511,10 +2511,10 @@ document.getElementById("page").addEventListener("dblclick", (e) => {
 // Les volets de gauche se replient ; leur état est retenu.
 for (const b of document.querySelectorAll(".volet-titre")) {
   const v = b.closest(".volet");
-  if (lirePref("atelier-volet-" + b.dataset.volet, "ouvert") === "replie") v.classList.add("replie");
+  if (lirePref("limalibri-volet-" + b.dataset.volet, "ouvert") === "replie") v.classList.add("replie");
   b.onclick = () => {
     v.classList.toggle("replie");
-    ecrisPref("atelier-volet-" + b.dataset.volet, v.classList.contains("replie") ? "replie" : "ouvert");
+    ecrisPref("limalibri-volet-" + b.dataset.volet, v.classList.contains("replie") ? "replie" : "ouvert");
   };
 }
 
@@ -2976,8 +2976,8 @@ function slugDe(ident) {
 // Le tiroir ouvert est retenu (session du navigateur) : un rafraîchissement le rouvre.
 function retiensTiroir(ident) {
   try {
-    if (ident) sessionStorage.setItem("atelier-tiroir", JSON.stringify({ id: ident, slug: slugDe(ident) }));
-    else sessionStorage.removeItem("atelier-tiroir");
+    if (ident) sessionStorage.setItem("limalibri-tiroir", JSON.stringify({ id: ident, slug: slugDe(ident) }));
+    else sessionStorage.removeItem("limalibri-tiroir");
   } catch { /* navigation privée */ }
 }
 
@@ -3036,7 +3036,7 @@ function barreRefDemande(t, d) {
     p.append(a);
     b.after(p);
   } else if (d.serie) b.after(el("div", "dem-filiation", "◫ d'une série : " + d.serie));
-  // la filiation : d'où elle vient, ce qu'elle a engendré (voir atelier/filiation.py)
+  // la filiation : d'où elle vient, ce qu'elle a engendré (voir limalibri/filiation.py)
   const ouvre = (id) => { const x = el("button", "pan-lien", id); x.title = "ouvrir cette demande"; x.onclick = () => tiroir(id); return x; };
   if (d.origine || d.enfants?.length || d.decision?.verifications_sautees?.length) {
     const f = el("div", "dem-filiation");
@@ -3911,7 +3911,7 @@ function carteProposition(d, p) {
 function rejetTout(d) {
   const f = el("div", "annot-actions dem-rejet");
   const motif = el("input", "dem-motif");
-  motif.placeholder = "pourquoi aucune ne convient — c'est ce qui apprend à l'atelier";
+  motif.placeholder = "pourquoi aucune ne convient — c'est ce qui apprend à LimaLibri";
   const non = el("button", "pan-lien", "aucune ne convient");
   non.onclick = () => decide(d, null, motif.value);
   f.append(non, motif);
@@ -4224,7 +4224,7 @@ function afficheTitre() {
   const t = document.getElementById("titre-livre");
   t.textContent = "— " + (etat.livre.titre ?? "");
   t.title = "Page du livre · " + (etat.livre.dossier ?? "");
-  document.title = `Atelier — ${etat.livre.titre ?? ""}`;
+  document.title = `LimaLibri — ${etat.livre.titre ?? ""}`;
 }
 
 // Les onglets de la page du livre : la présentation, puis les garde-fous de chaque version.
@@ -4262,7 +4262,7 @@ function barreLivre() {
   o.append(y);
 }
 
-// Les révisions du livre (git, atelier/versions.py) : l'état du dépôt, marquer une version, les versions
+// Les révisions du livre (git, limalibri/versions.py) : l'état du dépôt, marquer une version, les versions
 // marquées (et les objectifs qui en partent, ce qui a changé depuis), les derniers commits.
 async function blocRevisions() {
   const z = el("div", "revisions");
@@ -5071,7 +5071,7 @@ async function apercuOeuvre(cle) {
     aj.onclick = async () => {
       const r = await fetch("/api/oeuvres", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cle, ref: o.ref, doi: o.doi, url: o.url, doute: o.doute, fiches: o.fiches,
-          origine: "ajoutée depuis la bibliographie de l'atelier (citée " + (o.chapitres.length ? "par l'essai" : "par une fiche") + ")" }) });
+          origine: "ajoutée depuis la bibliographie de LimaLibri (citée " + (o.chapitres.length ? "par l'essai" : "par une fiche") + ")" }) });
       if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
       await chargeOeuvres(true);
       d.querySelector(":scope > .apercu-fiche")?.remove();
@@ -6236,7 +6236,7 @@ async function vueBiblioLivre(cle) {
     el("p", "mut petit", `${O.length} œuvres · ${O.filter((o) => o.centrale).length} dans la base (kb/sources) · ` +
       `${O.filter((o) => o.statut === "verifiee" || o.statut === "corrigee").length} vérifiées · ` +
       `${O.filter((o) => o.chapitres.length).length} citées par l'essai · ${O.filter((o) => o.extraits.length).length} dans les fiches écrites ici.`),
-    el("p", "mut petit", "Partout dans l'atelier, un clic sur une citation ouvre son œuvre ici, à droite."));
+    el("p", "mut petit", "Partout dans LimaLibri, un clic sur une citation ouvre son œuvre ici, à droite."));
   if (cle) {
     if (!O.some((o) => o.cle === cle)) { F.sorte = "toutes"; }
     setTimeout(() => {
@@ -8064,7 +8064,7 @@ majCompteFiches();
 {
   // un tiroir ouvert avant le rafraîchissement : le rouvrir
   let t = null;
-  try { t = JSON.parse(sessionStorage.getItem("atelier-tiroir") ?? "null"); } catch { /* rien */ }
+  try { t = JSON.parse(sessionStorage.getItem("limalibri-tiroir") ?? "null"); } catch { /* rien */ }
   if (t?.id && t.slug !== "_kb" && location.hash.slice(1).split("/")[0] === t.slug) etat.tiroirApres = t.id;
   depuisAdresse();
   if (t?.id && t.slug === "_kb") setTimeout(() => tiroir(t.id), 300);
@@ -8229,7 +8229,7 @@ async function dialogue(ident = etat.conversation) {
   document.body.dataset.dialogue = "1";
   document.getElementById("b-claude").classList.add("actif");
   etat.conversation = ident ?? null;
-  try { sessionStorage.setItem("atelier-conversation", ident ?? ""); } catch { /* sans stockage */ }
+  try { sessionStorage.setItem("limalibri-conversation", ident ?? ""); } catch { /* sans stockage */ }
   const tete = el("div", "dia-tete");
   const liste = el("select", "dia-liste");
   const L = await api("/conversations").catch(() => []);
@@ -8331,7 +8331,7 @@ document.getElementById("b-claude").onclick = () => {
   const z = document.getElementById("dialogue");
   if (!z.hidden) return z.querySelector(".fermer").click();
   let id = etat.conversation;
-  if (id === undefined) { try { id = sessionStorage.getItem("atelier-conversation") || null; } catch { id = null; } }
+  if (id === undefined) { try { id = sessionStorage.getItem("limalibri-conversation") || null; } catch { id = null; } }
   dialogue(id);
 };
 
@@ -8350,7 +8350,7 @@ function poseTheme(th) {
 poseTheme(THEMES[document.documentElement.dataset.theme] ? document.documentElement.dataset.theme : "auto");
 document.getElementById("b-theme").onclick = () => {
   const th = { auto: "clair", clair: "sombre", sombre: "auto" }[document.documentElement.dataset.theme] ?? "auto";
-  try { localStorage.setItem("atelier-theme", th); } catch { /* sans stockage : pour cette page seulement */ }
+  try { localStorage.setItem("limalibri-theme", th); } catch { /* sans stockage : pour cette page seulement */ }
   poseTheme(th);
   retheme();
 };
@@ -8456,7 +8456,7 @@ async function sectionConsommation() {
   table("Par chapitre", S.chapitre, titreChap);
   table("Par phase", S.phase, (c) => ({ initiale: "première exécution", reprise: "reprise (réponse sans recherche)", encore: "chercher encore",
     tour: "tour de conversation", cumul: "reconstituée, reprises cumulées" }[c] ?? c));
-  s.append(el("p", "mut petit", "Le journal se lit aussi hors de l'atelier : duckdb -c \"select genre, sum(cout_usd) from 'consommation.jsonl' group by 1\", " +
+  s.append(el("p", "mut petit", "Le journal se lit aussi hors de LimaLibri : duckdb -c \"select genre, sum(cout_usd) from 'consommation.jsonl' group by 1\", " +
     "ou pandas.read_json('consommation.jsonl', lines=True)."));
   return s;
 }
@@ -8472,7 +8472,7 @@ function titrePdf(version) {
       "le texte avec son statut (brouillon, en relecture, validé, harnais), le storyboard (plans et micro-récits), ou le synopsis seul";
 }
 
-// L'édition « essai + base de connaissance » (atelier/compagnon.py) : la portée, puis le PDF ou la version
+// L'édition « essai + base de connaissance » (limalibri/compagnon.py) : la portée, puis le PDF ou la version
 // interactive (HTML : la carte s'anime au survol).
 function formEditionComplete() {
   const f = el("div", "form-demande");
@@ -8799,7 +8799,7 @@ async function vueSuivi(version) {
 }
 
 // ------------------------------------------------------------------ le site public du livre
-// Un mini-site statique, en lecture seule (atelier/public.py) : le suivi, le récit et l'essai de chaque chapitre
+// Un mini-site statique, en lecture seule (limalibri/public.py) : le suivi, le récit et l'essai de chaque chapitre
 // écrit, avec leur statut, les fiches citées, la bibliographie. Aperçu en local ; publier = Cloudflare Pages.
 function blocPublication(titre = true) {
   const d = el("section", "suivi-publication");
@@ -8889,7 +8889,7 @@ function blocPublication(titre = true) {
   return d;
 }
 
-// ------------------------------------------------------------------ les objectifs (atelier/objectifs.py)
+// ------------------------------------------------------------------ les objectifs (limalibri/objectifs.py)
 //
 // Jusqu'où on veut aller, mesuré dans les fichiers : un périmètre (livre, partie, chapitres), des critères
 // tenus sur chaque chapitre, et parfois une intention, que l'auteur juge. Dans l'ordre de priorité.
@@ -9069,7 +9069,7 @@ function corpsObjectif(o, version, apres) {
 
 // ------------------------------------------------------------------ la vue d'un objectif : le piloter
 //
-// #objectif/<id> : où il en est, et le plan d'exécution tiré de ses écarts (atelier/execution.py) —
+// #objectif/<id> : où il en est, et le plan d'exécution tiré de ses écarts (limalibri/execution.py) —
 // ce que Claude peut faire (cocher, estimer, ▶ exécuter : une série rattachée à l'objectif), ce qui
 // revient à l'auteur (avec le lien). Les séries de l'objectif se suivent ici, et la vue se redessine
 // d'elle-même quand une étape avance.
@@ -9128,7 +9128,7 @@ function legendeObjectif(P) {
   const d = el("div", "legende-suivi");
   d.append(el("h4", null, "Cadrer"), el("p", "mut petit",
     "Claude lit l'objectif (titre, critères, intention) et le livre, et propose : sa lecture, un diagnostic, des ajouts au cadre " +
-    "(une règle d'écriture, un critère, une consigne commune) et un plan en phases, fait des capacités de l'atelier. Le harnais " +
+    "(une règle d'écriture, un critère, une consigne commune) et un plan en phases, fait des capacités de LimaLibri. Le harnais " +
     "contrôle chaque action (paramètres, dépendances) et liste les écarts mesurés que le plan ne traite pas. Tu coches ce que tu retiens."),
     el("h4", null, "Piloter"), el("p", "mut petit",
     "Le plan retenu part phase par phase : une action part quand ses dépendances sont faites ; ses demandes passent la file " +
@@ -9136,7 +9136,7 @@ function legendeObjectif(P) {
     "Une action en erreur bloque le plan : la relancer ou la sauter. Tes tâches (✋) attendent ton « fait »."),
     el("h4", null, "Plan mesuré"), el("p", "mut petit",
     "Replié : le plan déduit des seuls critères, sans Claude — un contrôle, et des lancements directs."));
-  const a = el("a", "pan-lien petit", "les capacités de l'atelier →");
+  const a = el("a", "pan-lien petit", "les capacités de LimaLibri →");
   a.href = "#capacites";
   d.append(a, el("h4", null, "Coûts moyens de ce livre"));
   for (const [g, m] of Object.entries(P.moyennes)) d.append(el("p", "mut petit", `${g} : ${m.cout} $ · ${Math.round(m.duree_s / 60)} min`));
@@ -9264,10 +9264,10 @@ function planObjectif(P, id) {
 
 // ------------------------------------------------------------------ cadrer et piloter un objectif
 //
-// Claude cadre l'objectif (atelier/cadrage.py) : il lit l'objectif et le livre, et rend sa lecture, un
+// Claude cadre l'objectif (limalibri/cadrage.py) : il lit l'objectif et le livre, et rend sa lecture, un
 // diagnostic, des ajouts au cadre (règle, critère, consigne commune) et un plan en phases fait de
-// capacités (atelier/capacites.py). L'auteur retient ce qu'il veut ; le plan retenu se pilote
-// (atelier/pilotage.py) : démarrer, pause, continuer après un point d'arrêt, arrêter.
+// capacités (limalibri/capacites.py). L'auteur retient ce qu'il veut ; le plan retenu se pilote
+// (limalibri/pilotage.py) : démarrer, pause, continuer après un point d'arrêt, arrêter.
 
 const LIB_ETAT_PLAN = { pret: "prêt", en_cours: "en cours", pause: "en pause", point_arret: "point d'arrêt — à toi", bloque: "bloqué", fini: "fini", arrete: "arrêté" };
 const LIB_ETAT_ACTION = { a_faire: "à faire", lancee: "lancée", a_toi: "à toi", faite: "faite", sautee: "sautée", erreur: "erreur" };
@@ -9285,7 +9285,7 @@ async function sectionPilotage(id, version) {
   if (X.erreur) { d.append(el("p", "err", String(X.erreur))); return d; }
   const K = X.cadrage, P = X.plan;
   const cadrer = el("button", P || K ? "pan-lien" : "bouton", P || K ? "✦ recadrer avec Claude…" : "✦ cadrer avec Claude…");
-  cadrer.title = "Claude lit l'objectif, interroge le livre, et propose un plan en phases fait des capacités de l'atelier, avec les ajouts au cadre qu'il juge nécessaires";
+  cadrer.title = "Claude lit l'objectif, interroge le livre, et propose un plan en phases fait des capacités de LimaLibri, avec les ajouts au cadre qu'il juge nécessaires";
   cadrer.onclick = () => formCadrage(id, version);
   if (K && ["en_attente", "en_cours"].includes(K.etat)) {
     const l = el("p", "obj-cadrage-encours");
@@ -9297,7 +9297,7 @@ async function sectionPilotage(id, version) {
     d.append(propositionCadrage(K, X.catalogue, id, P));
   } else if (!P) {
     d.append(el("p", "mut petit", "Pas encore de plan. Le cadrage : Claude lit l'objectif (titre, critères, intention), interroge le livre, " +
-      "et propose un plan en phases, fait des capacités de l'atelier — tu retiens ce que tu veux, puis tu le pilotes d'ici."));
+      "et propose un plan en phases, fait des capacités de LimaLibri — tu retiens ce que tu veux, puis tu le pilotes d'ici."));
     if (K?.etat === "erreur") d.append(el("p", "err petit", "Le dernier cadrage a échoué : " + (K.erreur ?? "")));
   }
   if (P) d.append(vuePlanRetenu(P, X.catalogue, id));
@@ -9584,7 +9584,7 @@ async function tiroirCadrage(t, d) {
 
 // ------------------------------------------------------------------ le storyboard d'un chapitre (le récit)
 //
-// Claude prépare les plans du récit depuis l'essai et le verrou (atelier/storyboard.py) ; le contrôle dit
+// Claude prépare les plans du récit depuis l'essai et le verrou (limalibri/storyboard.py) ; le contrôle dit
 // si chaque assertion obligatoire est portée. Retenir écrit brief.yaml (beats, intent, tenue).
 
 function formStoryboard(slug) {
@@ -9651,7 +9651,7 @@ async function tiroirStoryboard(t, d) {
 // ------------------------------------------------------------------ écrire le récit (depuis le storyboard)
 //
 // Claude écrit le récit d'un chapitre, d'un plan ou d'un seul paragraphe, depuis le storyboard
-// (atelier/narration.py) ; retenir réécrit recit.md et links.yaml (l'ancien récit archivé).
+// (limalibri/narration.py) ; retenir réécrit recit.md et links.yaml (l'ancien récit archivé).
 
 function formRecit(slug, plan = null, rang = null) {
   const f = el("div", "form-demande");
@@ -9757,9 +9757,9 @@ async function tiroirRecit(t, d) {
 // ------------------------------------------------------------------ la relecture critique
 //
 // Claude relit une partie (ou des chapitres) en connaissant les règles et le reste du livre, et ANNOTE
-// lui-même chaque constat (l'outil « annoter », atelier/outils_livre.py) : répétition, écart à une règle,
+// lui-même chaque constat (l'outil « annoter », limalibri/outils_livre.py) : répétition, écart à une règle,
 // incohérence, fait douteux, manque de recherche, clarté, rythme. La révision d'un chapitre lit ensuite ses
-// annotations ouvertes et les traite (atelier/redaction.py, atelier/relecture.py).
+// annotations ouvertes et les traite (limalibri/redaction.py, limalibri/relecture.py).
 
 const LIB_SORTE = { regle: "règle", repetition: "répétition", recherche: "recherche", fait: "fait", coherence: "cohérence",
   clarte: "clarté", rythme: "rythme", remarque: "remarque" };
@@ -9990,7 +9990,7 @@ async function tiroirRelecture(t, d) {
 
 // ------------------------------------------------------------------ les capacités (#capacites)
 //
-// Ce que l'atelier sait faire, en un seul endroit (atelier/capacites.py) : ce que le cadrage d'un
+// Ce que LimaLibri sait faire, en un seul endroit (limalibri/capacites.py) : ce que le cadrage d'un
 // objectif emploie, avec ce que ça coûte dans ce livre.
 
 async function pageCapacites() {
@@ -10033,10 +10033,10 @@ async function pageCapacites() {
     r.append(el("p", "petit", c.quoi));
     cad.append(r);
   }
-  page.replaceChildren(el("h1", null, "Capacités de l'atelier"),
-    el("p", "mut", "Ce que l'atelier sait faire. Le cadrage d'un objectif compose son plan avec ces capacités, et rien d'autre ; le coût est la moyenne observée dans ce livre. * : obligatoire."),
+  page.replaceChildren(el("h1", null, "Capacités de LimaLibri"),
+    el("p", "mut", "Ce que LimaLibri sait faire. Le cadrage d'un objectif compose son plan avec ces capacités, et rien d'autre ; le coût est la moyenne observée dans ce livre. * : obligatoire."),
     tab, el("h2", "oeuvre-section", "Ajouts au cadre"), el("p", "mut petit", "Ce qu'un cadrage peut proposer de changer ; appliqué seulement si tu l'acceptes."), cad);
-  document.getElementById("fiche").replaceChildren(el("p", "mut petit", "Le catalogue vit dans atelier/capacites.py ; le cadrage le reçoit tel quel."));
+  document.getElementById("fiche").replaceChildren(el("p", "mut petit", "Le catalogue vit dans limalibri/capacites.py ; le cadrage le reçoit tel quel."));
   zone().scrollTo(0, 0);
 }
 
@@ -11041,13 +11041,13 @@ function poigneeDialogue(z) {
       document.removeEventListener("mousemove", bouge);
       document.removeEventListener("mouseup", lache);
       document.body.classList.remove("redimensionne");
-      try { localStorage.setItem("atelier-dialogue-largeur", z.style.width); } catch { /* sans stockage */ }
+      try { localStorage.setItem("limalibri-dialogue-largeur", z.style.width); } catch { /* sans stockage */ }
     };
     document.addEventListener("mousemove", bouge);
     document.addEventListener("mouseup", lache);
   };
-  h.ondblclick = () => { z.style.width = ""; try { localStorage.removeItem("atelier-dialogue-largeur"); } catch { /* */ } };
-  if (!z.style.width) { try { const l = localStorage.getItem("atelier-dialogue-largeur"); if (l) z.style.width = l; } catch { /* */ } }
+  h.ondblclick = () => { z.style.width = ""; try { localStorage.removeItem("limalibri-dialogue-largeur"); } catch { /* */ } };
+  if (!z.style.width) { try { const l = localStorage.getItem("limalibri-dialogue-largeur"); if (l) z.style.width = l; } catch { /* */ } }
   return h;
 }
 
@@ -11056,7 +11056,7 @@ function pleinEcranDialogue(oui) {
   z.classList.toggle("plein", oui);
   const b = z.querySelector(".dia-plein");
   if (b) { b.textContent = oui ? "⤡" : "⤢"; b.title = oui ? "revenir au panneau (Échap)" : "plein écran"; }
-  try { localStorage.setItem("atelier-dialogue-plein", oui ? "1" : ""); } catch { /* */ }
+  try { localStorage.setItem("limalibri-dialogue-plein", oui ? "1" : ""); } catch { /* */ }
   const fil = z.querySelector(".dia-fil");
   if (fil) fil.scrollTop = fil.scrollHeight;
 }
@@ -11065,7 +11065,7 @@ document.addEventListener("keydown", (e) => {
   const z = document.getElementById("dialogue");
   if (e.key === "Escape" && z && !z.hidden && z.classList.contains("plein") && !document.querySelector(".modale")) pleinEcranDialogue(false);
 });
-try { if (localStorage.getItem("atelier-dialogue-plein")) document.getElementById("dialogue").classList.add("plein"); } catch { /* */ }
+try { if (localStorage.getItem("limalibri-dialogue-plein")) document.getElementById("dialogue").classList.add("plein"); } catch { /* */ }
 
 // ------------------------------------------------------------------ le fil des événements
 //
@@ -11163,7 +11163,7 @@ function commandeFile(t) {
 // Les versions du livre et la numérotation de l'essai (onglet « versions » de la page du livre).
 function blocVersions(L) {
   const versions = el("section", "livre-bloc");
-  versions.append(el("p", "mut", "L'atelier tient deux versions du texte, alignées chapitre pour chapitre : le récit (il raconte) et " +
+  versions.append(el("p", "mut", "LimaLibri tient deux versions du texte, alignées chapitre pour chapitre : le récit (il raconte) et " +
     "l'essai (il explique, avec ses notes et ses sources). Leur titre sert aux exports (pages de garde, noms des PDF) et aux " +
     "intitulés ; leur rôle est dit à Claude. Ce ne sont pas des révisions : pour marquer un état du livre, voir l'onglet « révisions »."));
   for (const k of ["recit", "essai"]) {
@@ -11204,7 +11204,7 @@ function blocVersions(L) {
     versions.append(b);
   }
   const autres = Object.keys(L.versions ?? {}).filter((k) => !["recit", "essai"].includes(k));
-  if (autres.length) versions.append(el("p", "fiche-alerte petit", `livre.yaml déclare aussi : ${autres.join(", ")} — l'atelier ne les prend pas en charge ` +
+  if (autres.length) versions.append(el("p", "fiche-alerte petit", `livre.yaml déclare aussi : ${autres.join(", ")} — LimaLibri ne les prend pas en charge ` +
     "(textes, harnais, suivi, objectifs, exports ne connaissent que le récit et l'essai)."));
   return versions;
 }
@@ -11237,7 +11237,7 @@ function navDemandes(actif) {
   for (const [k, lib, titre] of [["demandes", "liste", "toutes les demandes, en pleine page (filtres, file d'attente)"],
     ["parametrage", "paramétrage", "ce que Claude peut faire pour chaque sorte de demande : modèle, tours, recherches, pages ; la file"],
     ["consommation", "consommation", "ce que Claude a consommé : jetons, cache, coût — par type, modèle, chapitre, jour"],
-    ["capacites", "capacités", "ce que l'atelier sait faire : ce que chaque capacité produit ou modifie, et son coût dans ce livre"]]) {
+    ["capacites", "capacités", "ce que LimaLibri sait faire : ce que chaque capacité produit ou modifie, et son coût dans ce livre"]]) {
     const b = el("button", k === actif ? "actif" : null, lib);
     b.title = titre;
     b.onclick = () => { location.hash = k; };
@@ -11298,11 +11298,11 @@ function poseLargeurTiroir(l) {
 function pleinEcranTiroir(oui) {
   if (oui) document.body.dataset.tiroirPlein = "1"; else delete document.body.dataset.tiroirPlein;
   document.querySelectorAll("#tiroir .tiroir-plein").forEach((b) => { b.textContent = oui ? "⤡" : "⤢"; b.title = oui ? "revenir au tiroir (Échap)" : "plein écran"; });
-  try { localStorage.setItem("atelier-tiroir-plein", oui ? "1" : ""); } catch { /* */ }
+  try { localStorage.setItem("limalibri-tiroir-plein", oui ? "1" : ""); } catch { /* */ }
 }
 
 {
-  try { poseLargeurTiroir(localStorage.getItem("atelier-tiroir-largeur")); if (localStorage.getItem("atelier-tiroir-plein")) document.body.dataset.tiroirPlein = "1"; } catch { poseLargeurTiroir(); }
+  try { poseLargeurTiroir(localStorage.getItem("limalibri-tiroir-largeur")); if (localStorage.getItem("limalibri-tiroir-plein")) document.body.dataset.tiroirPlein = "1"; } catch { poseLargeurTiroir(); }
   const h = el("div", "tiroir-poignee");
   h.title = "tirer pour élargir (double-clic : largeur par défaut)";
   h.onmousedown = (e) => {
@@ -11313,12 +11313,12 @@ function pleinEcranTiroir(oui) {
       document.removeEventListener("mousemove", bouge);
       document.removeEventListener("mouseup", lache);
       document.body.classList.remove("redimensionne");
-      try { localStorage.setItem("atelier-tiroir-largeur", document.documentElement.style.getPropertyValue("--tiroir-l")); } catch { /* */ }
+      try { localStorage.setItem("limalibri-tiroir-largeur", document.documentElement.style.getPropertyValue("--tiroir-l")); } catch { /* */ }
     };
     document.addEventListener("mousemove", bouge);
     document.addEventListener("mouseup", lache);
   };
-  h.ondblclick = () => { poseLargeurTiroir(); try { localStorage.removeItem("atelier-tiroir-largeur"); } catch { /* */ } };
+  h.ondblclick = () => { poseLargeurTiroir(); try { localStorage.removeItem("limalibri-tiroir-largeur"); } catch { /* */ } };
   document.body.append(h);
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && document.body.dataset.tiroirPlein === "1" && !document.getElementById("tiroir").hidden && !document.querySelector(".modale")) pleinEcranTiroir(false);
@@ -11328,7 +11328,7 @@ function pleinEcranTiroir(oui) {
 // ------------------------------------------------------------------ le volet de gauche : sa largeur
 {
   const pose_ = (l) => document.documentElement.style.setProperty("--gauche-l", l || "16rem");
-  try { pose_(localStorage.getItem("atelier-gauche-largeur")); } catch { pose_(); }
+  try { pose_(localStorage.getItem("limalibri-gauche-largeur")); } catch { pose_(); }
   const h = el("div", "gauche-poignee");
   h.title = "tirer pour élargir le plan (double-clic : largeur par défaut)";
   h.onmousedown = (e) => {
@@ -11339,12 +11339,12 @@ function pleinEcranTiroir(oui) {
       document.removeEventListener("mousemove", bouge);
       document.removeEventListener("mouseup", lache);
       document.body.classList.remove("redimensionne");
-      try { localStorage.setItem("atelier-gauche-largeur", document.documentElement.style.getPropertyValue("--gauche-l")); } catch { /* */ }
+      try { localStorage.setItem("limalibri-gauche-largeur", document.documentElement.style.getPropertyValue("--gauche-l")); } catch { /* */ }
     };
     document.addEventListener("mousemove", bouge);
     document.addEventListener("mouseup", lache);
   };
-  h.ondblclick = () => { pose_(); try { localStorage.removeItem("atelier-gauche-largeur"); } catch { /* */ } };
+  h.ondblclick = () => { pose_(); try { localStorage.removeItem("limalibri-gauche-largeur"); } catch { /* */ } };
   document.body.append(h);
 }
 
@@ -11359,7 +11359,7 @@ const LECTURE_DEFAUT = { taille: 17, police: "", interligne: 1.68, largeur: null
 
 function lecture() {
   try {
-    const L = { ...LECTURE_DEFAUT, ...JSON.parse(localStorage.getItem("atelier-lecture") || "{}") };
+    const L = { ...LECTURE_DEFAUT, ...JSON.parse(localStorage.getItem("limalibri-lecture") || "{}") };
     if (L.largeur != null && (L.largeur < 40 || L.largeur > 90)) L.largeur = null;     // l'ancienne unité (rem)
     return L;
   } catch { return { ...LECTURE_DEFAUT }; }
@@ -11372,7 +11372,7 @@ function appliqueLecture(L) {
   if (L.largeur) r.setProperty("--lec-largeur", L.largeur + "%"); else r.removeProperty("--lec-largeur");
   document.body.classList.toggle("lecture-large", !!L.largeur);
   if (L.police) r.setProperty("--lec-police", L.police); else r.removeProperty("--lec-police");
-  try { localStorage.setItem("atelier-lecture", JSON.stringify(L)); } catch { /* */ }
+  try { localStorage.setItem("limalibri-lecture", JSON.stringify(L)); } catch { /* */ }
 }
 
 function boutonLecture() {
@@ -11534,7 +11534,7 @@ async function panneauManques(slug) {
 {
   const droite = document.getElementById("droite");
   const pose_ = (l) => { if (l) document.documentElement.style.setProperty("--droite-l", l); else document.documentElement.style.removeProperty("--droite-l"); };
-  try { pose_(localStorage.getItem("atelier-droite-largeur")); } catch { /* */ }
+  try { pose_(localStorage.getItem("limalibri-droite-largeur")); } catch { /* */ }
   const h = el("div", "droite-poignee");
   h.title = "tirer pour élargir le panneau (double-clic : largeur d'origine)";
   const place = () => {
@@ -11551,12 +11551,12 @@ async function panneauManques(slug) {
       document.removeEventListener("mousemove", bouge);
       document.removeEventListener("mouseup", lache);
       document.body.classList.remove("redimensionne");
-      try { localStorage.setItem("atelier-droite-largeur", document.documentElement.style.getPropertyValue("--droite-l")); } catch { /* */ }
+      try { localStorage.setItem("limalibri-droite-largeur", document.documentElement.style.getPropertyValue("--droite-l")); } catch { /* */ }
     };
     document.addEventListener("mousemove", bouge);
     document.addEventListener("mouseup", lache);
   };
-  h.ondblclick = () => { pose_(null); try { localStorage.removeItem("atelier-droite-largeur"); } catch { /* */ } place(); };
+  h.ondblclick = () => { pose_(null); try { localStorage.removeItem("limalibri-droite-largeur"); } catch { /* */ } place(); };
   document.body.append(h);
   const ro = new ResizeObserver(place);
   ro.observe(droite);
@@ -11567,7 +11567,7 @@ async function panneauManques(slug) {
 }
 
 // ------------------------------------------------------------------ la frise du livre
-// frise.yaml (atelier/frise.py) : où se place chaque chapitre dans le temps de l'histoire, et des frises internes.
+// frise.yaml (limalibri/frise.py) : où se place chaque chapitre dans le temps de l'histoire, et des frises internes.
 // Toutes les dates arrivent en t (années depuis l'origine) ; une échelle les projette : linéaire, logarithmique,
 // ou fixe (des intervalles réguliers entre les dates). Bandes superposées (segments, dégradé), repères, flèches.
 
@@ -11849,7 +11849,7 @@ async function pageFrise(id) {
   barre.append(sf);
   const echs = fr ? [fr.echelle, ...F.echelles.filter((e) => e.variable === fr.echelle.variable && e.id !== fr.echelle.id)] : F.echelles;
   const se = el("select", "livre-select");
-  const cleEch = "atelier-frise-echelle-" + (id ?? "");
+  const cleEch = "limalibri-frise-echelle-" + (id ?? "");
   let choisie = null;
   try { choisie = localStorage.getItem(cleEch); } catch { /* */ }
   echs.forEach((e, i) => se.append(new Option(`échelle : ${e.titre}`, String(i), false, e.id === choisie)));

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# LimaLibri — lancer l'atelier sur un livre : limalibri <dossier du livre> [port] [--no-open]
+# LimaLibri — lancer sur un livre : limalibri <dossier du livre> [port] [--no-open]
 # (un lien vers ce fichier dans le PATH suffit : il retrouve son dossier)
 cible="$0"
 while [ -L "$cible" ]; do d="$(cd "$(dirname "$cible")" && pwd)"; cible="$(readlink "$cible")"; case "$cible" in /*) ;; *) cible="$d/$cible";; esac; done

@@ -6,7 +6,7 @@ ce qu'elle effleure sans le traiter, et, pour chaque piste, vérifie dans la bas
 déjà couverte (Grep, index, voisines) avant de la classer : nouvelle, à compléter (une fiche
 en parle trop brièvement) ou couverte. Aucune recherche web : c'est une lecture de la base.
 
-Décider lance, pour chaque piste cochée, une création de fiche (atelier/creation.py) avec sa
+Décider lance, pour chaque piste cochée, une création de fiche (limalibri/creation.py) avec sa
 question — la création revérifie le doublon au moment d'écrire. Les pistes « à compléter »
 attendent la complétion d'une fiche.
 """

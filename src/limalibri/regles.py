@@ -6,7 +6,7 @@ Un fichier par version. Chaque section « ## … » est un élément :
   « ## La voix »                                 une section de contexte
 
 Le fichier entier est donné à Claude pour toute réécriture de la version. Une règle peut
-être citée par une annotation (par son identifiant). L'atelier modifie une section à la
+être citée par une annotation (par son identifiant). LimaLibri modifie une section à la
 fois et réécrit le fichier en gardant le reste tel quel ; si le fichier a changé ailleurs
 depuis sa lecture, il refuse plutôt que d'écraser.
 """
@@ -16,7 +16,7 @@ import pathlib
 
 from . import livre
 
-MODELES = pathlib.Path(__file__).resolve().parent.parent / "modeles" / "regles"
+MODELES = pathlib.Path(__file__).resolve().parents[2] / "modeles" / "regles"
 ENTETE = re.compile(r"^---\n.*?\n---\n", re.S)
 ID_REGLE = re.compile(r"^(R\d+[a-z]?) — (.+)$")
 

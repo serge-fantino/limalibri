@@ -11,7 +11,7 @@ plus tard (son « départ » : le module et la fonction qui la font tourner). Qu
 à un redémarrage ; on peut la retirer tant qu'elle n'est pas partie. L'assistant (les conversations)
 et la lecture de confiance d'une fiche restent hors de la file : ce sont des échanges courts.
 
-Les **lots** : une phase d'un plan d'objectif (atelier/pilotage.py), une série (atelier/serie.py). Les
+Les **lots** : une phase d'un plan d'objectif (limalibri/pilotage.py), une série (limalibri/serie.py). Les
 demandes d'un lot partent d'elles-mêmes (lancer le plan ou la série valait accord) tant que le lot est
 actif — le plan en cours, la série en cours ; un plan en pause retient ses demandes en file. Et un lot
 s'enchaîne d'un bloc : la place libérée va d'abord au lot de la dernière demande partie, avant les

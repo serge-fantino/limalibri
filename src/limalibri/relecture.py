@@ -16,10 +16,10 @@ déjà. Ses constats :
     clarte       un passage qu'un lecteur ne suivra pas
     rythme       une longueur, un piétinement, une digression
 
-Claude pose chaque constat lui-même, en annotation, avec l'outil « annoter » (atelier/outils_livre.py) :
+Claude pose chaque constat lui-même, en annotation, avec l'outil « annoter » (limalibri/outils_livre.py) :
 sur le paragraphe (^id), avec un extrait exact — l'outil refuse une ancre ou un extrait introuvables, Claude
 corrige. Il rend à la fin un bilan par chapitre et une synthèse. La révision d'un chapitre lit ses
-annotations ouvertes et les traite (atelier/redaction.py). Si la relecture ne convient pas, « classer ses
+annotations ouvertes et les traite (limalibri/redaction.py). Si la relecture ne convient pas, « classer ses
 annotations » les marque résolues d'un coup. Pas de web. Fable par défaut : c'est une lecture de jugement.
 """
 import re
@@ -57,7 +57,7 @@ Ce que tu cherches, dans cet ordre d'importance :
 - clarte : ce qu'un lecteur curieux ne suivra pas ;
 - rythme : une digression, un piétinement, une longueur.
 
-Chaque constat, tu le POSES aussitôt avec l'outil « annoter » (mcp__atelier__annoter) :
+Chaque constat, tu le POSES aussitôt avec l'outil « annoter » (mcp__limalibri__annoter) :
 - chapitre, et bloc : l'ancre du paragraphe telle qu'elle est en fin de paragraphe (sans le ^) ;
 - citation : un extrait EXACT de ce paragraphe (copié, 5 à 25 mots) ;
 - texte : le problème en une ou deux phrases, et quoi faire (une reformulation, une coupe, un renvoi ; la

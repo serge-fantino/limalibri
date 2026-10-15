@@ -8,7 +8,7 @@ Une demande vit dans chapters/<slug>/demandes/<id>.json. Elle garde tout :
                texte déçoit, on peut relire ce qui a été demandé
   propositions ce que Claude rend (un texte par paragraphe, une note, les annotations traitées)
   decision     la proposition retenue, ou aucune, et le motif — les rejets restent : c'est
-               ce qui apprend à l'atelier ce que l'auteur ne veut pas
+               ce qui apprend à LimaLibri ce que l'auteur ne veut pas
 
 Claude ne modifie jamais le texte. Retenir une proposition réécrit les paragraphes visés dans
 recit.md (et seulement eux, ^id conservés), ajoute une ligne au journal des modifications
@@ -27,7 +27,7 @@ from claude_agent_sdk import (query, ClaudeAgentOptions, ResultMessage, Assistan
 
 from . import livre, regles
 
-SKILL = pathlib.Path(__file__).resolve().parent.parent / "skills" / "reecriture.md"
+SKILL = pathlib.Path(__file__).resolve().parents[2] / "skills" / "reecriture.md"
 PORTEES = ("annotation", "paragraphe", "plan")
 MODES = ("retouche", "reecriture")
 ANCRE_FIN = re.compile(r"[ \t]\^([a-z0-9]+)[ \t]*$")
@@ -216,7 +216,7 @@ def liste(slug):
 
 
 def filles(ident):
-    """Les demandes nées de `ident` (atelier/filiation.py) : {id, slug, type, etat, titre, sujet, fiche, issue}."""
+    """Les demandes nées de `ident` (limalibri/filiation.py) : {id, slug, type, etat, titre, sujet, fiche, issue}."""
     from . import file
     try:
         _, m = file._trouve(ident)
@@ -536,7 +536,7 @@ def verifie(slug=None, ident=None):
             pilotage.avance()
             file.suivante()
         except Exception as e:                   # noqa: BLE001
-            print("atelier : vérification —", e)
+            print("limalibri : vérification —", e)
     return corrigees
 
 
@@ -873,18 +873,18 @@ async def _lance(slug, d, options, prompt, conclut, reprise=False, apres=None):
     try:
         serie.avance()
     except Exception as e:                       # noqa: BLE001 — une série ne doit pas casser la demande finie
-        print("atelier : série —", e)
+        print("limalibri : série —", e)
     try:
         from . import pilotage                   # les plans d'objectifs aussi
         pilotage.avance()
     except Exception as e:                       # noqa: BLE001
-        print("atelier : pilotage —", e)
+        print("limalibri : pilotage —", e)
     if True:                                     # la file : la suivante (d'une série, ou si l'enchaînement est activé)
         from . import file
         try:
             file.suivante()
         except Exception as e:                   # noqa: BLE001 — la file ne doit pas casser la demande finie
-            print("atelier : file d'attente —", e)
+            print("limalibri : file d'attente —", e)
 
 
 REPRISE = ("Tu t'es arrêté avant d'avoir rendu ta réponse. Ne fais plus aucune recherche ni lecture : "

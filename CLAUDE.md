@@ -8,7 +8,7 @@ et les réponses.
 ## Le principe : l'outil d'un côté, les livres de l'autre
 
 - **Ce dépôt ne contient que l'outil.** Les livres vivent ailleurs, chacun dans son dossier (souvent dans un
-  autre dépôt git). L'atelier ne connaît un livre que par `ATELIER_LIVRE`, que `run.sh` lui passe.
+  autre dépôt git). LimaLibri ne connaît un livre que par `LIMALIBRI_LIVRE`, que `run.sh` lui passe.
 - **Ce qui est propre à un livre vit dans son dossier** : `livre.yaml` (titre, versions, réglages de Claude,
   publication), `structure.yaml` (le plan), `regles/<version>.md` (les garde-fous d'écriture), `frise.yaml`,
   `objectifs.yaml`, `kb/` (fiches, sources, demandes de la base), `chapters/<slug>/` (textes, brief, verrou,
@@ -28,7 +28,7 @@ Poetry installe les dépendances au premier lancement (`.venv/` dans le projet).
 
 ## L'architecture
 
-`atelier/` (le paquet Python s'appelle toujours `atelier` : LimaLibri est le projet, l'atelier le lieu) :
+`src/limalibri/` (le paquet Python ; `run.sh` lance `uvicorn limalibri.serveur:app --app-dir src`) :
 
 | | modules |
 |---|---|
@@ -39,8 +39,8 @@ Poetry installe les dépendances au premier lancement (`.venv/` dans le projet).
 | la sortie | `export` (PDF, imprimable), `compagnon` (essai + base), `public` (le site public statique, Cloudflare Pages), `frise` |
 | le serveur | `serveur` (routes FastAPI), `evenements` (SSE) |
 
-`front/atelier.js` est un seul fichier (plus de 600 Ko) avec ses helpers (`el`, `api`, `poste`, `tiroir`,
-`enModale`, `ouvreDemande`…) ; `front/atelier.css` porte la palette (`--bg`, `--fg`, `--mut`, `--acc`,
+`front/limalibri.js` est un seul fichier (plus de 600 Ko) avec ses helpers (`el`, `api`, `poste`, `tiroir`,
+`enModale`, `ouvreDemande`…) ; `front/limalibri.css` porte la palette (`--bg`, `--fg`, `--mut`, `--acc`,
 `--rule`, `--bar`) en clair et en sombre. Le préfixe d'une demande dit où elle vit : `[fplrosekqbt]-` dans
 `kb/demandes`, le reste dans `chapters/<slug>/demandes` (`slugDe` côté front).
 
@@ -53,18 +53,18 @@ vaut pour les deux côtés (`narration.paragraphe`, `livre.forme_plan`).
 - **Ne commiter que sur demande.** L'utilisateur dit quand ; ne pas le demander à chaque fois.
 - **Ne jamais modifier le serveur pendant qu'une demande à Claude tourne.** Le `--reload` redémarre le
   serveur et tue les demandes en cours (elles passent « interrompue » : du temps et de l'argent perdus).
-  Avant de toucher à `atelier/*.py` d'un serveur en service, vérifier qu'aucune demande n'est `en_cours`
+  Avant de toucher à `src/limalibri/*.py` d'un serveur en service, vérifier qu'aucune demande n'est `en_cours`
   dans les livres servis (`kb/demandes/*.json`, `chapters/*/demandes/*.json`), et **que la vérification
   bloque** la copie dans la même commande (`if grep -l … ; then exit 1; fi`), pas seulement qu'elle affiche.
 - **Développer et tester sur une copie**, jamais sur le vrai livre : copier le dossier du livre ailleurs,
-  et lancer un serveur de test dessus (`ATELIER_LIVRE=<copie>`, autre port). Avant de lancer ce serveur,
+  et lancer un serveur de test dessus (`LIMALIBRI_LIVRE=<copie>`, autre port). Avant de lancer ce serveur,
   **neutraliser les demandes de la copie** (renommer `kb/demandes`, `kb/plans`, `kb/series`,
   `chapters/*/demandes`) : au démarrage, la file et les plans relancent ce qui attend — de vraies demandes
-  à Claude, payantes. Ne jamais importer `atelier.serveur` sans `ATELIER_LIVRE` pointé sur une copie.
+  à Claude, payantes. Ne jamais importer `limalibri.serveur` sans `LIMALIBRI_LIVRE` pointé sur une copie.
 - **Vérifier dans un navigateur** (Chrome sans tête et le protocole DevTools) : une capture et l'absence
   d'erreur JS, pas seulement `node --check`. Un `confirm()` bloque Chrome sans tête : tester ces actions
   par l'API.
-- **`front/atelier.js` : ne jamais l'écraser à l'aveugle.** Un `open(p, "w").write(open(p).read())` mal placé
+- **`front/limalibri.js` : ne jamais l'écraser à l'aveugle.** Un `open(p, "w").write(open(p).read())` mal placé
   l'a déjà vidé ; vérifier sa taille avant de l'installer.
 - **YAML** : dans une liste entre crochets ou accolades, une date avec virgule s'écrit entre guillemets
   (`"13,8 Ga"`), sinon la virgule coupe la valeur. Les fichiers du livre s'écrivent avec `livre.yaml_rt()`

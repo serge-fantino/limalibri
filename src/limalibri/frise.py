@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """La frise d'un livre : où se place chaque chapitre dans le temps de son histoire, et des frises internes.
 
-Tout vit dans frise.yaml, à la racine du livre (un fichier à éditer à la main ; l'atelier le lit, l'amorce, le
+Tout vit dans frise.yaml, à la racine du livre (un fichier à éditer à la main ; LimaLibri le lit, l'amorce, le
 dessine). Une seule variable de temps par livre : t, en années depuis l'origine de l'histoire (le Big Bang pour Un
 Monde, la formation de la Terre pour Une Vie…). Les dates s'écrivent en clair et sont converties :
 
@@ -314,7 +314,7 @@ def lit_periode(texte, T):
     return out[0], out[1]
 
 
-GABARIT = """# La frise du livre — à éditer à la main ; l'atelier la dessine (Plan → frise).
+GABARIT = """# La frise du livre — à éditer à la main ; LimaLibri la dessine (Plan → frise).
 # Toutes les dates s'écrivent en clair : "4,5 Ga", "il y a 66 Ma", "10⁻³⁶ s", "3 min", "an 1781", "aujourd'hui", "dans mille ans".
 # Une durée seule se lit selon temps.lecture : depuis l'origine de l'histoire, ou avant le présent.
 """

@@ -20,11 +20,11 @@ Ils vivent dans objectifs.yaml, à la racine du livre, dans l'ordre de priorité
 
 Un objectif est atteint quand chaque critère tient sur chaque chapitre du périmètre — et, s'il a une
 intention, quand l'auteur l'a jugée atteinte. La progression compte les couples (chapitre, critère)
-tenus. La dépense : les demandes qui servent le périmètre (atelier/travail.py), depuis la création.
+tenus. La dépense : les demandes qui servent le périmètre (limalibri/travail.py), depuis la création.
 L'évaluation est recalculée à chaque fois ; seule trace écrite, l'historique : quand la mesure d'un
 objectif change (progression, critères tenus, atteinte), un point s'ajoute à objectifs-suivi.jsonl — d'où
 la courbe d'avancement. Le départ d'un objectif peut être une version marquée dans git
-(atelier/versions.py) : depart: {tag, commit, date} ; la carte dit alors ce qui a changé depuis.
+(limalibri/versions.py) : depart: {tag, commit, date} ; la carte dit alors ce qui a changé depuis.
 """
 import json
 import time
