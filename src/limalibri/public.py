@@ -138,6 +138,7 @@ h3{font-size:1.05rem;margin:1.4rem 0 .4rem}
 .chip.brouillon{border-color:#c9a25a;color:#a4561b}.chip.relu{border-color:var(--essai);color:var(--essai)}.chip.valide{border-color:var(--ok);color:var(--ok)}
 .texte p{margin:0 0 1em;text-align:left;hyphens:auto}
 .texte hr{border:0;text-align:center;margin:1.6rem 0}.texte hr::after{content:"⁂";color:var(--mut)}
+.texte p.tete{font-style:italic}.texte p.tete + hr{margin:2.4rem 0 0}.texte p.tete + hr::after{content:none}
 .texte img{max-width:100%}
 .texte table{display:block;overflow-x:auto;font-size:.85rem;border-collapse:collapse}
 .texte td,.texte th{border:1px solid var(--filet);padding:.2rem .4rem}

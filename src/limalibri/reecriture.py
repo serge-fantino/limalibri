@@ -564,8 +564,7 @@ def titre_de(d):
     if d.get("type") == "document":
         return "Texte original de %s" % d["cible"].get("cle")
     if d.get("type") == "redaction":
-        from . import redaction
-        return "redaction", redaction.SCHEMA, redaction.conclut, None
+        return d.get("titre") or "Essai — %s" % (d.get("cible") or {}).get("chapitre", "?")
     if d.get("type") == "plan":
         from . import planif
         return planif.titre_de(d)

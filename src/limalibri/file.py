@@ -92,7 +92,7 @@ def _lot(x, cache):
         s = cache[k]
         if not s:
             return {"id": x["serie"], "titre": "série", "actif": False}
-        return {"id": s["id"], "titre": "Série — " + " → ".join(serie.LIB.get(a, a) for a in s["actions"]), "actif": s["etat"] == "en_cours"}
+        return {"id": s["id"], "titre": "Série — " + " → ".join(serie.lib(a) for a in s["actions"]), "actif": s["etat"] == "en_cours"}
     return None
 
 

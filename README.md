@@ -576,6 +576,34 @@ l'auteur (fichiers et champs : `kb/fiches/<slug>.md`, `chapters/<slug>/brief.yam
 historique, `verrou.yaml`, `kb/sources/<cle>.yaml`, `structure.yaml`…) — et son coût moyen dans ce livre ;
 et les ajouts au cadre qu'un cadrage peut proposer. Le cadrage reçoit aussi ces artefacts.
 
+**Les capacités propres au livre** (`capacites.yaml`, à la racine du livre ; `limalibri/capacites_livre.py`) :
+une idée propre à un livre devient de la configuration du livre, pas du code. Chaque capacité déclarée compose
+une **primitive** de LimaLibri ; elle entre au catalogue (marquée « propre au livre »), dans les séries du
+récit, dans les plans d'objectif et dans ce que le cadrage peut proposer. Une erreur dans le fichier se dit en
+tête de la page des capacités ; la capacité fautive est écartée. La primitive, pour l'instant :
+
+- **`plan_de_tete`** : un texte à part en tête de chaque chapitre du récit (l'ouverture d'*Un Monde* : le
+  monde lui-même à ce moment-là, dans une autre voix). C'est un plan du storyboard marqué `sorte` dans
+  `brief.yaml`, toujours en tête. Claude l'écrit d'un tenant — ses micro-récits et ses paragraphes — avec la
+  section des règles du récit qui donne sa voix (`regle`), la consigne du livre et sa longueur (`mots`,
+  `paragraphes`). Ses paragraphes s'affichent à part, en italique et suivis d'un blanc : dans LimaLibri, dans
+  le PDF, sur le site public. Ils ne portent pas d'assertion : ni le verrou, ni la séquence, ni le harnais ne
+  les comptent. Refaire le storyboard ou tout le récit le garde tel quel. Dans le storyboard, « ✦ écrire
+  l'ouverture » apparaît en tête d'un chapitre qui ne l'a pas ; une série la saute là où elle existe déjà.
+
+```yaml
+ouverture:
+  libelle: écrire l'ouverture
+  quoi: une courte page en tête du chapitre, dans la voix du monde
+  primitive: plan_de_tete
+  plan: {id: ouverture, titre: Ouverture}
+  regle: L'ouverture            # une section de regles/recit.md (son titre ou son identifiant)
+  mots: [250, 350]
+  paragraphes: [2, 4]
+  consigne: |
+    Suis la section « L'ouverture » des règles…
+```
+
 **Les demandes, en pleine page** (`#demandes`) : la même liste que le tiroir (filtres, file, commande de
 l'enchaînement), qui se redessine quand une demande change ; une demande s'ouvre dans le tiroir. Une seule
 navigation pour les demandes — liste · paramétrage · consommation · capacités — dans la barre des pages

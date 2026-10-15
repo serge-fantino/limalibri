@@ -323,6 +323,8 @@ CSS_ESSAI = """
 .chapitre.numerote h2[data-num]::before,.chapitre.numerote h3[data-num]::before,.chapitre.numerote h4[data-num]::before{content:attr(data-num) "\\00a0\\00a0";color:#8a5a2b}
 .chapitre.numerote-par p[data-num]::before{content:attr(data-num) "\\00a0";font-family:system-ui,sans-serif;font-size:7pt;color:#8a5a2b}
 .chapitre p{text-align:justify;hyphens:auto}
+.chapitre p.tete{font-style:italic}                      /* un plan d'en-tête (l'ouverture…) : à part */
+.chapitre p.tete + hr{border:0;margin:2em 0 0}
 .chapitre p em:only-child{color:#6b6357}
 .chapitre .footnote{font-size:8.5pt;border-top:1px solid #ddd6c8;margin-top:1.5em}
 .chapitre .footnote hr{display:none}

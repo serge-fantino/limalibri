@@ -210,12 +210,20 @@ async def _execute(ident):
         max_buffer_size=reecriture.TAMPON, thinking=reecriture.PENSEE,
         tools=outils, allowed_tools=outils, max_turns=lim["tours"] + 2, setting_sources=[],
         cwd=str(livre.LIVRE), system_prompt=d["contexte"]["systeme"],
-        output_format={"type": "json_schema", "schema": SCHEMA},
+        output_format={"type": "json_schema", "schema": schema()},
         hooks=reecriture.garde(d, lim), model=reecriture.modele("cadrage", d))
     await reecriture._lance(SLUG_KB, d, options, d["contexte"]["message"], conclut)
 
 
 # ------------------------------------------------------------------ le contrôle
+
+def schema():
+    """Le schéma de la réponse, les capacités du livre comprises (capacites.yaml)."""
+    import copy
+    S = copy.deepcopy(SCHEMA)
+    S["properties"]["phases"]["items"]["properties"]["actions"]["items"]["properties"]["capacite"]["enum"] = list(capacites.tout())
+    return S
+
 
 COUVRE = {"niveau": ("brief", "ecrire", "reviser", "naif", "auteur"), "controles": ("reviser",), "naif": ("naif",),
           "manques": ("fiche", "creuser", "reviser", "auteur"), "fiches": ("brief", "fiche", "auteur"),
@@ -275,7 +283,7 @@ def controle(sortie, ident_objectif):
             (not P.get("chapitre") and a.get("capacite") == "auteur")
     for l in e["chapitres"]:
         for ec in l["ecarts"]:
-            caps = COUVRE.get(ec["critere"], ())
+            caps = tuple(capacites.tout()) if ec["critere"] == "score" else COUVRE.get(ec["critere"], ())
             if not any(a.get("capacite") in caps and touche(a, l["slug"]) for a in A):
                 trous.append({"chapitre": l["slug"], "critere": ec["critere"], "libelle": ec["libelle"]})
     M = execution._moyennes()

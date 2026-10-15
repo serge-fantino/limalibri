@@ -33,7 +33,7 @@ Poetry installe les dépendances au premier lancement (`.venv/` dans le projet).
 | | modules |
 |---|---|
 | le livre | `livre` (accès, `livre.yaml`, textes rendus, annotations), `plan`, `essai`, `kb`, `sources`, `regles`, `verrou`, `avancement`, `validation`, `versions` (git du livre) |
-| les demandes à Claude | `reecriture` (le moteur commun : `_lance`, budgets, déroulé, relance, `tache`), `file` (file d'attente, lots), `filiation`, `serie`, `capacites` (le catalogue), `outils_livre` (outils MCP donnés à Claude : `annoter`) |
+| les demandes à Claude | `reecriture` (le moteur commun : `_lance`, budgets, déroulé, relance, `tache`), `file` (file d'attente, lots), `filiation`, `serie`, `capacites` (le catalogue), `capacites_livre` (les capacités déclarées par le livre, `capacites.yaml`), `outils_livre` (outils MCP donnés à Claude : `annoter`) |
 | les sortes de demandes | `verification` (v-), `creation` (fiche, f-), `pistes` (p-), `renvois` (l-), `references` (r-), `documents` (o-), `planif` (s-), `redaction` (e-), `naif` (n-), `conversation` (c-), `cadrage` (k-), `relecture` (q-), `storyboard` (b-), `narration` (récit, t-), réécriture (d-) |
 | le pilotage | `objectifs`, `suivi`, `travail`, `execution`, `cadrage`, `pilotage` |
 | la sortie | `export` (PDF, imprimable), `compagnon` (essai + base), `public` (le site public statique, Cloudflare Pages), `frise` |

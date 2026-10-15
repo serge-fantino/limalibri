@@ -521,7 +521,7 @@ function planRecit(col) {
   const L = [el("h4", null, "Plans du récit")];
   for (const b of beats) {
     const l = el("div", "pl-recit");
-    l.append(el("b", null, b.id), el("span", null, b.title));
+    l.append(el("b", null, b.sorte ? "◦" : b.id), el("span", b.sorte ? "pl-tete" : null, b.title));   // ◦ : un plan d'en-tête
     l.onclick = () => {
       const m = document.querySelector(`#page [data-plan-titre="${b.id}"]`);
       m?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -894,10 +894,11 @@ function marges() {
     const l = liens[p.dataset.block];
     if (!l?.plan) continue;              // l'essai n'a pas de plans
     p.dataset.plan = l.plan;
-    if (l.ajout) p.classList.add("ajout");
+    const tete = !!beats[l.plan]?.sorte;   // un plan d'en-tête (l'ouverture…) : ni « ajout », ni lettre
+    if (l.ajout && !tete) p.classList.add("ajout");
     if (!vus.has(l.plan)) {
       vus.add(l.plan);
-      const m = el("span", "marge cliquable", `${l.plan} — ${beats[l.plan]?.title ?? ""}`);
+      const m = el("span", "marge cliquable", tete ? beats[l.plan].title ?? l.plan : `${l.plan} — ${beats[l.plan]?.title ?? ""}`);
       m.dataset.planTitre = l.plan;
       m.title = "Détail du plan";
       p.before(m);   // hors du bloc : son texte reste la prose seule
@@ -1009,6 +1010,15 @@ function notesMarge(id, focus) {
 // ligne. Une ligne = un paragraphe et le micro-récit de même rang dans son plan.
 // Un seul défilement : la synchro est structurelle, pas calculée. La gouttière
 // centrale dessine le lien — un trait par plan, un repère par paragraphe.
+// Les capacités propres au livre (capacites.yaml, servies avec le catalogue) : l'ouverture d'Un Monde… Gardées
+// une minute ; les plans d'en-tête du storyboard (« sorte ») sont écrits par elles.
+async function capsLivre() {
+  if (etat.capsLivre && Date.now() - etat.capsLivre.quand < 60000) return etat.capsLivre.L;
+  const C = await api("/capacites").catch(() => null);
+  etat.capsLivre = { L: C?.livre?.capacites ?? [], quand: Date.now() };
+  return etat.capsLivre.L;
+}
+
 async function storyboard(page) {
   page.replaceChildren();
   const a = etat.atelier;
@@ -1070,35 +1080,52 @@ async function storyboard(page) {
   }
   grille.append(g0, el("div", "par-gout"), d0);
 
+  const caps = await capsLivre();
+  for (const k of caps.filter((k) => k.primitive === "plan_de_tete" && !(br.beats ?? []).some((b) => b.id === k.plan))) {
+    const gp = el("div", "par-texte par-plan");
+    const go = el("button", "pan-lien sb-ecrire", "✦ " + k.libelle);
+    go.title = k.quoi;
+    go.onclick = (e) => { e.stopPropagation(); formTete(etat.slug, k); };
+    gp.append(el("span", "marge", k.titre), go);
+    const dp = el("div", "par-sb par-plan");
+    dp.append(el("h2", null, k.titre), el("p", "sb-comptes", "à part, en tête du chapitre · pas encore écrit"));
+    grille.append(gp, el("div", "par-gout plan-debut"), dp);
+  }
+
   const blocs = parPlan();
   for (const b of br.beats ?? []) {
     const ids = blocs[b.id] ?? [];
     const recits = b.recits ?? [];
     const ajouts = ids.filter((i) => a.links.recit[i].ajout).length;
+    const capTete = b.sorte ? caps.find((k) => k.id === b.sorte) : null;   // un plan d'en-tête : sa capacité l'écrit
 
     // ligne de plan : étiquette | fiche du plan
     const gp = el("div", "par-texte par-plan");
-    const eti = el("span", "marge cliquable", `${b.id} — ${b.title}`);
+    const eti = el("span", "marge cliquable", b.sorte ? b.title ?? b.id : `${b.id} — ${b.title}`);
     eti.dataset.planTitre = b.id;
     eti.title = "Détail du plan";
     const np = nParas(ids);
-    const ep = el("button", "pan-lien sb-ecrire", np ? "✦ réécrire ce plan…" : "✦ écrire ce plan");
-    ep.title = `Claude écrit les ${recits.length} paragraphe(s) du plan ${b.id}, un par micro-récit` + (np ? " ; les paragraphes actuels sont remplacés (archivés)" : "");
-    ep.onclick = (e) => { e.stopPropagation(); formRecit(etat.slug, b.id); };
+    const ep = el("button", "pan-lien sb-ecrire", b.sorte ? `✦ ${np ? "ré" : ""}${capTete?.libelle ?? "écrire ce plan"}${np ? "…" : ""}`
+      : np ? "✦ réécrire ce plan…" : "✦ écrire ce plan");
+    ep.title = b.sorte ? (capTete?.quoi ?? "un plan à part : la capacité du livre qui l'écrit n'est plus déclarée (capacites.yaml)")
+      : `Claude écrit les ${recits.length} paragraphe(s) du plan ${b.id}, un par micro-récit` + (np ? " ; les paragraphes actuels sont remplacés (archivés)" : "");
+    ep.onclick = (e) => { e.stopPropagation(); if (capTete) formTete(etat.slug, capTete); else formRecit(etat.slug, b.id); };
+    if (b.sorte && !capTete) ep.disabled = true;
     gp.append(eti, ep);
     const dp = el("div", "par-sb par-plan");
     const h = el("h2", "cliquable");
     h.dataset.planTitre = b.id;
     h.title = "Détail du plan";
-    h.append(el("span", "sb-lettre", b.id), document.createTextNode(b.title));
+    h.append(el("span", "sb-lettre", b.sorte ? "◦" : b.id), document.createTextNode(b.title));
     const meta = el("dl", "sb-meta");
     for (const k of ["lieu", "temps", "ambiance", "attaque", "chute"]) {
       if (b[k]) meta.append(el("dt", null, k), el("dd", null, b[k]));
     }
     const comptes = el("p", "sb-comptes");
-    comptes.append(document.createTextNode(
-      `${recits.length} micro-récits · ${np} paragraphes · ` +
-      `${b.assertions?.length ?? 0} assertions · ajouts ${ajouts}/${b.ajouts ?? 0}`));
+    comptes.append(document.createTextNode(b.sorte
+      ? `à part, en tête du chapitre · ${recits.length} micro-récits · ${np} paragraphes · ${ids.reduce((s, i) => s + (paras[i]?.textContent.trim().split(/\s+/).length ?? 0), 0)} mots`
+      : `${recits.length} micro-récits · ${np} paragraphes · ` +
+        `${b.assertions?.length ?? 0} assertions · ajouts ${ajouts}/${b.ajouts ?? 0}`));
     if (!np && recits.length) comptes.append(el("span", "mut", " · pas encore écrit"));
     else if (np < recits.length) comptes.append(el("span", "mut", ` · ${recits.length - np} à écrire`));
     if (ids.length > recits.length) {
@@ -1106,13 +1133,14 @@ async function storyboard(page) {
       w.title = "des paragraphes au-delà des micro-récits du plan : leur micro-récit a été retiré, ou jamais écrit";
       comptes.append(w);
     }
-    const conf = conformite(b, ids);
+    const conf = b.sorte ? [] : conformite(b, ids);       // un plan d'en-tête ne porte pas d'assertion : pas de séquence
     if (!conf) comptes.append(el("span", "mut", " · séquence non déclarée"));
+    else if (b.sorte) { /* rien à conformer */ }
     else {
       const k = conf.filter((c) => !c.ok).length;
       comptes.append(k ? el("span", "ecart", ` · séquence : ${k} écart(s)`) : el("span", null, " · séquence conforme"));
     }
-    if (ajouts > (b.ajouts ?? 0)) comptes.append(el("span", "ecart", " quota dépassé"));
+    if (!b.sorte && ajouts > (b.ajouts ?? 0)) comptes.append(el("span", "ecart", " quota dépassé"));
     // replié par défaut : un en-tête haut à droite creuserait un trou dans le récit à gauche
     const det = el("details", "replie");
     det.append(el("summary", null, [b.lieu, b.temps].filter(Boolean).join(" · ") || "le plan"), meta);
@@ -1144,12 +1172,12 @@ async function storyboard(page) {
         copie?.removeAttribute("data-block");       // la ligne porte l'id, pas le <p>
         g.append(copie ?? el("p", "mut", "(paragraphe introuvable)"));
         g.append(outilsPara(b, i, n, id));
-        if (l.ajout) g.classList.add("ajout");
+        if (l.ajout && !b.sorte) g.classList.add("ajout");
       } else {
         const vide = el("p", "mut orphelin sb-a-ecrire");
         vide.append(document.createTextNode(i >= recits.length ? `Rang ${i + 1} : ni paragraphe ni micro-récit. `
           : `Paragraphe ${i + 1} du plan ${b.id} : pas encore écrit. `));
-        if (i < recits.length) {
+        if (i < recits.length && !b.sorte) {        // un plan d'en-tête s'écrit d'un tenant, par sa capacité
           const ec = el("button", "pan-lien", "✦ écrire ce paragraphe");
           ec.title = "Claude écrit ce seul paragraphe, d'après son micro-récit (à droite)";
           ec.onclick = (e) => { e.stopPropagation(); formRecit(etat.slug, b.id, i + 1); };
@@ -1171,7 +1199,7 @@ async function storyboard(page) {
         const w = el("span", "sb-seq-ecart", `séquence déclarée : ${cf.attendu} — le texte dit : ${cf.reel || "rien"}`);
         d.append(w);
       }
-      if (l) {
+      if (l && !b.sorte) {                            // un plan d'en-tête ne porte pas d'assertion
         const puces = el("span", "sb-puces");
         if (l.ajout) puces.append(el("span", "puce ajout", "ajout · " + (b.ajouts ?? 0) + " permis"));
         for (const x of l.assertions ?? []) puces.append(puce(x));
@@ -4555,7 +4583,7 @@ function statut(texte, cls) {
 function colonneLivre() {
   const f = document.getElementById("fiche");
   f.replaceChildren(el("h4", null, "Fichiers"));
-  for (const nom of ["livre.yaml", "structure.yaml",
+  for (const nom of [...Object.keys(etat.livre.chemins ?? { "livre.yaml": 1, "structure.yaml": 1 }),   // + capacites.yaml, frise.yaml s'ils existent
     ...Object.keys(etat.regles ?? {}).filter((v) => etat.regles[v].fichier).map((v) => `regles/${v}.md`)]) {
     const d = el("div", "fichier-ligne");
     d.append(el("code", null, nom));
@@ -9693,6 +9721,27 @@ function formRecit(slug, plan = null, rang = null) {
   enModale("Écrire le récit", nomChapitre(slug), f);
 }
 
+// Un plan d'en-tête (l'ouverture…) : sa capacité du livre l'écrit d'un tenant — ses micro-récits et ses paragraphes.
+function formTete(slug, k) {
+  const f = el("div", "form-demande");
+  const cons = el("textarea", "annot-texte petit-texte");
+  cons.placeholder = "Une précision (facultatif) : une image à garder, ce qu'il faut éviter…";
+  const mod = choixModele("recit");
+  const go = el("button", "bouton", "✦ écrire");
+  const err = el("span", "err petit");
+  go.onclick = async () => {
+    go.disabled = true;
+    try {
+      const d = await poste("/recits", { chapitre: slug, capacite: k.id, consigne: cons.value, modele: mod.valeur() });
+      f.remove(); tiroir(d.id);
+    } catch (e) { err.textContent = e; go.disabled = false; }
+  };
+  f.append(el("p", "mut petit", k.quoi + " Retenir pose le plan « " + k.titre + " » en tête du storyboard et ses paragraphes en tête " +
+    "du récit (l'ancien récit est archivé) ; le reste est gardé."), cons, mod.noeud, el("div", "annot-actions"));
+  f.lastChild.append(go, err);
+  enModale(k.libelle[0].toUpperCase() + k.libelle.slice(1), nomChapitre(slug), f);
+}
+
 async function tiroirRecit(t, d) {
   t.replaceChildren(teteTiroir(d.titre ?? "Récit", () => tiroir(null)));
   if (d.consigne) t.append(el("p", "annot-corps", "« " + d.consigne + " »"));
@@ -9710,7 +9759,9 @@ async function tiroirRecit(t, d) {
     t.append(x);
   }
   if (d.erreur_pose) t.append(el("p", "err", "Pas posé d'office : " + d.erreur_pose));
-  t.append(el("p", Q.non_portees?.length || Q.inconnues?.length ? "fiche-alerte petit" : "verif-ok petit",
+  if (d.cible?.capacite) t.append(el("p", Q.longueur?.length ? "fiche-alerte petit" : "verif-ok petit",
+    `${R.mots ?? 0} mots` + (Q.longueur?.length ? " · hors des bornes : " + Q.longueur.join(", ") : " · dans les bornes")), voir);
+  else t.append(el("p", Q.non_portees?.length || Q.inconnues?.length ? "fiche-alerte petit" : "verif-ok petit",
     `${R.mots ?? 0} mots` + (Q.non_portees?.length ? ` · assertions du storyboard non portées : ${Q.non_portees.join(", ")}` : " · toutes les assertions des plans sont portées") +
     (Q.inconnues?.length ? ` · identifiants inconnus : ${Q.inconnues.join(", ")}` : "")), voir);
   for (const x of Q.ecarts ?? [])
@@ -9722,11 +9773,11 @@ async function tiroirRecit(t, d) {
     t.append(el("h5", null, `${p.id}${b?.title ? " — " + b.title : ""}`));
     p.paragraphes.forEach((x, i) => {
       const k = el("div", "plan-sb-tiroir");
-      const r = b?.recits?.[(d.cible?.rang ?? 1) - 1 + (d.cible?.rang ? 0 : i)];
+      const r = x.micro ?? b?.recits?.[(d.cible?.rang ?? 1) - 1 + (d.cible?.rang ? 0 : i)];
       if (r) k.append(el("p", "mut petit", "micro-récit : " + r));
       k.append(el("p", "annot-corps", x.texte));
       const puces = el("span", "sb-puces");
-      if (x.ajout && !x.assertions?.length) puces.append(el("span", "puce ajout", "ajout"));
+      if (x.ajout && !x.assertions?.length && !d.cible?.capacite) puces.append(el("span", "puce ajout", "ajout"));
       for (const a of x.assertions ?? []) puces.append(el("span", "puce", a));
       k.append(puces);
       t.append(k);
@@ -10003,11 +10054,13 @@ async function pageCapacites() {
   const C = await api("/capacites").catch(() => null);
   if (!C) { page.replaceChildren(el("p", "err", "catalogue indisponible")); return; }
   const tab = el("div", "capacites");
+  const duLivre = el("div", "capacites");          // les capacités propres au livre (capacites.yaml), à part, en tête
   for (const c of C.capacites) {
     const r = el("div", "capacite");
     const h = el("div", "capacite-tete");
-    h.append(el("code", null, c.id), el("strong", null, c.libelle),
-      el("span", "obj-plan-statut", { decision: "décision de l'auteur", pose: "s'écrit dans le livre", lecture: "rapport", auteur: "à l'auteur" }[c.fin] ?? c.fin));
+    h.append(el("code", null, c.id), el("strong", null, c.libelle));
+    if (c.livre) h.append(el("span", "obj-plan-statut cap-livre", "propre au livre"));
+    h.append(el("span", "obj-plan-statut", { decision: "décision de l'auteur", pose: "s'écrit dans le livre", lecture: "rapport", auteur: "à l'auteur" }[c.fin] ?? c.fin));
     if (c.cout != null) h.append(el("span", "mut petit", `~${c.cout} $ · ~${Math.max(1, Math.round(c.duree_s / 60))} min`));
     r.append(h, el("p", "petit", c.quoi), el("p", "mut petit", "paramètres : " + Object.entries(c.params).map(([k, v]) => `${k}${v.endsWith("!") ? "*" : ""} (${v.replace("!", "")})`).join(", ")));
     // ce qu'elle produit ou modifie dans le livre
@@ -10022,7 +10075,7 @@ async function pageCapacites() {
       art.append(b);
     }
     if (art.childElementCount) r.append(art);
-    tab.append(r);
+    (c.livre ? duLivre : tab).append(r);
   }
   const cad = el("div", "capacites");
   for (const c of C.cadre) {
@@ -10033,10 +10086,31 @@ async function pageCapacites() {
     r.append(el("p", "petit", c.quoi));
     cad.append(r);
   }
+  const avert = el("div");
+  avert.append(el("h2", "oeuvre-section", "Propres à ce livre"));
+  if (!C.livre?.existe) avert.append(el("p", "mut petit", "Ce livre n'en déclare pas : une capacité propre au livre se décrit dans " +
+    "capacites.yaml, à sa racine — elle compose une primitive de LimaLibri (voir le README)."));
+  if (C.livre?.existe) {                  // le fichier du livre : l'ouvrir pour le modifier
+    const d = el("div", "fichier-ligne");
+    const ouvrir = el("button", "pan-lien", "ouvrir");
+    ouvrir.title = "Ouvrir dans l'application par défaut du poste";
+    ouvrir.onclick = () => fetch(`/api/ouvrir?chemin=${encodeURIComponent(C.livre.fichier)}`, { method: "POST" });
+    const vs = el("a", "lien-ext", "VS Code ↗");
+    vs.href = "vscode://file" + (etat.livre.chemins?.[C.livre.fichier] ?? "");
+    d.append(el("span", "mut petit", "les capacités de ce livre : "), el("code", null, C.livre.fichier), ouvrir, vs);
+    avert.append(d);
+  }
+  if (C.livre?.avertissements?.length) {
+    avert.append(el("h5", null, `À corriger dans ${C.livre.fichier}`));
+    const ul = el("ul", "petit fiche-alerte");
+    for (const x of C.livre.avertissements) ul.append(el("li", null, x));
+    avert.append(ul);
+  }
   page.replaceChildren(el("h1", null, "Capacités de LimaLibri"),
-    el("p", "mut", "Ce que LimaLibri sait faire. Le cadrage d'un objectif compose son plan avec ces capacités, et rien d'autre ; le coût est la moyenne observée dans ce livre. * : obligatoire."),
-    tab, el("h2", "oeuvre-section", "Ajouts au cadre"), el("p", "mut petit", "Ce qu'un cadrage peut proposer de changer ; appliqué seulement si tu l'acceptes."), cad);
-  document.getElementById("fiche").replaceChildren(el("p", "mut petit", "Le catalogue vit dans limalibri/capacites.py ; le cadrage le reçoit tel quel."));
+    el("p", "mut", "Ce que LimaLibri sait faire, et ce que ce livre y ajoute (" + (C.livre?.fichier ?? "capacites.yaml") + ", à sa racine). " +
+      "Le cadrage d'un objectif compose son plan avec ces capacités, et rien d'autre ; le coût est la moyenne observée dans ce livre. * : obligatoire."),
+    avert, duLivre, el("h2", "oeuvre-section", "De LimaLibri"), tab, el("h2", "oeuvre-section", "Ajouts au cadre"), el("p", "mut petit", "Ce qu'un cadrage peut proposer de changer ; appliqué seulement si tu l'acceptes."), cad);
+  document.getElementById("fiche").replaceChildren(el("p", "mut petit", "Le catalogue vit dans limalibri/capacites.py, et les capacités propres au livre dans son capacites.yaml (limalibri/capacites_livre.py) ; le cadrage reçoit le tout."));
   zone().scrollTo(0, 0);
 }
 
@@ -10054,7 +10128,7 @@ function seriesObjectif(P, id) {
     plein.style.width = Math.round(100 * faites / s.etapes.length) + "%";
     bar.append(plein);
     l.append(bar, el("span", null, `${s.cree.slice(0, 16).replace("T", " ")} · ${faites}/${s.etapes.length} étapes · ` +
-      ({ en_cours: cur ? `en cours : ${LIB_SERIE[cur.action]}, ${nomChapitre(cur.chapitre) ?? cur.chapitre}` : "en cours",
+      ({ en_cours: cur ? `en cours : ${libSerie(cur.action)}, ${nomChapitre(cur.chapitre) ?? cur.chapitre}` : "en cours",
         arretee: "arrêtée — " + (s.erreur ?? ""), finie: "finie", abandonnee: "abandonnée" }[s.etat] ?? s.etat)));
     if (cur?.demande) {
       const o = el("button", "pan-lien", "ouvrir");
@@ -10066,7 +10140,7 @@ function seriesObjectif(P, id) {
     if (s.etat === "arretee" || s.etat === "abandonnee") op("reprendre", "reprendre");
     const det = el("details", "serie-etapes");
     det.append(el("summary", "mut petit", "étapes"), ...s.etapes.map((e) => el("div", "mut petit",
-      `${nomChapitre(e.chapitre) ?? e.chapitre} · ${LIB_SERIE[e.action]} · ${e.etat}${e.erreur ? " — " + e.erreur : ""}`)));
+      `${nomChapitre(e.chapitre) ?? e.chapitre} · ${libSerie(e.action)} · ${e.etat}${e.erreur ? " — " + e.erreur : ""}`)));
     l.append(det);
     d.append(l);
   }
@@ -10749,20 +10823,24 @@ document.getElementById("b-rafraichir").onclick = () => rafraichitMaintenant();
 const LIB_SERIE = { brief: "développer le brief", ecrire: "écrire l'essai", reviser: "réviser l'essai", storyboard: "écrire le storyboard",
   recit: "écrire le récit",
   naif: "lecture naïve" };
+// une action de série qui n'est pas de LimaLibri : une capacité du livre (capacites.yaml)
+const libSerie = (a) => LIB_SERIE[a] ?? etat.capsLivre?.L.find((k) => k.id === a)?.libelle ?? a;
 
 function formSerie(zone, chapitres, action, version) {
   if (!chapitres.length) { alert("aucun chapitre coché"); return; }
+  if (!etat.capsLivre) { capsLivre().then(() => formSerie(zone, chapitres, action, version)); return; }
   const f = el("div", "form-demande");
   const choix = {};
   const acts = el("div", "annot-actions");
-  const possibles = version === "essai" ? ["brief", "ecrire", "reviser", "naif"] : ["storyboard", "recit", "naif"];
+  const possibles = version === "essai" ? ["brief", "ecrire", "reviser", "naif"]
+    : ["storyboard", "recit", ...etat.capsLivre.L.map((k) => k.id), "naif"];
   for (const a of possibles) {
     const l = el("label", "dem-consulter");
     const x = el("input");
     x.type = "checkbox";
     x.checked = a === action || (action === "brief" && a === "ecrire");
     choix[a] = x;
-    l.append(x, " " + LIB_SERIE[a]);
+    l.append(x, " " + libSerie(a));
     acts.append(l);
   }
   const cons = el("textarea", "annot-texte petit-texte");
@@ -10823,8 +10901,8 @@ function blocSeries(version) {
       const plein = el("span", "serie-plein");
       plein.style.width = Math.round(100 * faites / s.etapes.length) + "%";
       bar.append(plein);
-      const lib = el("span", null, `${s.actions.map((a) => LIB_SERIE[a]).join(" → ")} · ${faites}/${s.etapes.length} étapes · ` +
-        ({ en_cours: cur ? `en cours : ${LIB_SERIE[cur.action]}, ${cur.chapitre}` : "en cours", arretee: "arrêtée — " + (s.erreur ?? ""),
+      const lib = el("span", null, `${s.actions.map(libSerie).join(" → ")} · ${faites}/${s.etapes.length} étapes · ` +
+        ({ en_cours: cur ? `en cours : ${libSerie(cur.action)}, ${cur.chapitre}` : "en cours", arretee: "arrêtée — " + (s.erreur ?? ""),
           finie: "finie", abandonnee: "abandonnée" }[s.etat] ?? s.etat));
       l.append(bar, lib);
       if (cur?.demande) {
@@ -10836,7 +10914,7 @@ function blocSeries(version) {
       if (s.etat === "en_cours") op("arreter", "arrêter");
       if (s.etat === "arretee" || s.etat === "abandonnee") op("reprendre", "reprendre");
       const det = el("details", "serie-etapes");
-      det.append(el("summary", "mut petit", "étapes"), ...s.etapes.map((e) => el("div", "mut petit", `${e.chapitre} · ${LIB_SERIE[e.action]} · ${e.etat}${e.erreur ? " — " + e.erreur : ""}`)));
+      det.append(el("summary", "mut petit", "étapes"), ...s.etapes.map((e) => el("div", "mut petit", `${e.chapitre} · ${libSerie(e.action)} · ${e.etat}${e.erreur ? " — " + e.erreur : ""}`)));
       l.append(det);
       d.append(l);
     }

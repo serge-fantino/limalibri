@@ -132,6 +132,23 @@ CADRE = {
 }
 
 
+def tout():
+    """Le catalogue de LimaLibri, plus les capacités propres au livre (capacites.yaml, capacites_livre.py)."""
+    from . import capacites_livre
+    C = dict(CATALOGUE)
+    for k, c in capacites_livre.toutes().items():
+        C[k] = capacites_livre.pour_catalogue(c)
+    return C
+
+
+def artefacts(cap):
+    if cap in ARTEFACTS:
+        return ARTEFACTS[cap]
+    from . import capacites_livre
+    c = capacites_livre.toutes().get(cap)
+    return capacites_livre.artefacts(c) if c else ([], [])
+
+
 def _chapitres():
     return {c["slug"] for c in livre.chapitres()}
 
@@ -151,12 +168,13 @@ def _parties():
 
 def valide(cap, params, connus=None):
     """Les problèmes d'une action (liste vide : lançable)."""
-    if cap not in CATALOGUE:
+    C = tout()
+    if cap not in C:
         return ["capacité inconnue : %s" % cap]
     P = params or {}
     K = connus or {"chapitres": _chapitres(), "fiches": _fiches(), "parties": _parties()}
     out = []
-    for k, t in CATALOGUE[cap][3].items():
+    for k, t in C[cap][3].items():
         v = P.get(k)
         if t.endswith("!") and v in (None, "", []):
             out.append("paramètre manquant : %s" % k)
@@ -186,6 +204,11 @@ def lance(cap, params, consigne_commune="", options=None):
     P = dict(params or {})
     O = options or {}
     cons = "\n\n".join(x for x in ((P.get("consigne") or "").strip(), (consigne_commune or "").strip()) if x)
+    if cap not in CATALOGUE:                            # une capacité propre au livre (sa primitive : plan_de_tete)
+        from . import capacites_livre, narration
+        capacites_livre.une(cap)
+        return SLUG_KB, narration.cree({"chapitre": P["chapitre"], "capacite": cap, "consigne": cons,
+                                         "modele": O.get("modele"), "poser": O.get("poser", True)})
     if cap == "fiche":
         from . import creation
         return SLUG_KB, creation.cree({"question": P["question"], "slug": P.get("slug"), "chapitres": P.get("chapitres") or [],
@@ -238,7 +261,7 @@ def lance(cap, params, consigne_commune="", options=None):
 
 def cout(cap, moyennes=None):
     """(dollars, secondes) moyens d'une capacité dans ce livre."""
-    g = CATALOGUE.get(cap, (None,) * 6)[2]
+    g = tout().get(cap, (None,) * 6)[2]
     if not g:
         return (0.0, 0)
     from . import execution
@@ -247,27 +270,37 @@ def cout(cap, moyennes=None):
 
 
 def catalogue():
-    from . import execution
+    from . import execution, capacites_livre
     M = execution._moyennes()
+    L = capacites_livre.lit()
     return {"capacites": [{"id": k, "libelle": v[0], "quoi": v[1], "genre": v[2], "params": v[3], "fin": v[4], "par": v[5],
-                           "au_resultat": ARTEFACTS.get(k, ([], []))[0], "a_la_decision": ARTEFACTS.get(k, ([], []))[1],
+                           "au_resultat": artefacts(k)[0], "a_la_decision": artefacts(k)[1], "livre": k not in CATALOGUE,
                            "cout": round(cout(k, M)[0], 2) if v[2] else None, "duree_s": round(cout(k, M)[1]) if v[2] else None}
-                          for k, v in CATALOGUE.items()],
-            "cadre": [{"type": k, "quoi": v} for k, v in CADRE.items()]}
+                          for k, v in tout().items()],
+            "cadre": [{"type": k, "quoi": v} for k, v in CADRE.items()],
+            "livre": {"fichier": capacites_livre.FICHIER, "existe": L["existe"], "avertissements": L["avertissements"],
+                      "capacites": [{"id": k, "libelle": c["libelle"], "quoi": pour_livre(c), "primitive": c["primitive"],
+                                     "plan": c["plan"]["id"], "titre": c["plan"]["titre"], "mots": c["mots"]}
+                                    for k, c in L["capacites"].items()]}}
+
+
+def pour_livre(c):
+    from . import capacites_livre
+    return capacites_livre.pour_catalogue(c)[1]
 
 
 def texte_pour_claude():
     """Le catalogue, tel que Claude le lit dans un cadrage."""
     M = None
     L = []
-    for k, v in CATALOGUE.items():
+    for k, v in tout().items():
         c = cout(k, M) if v[2] else None
         L.append("- `%s` — %s. %s Paramètres : %s.%s%s" % (
             k, v[0], v[1], ", ".join("%s (%s)" % (p, t) for p, t in v[3].items()),
             {"decision": " Le résultat attend la décision de l'auteur.", "pose": " Le résultat s'écrit dans le livre.",
              "lecture": " Rend un rapport.", "auteur": ""}[v[4]],
             " Coût moyen ici : ~%.2f $, ~%d min." % (c[0], max(1, round(c[1] / 60))) if c else ""))
-        a, b = ARTEFACTS.get(k, ([], []))
+        a, b = artefacts(k)
         if a or b:
             L.append("  Écrit : " + " ; ".join(a + b) + ".")
     L.append("\nPropositions de cadre (appliquées si l'auteur les accepte) :")

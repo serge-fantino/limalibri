@@ -15,6 +15,8 @@ Les actions :
   storyboard  Claude prépare les plans du récit depuis l'essai, posés d'office.
   recit    Claude écrit le récit depuis le storyboard (narration), posé d'office.
   naif     une lecture naïve de la version (naif) ; les relevés restent à décider par l'auteur.
+  <id>     une capacité propre au livre (capacites.yaml : l'ouverture…), posée d'office ; sautée si le chapitre a
+           déjà son plan d'en-tête, ou pas encore d'essai (les faits viennent de lui).
 
 Une étape sans objet est sautée (un brief déjà prêt, un essai déjà écrit). Une étape en erreur arrête
 la série, qui le dit ; on la reprend (l'étape est relancée) ou on l'abandonne.
@@ -31,6 +33,22 @@ LIB = {"brief": "développer le brief", "ecrire": "écrire l'essai", "reviser": 
        "recit": "écrire le récit",
        "naif": "lecture naïve"}
 KB = ("brief", "ecrire", "reviser", "storyboard", "recit")          # les étapes dont la demande vit dans kb/demandes
+
+
+def actions():
+    """Les actions d'une série, dans l'ordre d'un chapitre : celles du livre (capacites.yaml) après le récit."""
+    from . import capacites_livre
+    return ACTIONS[:-1] + tuple(capacites_livre.toutes()) + ACTIONS[-1:]
+
+
+def lib(a):
+    from . import capacites_livre
+    c = capacites_livre.toutes().get(a)
+    return c["libelle"] if c else LIB.get(a, a)
+
+
+def _kb(a):
+    return a in KB or a not in ACTIONS
 
 
 def _dossier():
@@ -59,21 +77,22 @@ def liste():
 
 
 def cree(corps):
-    """{chapitres: [slug], actions: [brief|ecrire|naif], version?, consigne?, longueur?, modele?}"""
+    """{chapitres: [slug], actions: [brief|ecrire|…|<capacité du livre>|naif], version?, consigne?, longueur?, modele?}"""
     ordre = [c["slug"] for c in livre.chapitres()]
+    A = actions()
     if corps.get("etapes"):                     # des étapes données (un objectif) : chacune avec sa consigne
         connus = set(ordre)
         E = [{"chapitre": e["chapitre"], "action": e["action"], "etat": "a_faire",
               **({"consigne": e["consigne"]} if e.get("consigne") else {}),
               **({"annotations": e["annotations"]} if e.get("annotations") else {})}
-             for e in corps["etapes"] if e.get("action") in ACTIONS and e.get("chapitre") in connus]
-        E.sort(key=lambda e: (ordre.index(e["chapitre"]), ACTIONS.index(e["action"])))
-        acts = [a for a in ACTIONS if a in {e["action"] for e in E}]
+             for e in corps["etapes"] if e.get("action") in A and e.get("chapitre") in connus]
+        E.sort(key=lambda e: (ordre.index(e["chapitre"]), A.index(e["action"])))
+        acts = [a for a in A if a in {e["action"] for e in E}]
         if not E:
             raise ValueError("aucune étape")
     else:
         chs = [s for s in ordre if s in set(corps.get("chapitres") or [])]
-        acts = [a for a in ACTIONS if a in set(corps.get("actions") or [])]
+        acts = [a for a in A if a in set(corps.get("actions") or [])]
         if not chs or not acts:
             raise ValueError("des chapitres et au moins une action")
         E = [{"chapitre": c, "action": a, "etat": "a_faire"} for c in chs for a in acts]
@@ -106,7 +125,7 @@ def reprend(ident):
     for k, e in enumerate(s["etapes"]):
         if e["etat"] in ("erreur", "abandonnee"):
             if e.get("demande"):
-                anciennes[k] = (SLUG_KB if e["action"] in KB else e["chapitre"], e["demande"])
+                anciennes[k] = (SLUG_KB if _kb(e["action"]) else e["chapitre"], e["demande"])
             e.update(etat="a_faire", demande=None, erreur=None)
     s["etat"] = "en_cours"
     s.pop("erreur", None)
@@ -150,7 +169,7 @@ def _chapitre(slug):
 
 
 def _demande(e):
-    slug = SLUG_KB if e["action"] in KB else e["chapitre"]
+    slug = SLUG_KB if _kb(e["action"]) else e["chapitre"]
     try:
         return reecriture.lit(slug, e["demande"])
     except Exception:                                 # noqa: BLE001
@@ -212,13 +231,22 @@ def _lance(s, e):
         from . import narration
         d = narration.cree({"chapitre": c["slug"], "consigne": o.get("consigne") or "", "modele": o.get("modele"),
                             "poser": o.get("poser") is not False})
+    elif e["action"] not in ACTIONS:
+        # une capacité du livre (un plan d'en-tête) : une fois par chapitre, depuis son essai
+        from . import capacites_livre, narration
+        cap = capacites_livre.toutes().get(e["action"])
+        if not cap or cap["plan"]["id"] in livre.plans_en_tete(c["slug"]) \
+                or avancement.niveau(c, "essai") not in ("brouillon", "relu", "valide"):
+            return False
+        d = narration.cree({"chapitre": c["slug"], "capacite": cap["id"], "consigne": o.get("consigne") or "",
+                            "modele": o.get("modele"), "poser": o.get("poser") is not False})
     else:
         if avancement.niveau(c, s["version"]) not in ("brouillon", "relu", "valide"):
             return False
         from . import naif
         d = naif.cree(c["slug"], {"version": s["version"], "modele": o.get("modele")})
     if not d.get("serie"):                         # la demande sait sa série (en file : elle partira d'elle-même)
-        slug_d = SLUG_KB if e["action"] in KB else e["chapitre"]
+        slug_d = SLUG_KB if _kb(e["action"]) else e["chapitre"]
         d = reecriture.lit(slug_d, d["id"])           # relue : elle a pu démarrer et s'écrire entre-temps
         d["serie"] = s["id"]
         reecriture._ecrit(slug_d, d)
@@ -270,7 +298,7 @@ def avance(ident=None):
                     break                                   # elle travaille encore
                 if d["etat"] == "erreur":
                     cur.update(etat="erreur", erreur=d.get("erreur"))
-                    s.update(etat="arretee", erreur="%s, %s : %s" % (LIB[cur["action"]], cur["chapitre"], d.get("erreur")))
+                    s.update(etat="arretee", erreur="%s, %s : %s" % (lib(cur["action"]), cur["chapitre"], d.get("erreur")))
                     break
                 if cur["action"] == "brief" and d["etat"] == "prete":
                     try:
@@ -295,6 +323,6 @@ def avance(ident=None):
                     continue
             except Exception as x:                          # noqa: BLE001
                 suivante.update(etat="erreur", erreur="%s" % x)
-                s.update(etat="arretee", erreur="%s, %s : %s" % (LIB[suivante["action"]], suivante["chapitre"], x))
+                s.update(etat="arretee", erreur="%s, %s : %s" % (lib(suivante["action"]), suivante["chapitre"], x))
             break
         _ecrit(s)

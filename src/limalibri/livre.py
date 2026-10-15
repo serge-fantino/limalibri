@@ -446,9 +446,42 @@ def texte(slug, version):
         if not p.exists():
             raise KeyError(slug)
         md = ENTETE.sub("", p.read_text(encoding="utf-8"), count=1)
+    html = rendu(md, numeros, structure)
+    if version == "recit" and c["atelier"]:
+        html = marque_en_tete(slug, html)
     return {"slug": slug, "version": version, "atelier": c["atelier"],
-            "html": rendu(md, numeros, structure), "origine": affiche(p),
+            "html": html, "origine": affiche(p),
             "numerotation": meta().get("numerotation_essai") or "aucune"}
+
+
+# Un plan d'en-tête (« sorte » dans brief.yaml, posé par une capacité du livre, capacites_livre.py) : un texte à part
+# en tête du chapitre — l'ouverture d'Un Monde, par exemple. Il reste le premier plan ; ses paragraphes ne portent pas
+# d'assertion, ne comptent ni au verrou ni à la séquence, et se rendent à part (classe « tete tete-<sorte> »).
+
+def en_tete(beat):
+    return bool((beat or {}).get("sorte"))
+
+
+def plans_en_tete(slug):
+    """{id du plan: sorte} des plans d'en-tête d'un chapitre."""
+    p = dossier(slug) / "brief.yaml"
+    br = (yaml.safe_load(p.read_text(encoding="utf-8")) or {}) if p.exists() else {}
+    return {str(b.get("id")): str(b["sorte"]) for b in br.get("beats") or [] if en_tete(b)}
+
+
+def marque_en_tete(slug, html):
+    """Les paragraphes des plans d'en-tête reçoivent leur classe (le front, l'export et le site public la suivent)."""
+    T = plans_en_tete(slug)
+    if not T:
+        return html
+    p = dossier(slug) / "links.yaml"
+    liens = ((yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get("recit") or {}) if p.exists() else {}
+    sorte = {str(i): T[str((l or {}).get("plan"))] for i, l in liens.items() if str((l or {}).get("plan")) in T}
+    if not sorte:
+        return html
+    return re.sub(r'<p data-block="([a-z0-9]+)"',
+                  lambda m: '<p class="tete tete-%s" data-block="%s"' % (sorte[m.group(1)], m.group(1)) if m.group(1) in sorte
+                  else m.group(0), html)
 
 
 def atelier(slug):

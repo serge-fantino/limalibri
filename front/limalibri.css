@@ -97,6 +97,11 @@ body[data-vue="storyboard"] #page{max-width:none;padding:2rem 2rem 6rem}
 .par-sb.ligne > *:not(.sb-rang){grid-column:2}
 .sb-rang{color:var(--mut);font-size:.72rem;padding-top:.12rem;text-align:right}
 .par-texte.ligne.ajout p{border-left:2px dotted var(--acc);padding-left:.5rem;margin-left:-.6rem}
+/* un plan d'en-tête (une capacité du livre : l'ouverture…) : à part, en italique, un blanc au lieu du trait après */
+p.tete{font-style:italic}
+p.tete + hr{border:0;height:0;margin:2.6rem 0 0}
+.cap-livre{color:var(--acc)}
+.pl-recit .pl-tete{font-style:italic}
 .par .survol{background:var(--bar)}
 .par .choisi{background:color-mix(in srgb,var(--hl) 40%,transparent)}
 .par .choisi.par-gout{background:none}

@@ -126,12 +126,18 @@ def compile_contexte(d):
         L += ["", "# Le chapitre précédent : %s — %s" % (pc["slug"], pc["title"])]
         if bp.get("beats"):
             L += ["Son storyboard (pour enchaîner) :"] + ["- %s %s — attaque : %s · chute : %s" % (
-                b.get("id"), b.get("title"), b.get("attaque") or "—", b.get("chute") or "—") for b in bp["beats"]]
+                b.get("id"), b.get("title"), b.get("attaque") or "—", b.get("chute") or "—")
+                for b in bp["beats"] if not livre.en_tete(b)]
         else:
             L.append("Pas encore de storyboard. Synopsis : %s" % (pc.get("synopsis") or "—"))
     if i + 1 < len(ordre):
         nc = ordre[i + 1][1]
         L += ["", "# Le chapitre suivant : %s — %s · synopsis : %s" % (nc["slug"], nc["title"], nc.get("synopsis") or "—")]
+    tete = [b for b in _yaml(livre.dossier(slug) / "brief.yaml").get("beats") or [] if livre.en_tete(b)]
+    if tete:
+        L += ["", "# À part : le chapitre s'ouvre sur %s (un texte à part, en tête, dans une autre voix, qui ne porte "
+              "pas d'assertion). Il n'est pas de ton ressort : ne le planifie pas, il reste tel quel ; ton premier plan "
+              "le suit." % ", ".join("« %s »" % (b.get("title") or b.get("id")) for b in tete)]
     if d.get("consigne"):
         L += ["", "# La consigne de l'auteur", d["consigne"]]
     from . import refs
@@ -207,7 +213,10 @@ def pose(slug, R, demande):
         (h / ("storyboard-%s.json" % time.strftime("%Y%m%d-%H%M%S"))).write_text(
             json.dumps({"beats": json.loads(json.dumps(doc["beats"], default=str)), "intent": doc.get("intent"),
                         "tenue": doc.get("tenue")}, ensure_ascii=False, indent=1), encoding="utf-8")
-    doc["beats"] = R["plans"]
+    # les plans d'en-tête (l'ouverture, une capacité du livre) ne sont pas du ressort du storyboard : ils restent, en tête
+    tete = [b for b in doc.get("beats") or [] if livre.en_tete(b)]
+    ids = {str(b.get("id")) for b in tete}
+    doc["beats"] = tete + [x for x in R["plans"] if str(x.get("id")) not in ids]
     # intent et tenue sont des dictionnaires dans le brief (« faire_comprendre », « point_focal »…) : la vue et la
     # réécriture les lisent clé par clé — un texte s'y range sous une clé
     if R.get("intention"):

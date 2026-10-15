@@ -77,7 +77,8 @@ async def _reprend_la_file():
 
 def _meta(m):
     return dict(m, dossier=livre.affiche(livre.LIVRE), editables=list(livre.EDITABLES),
-                chemins={n: str(livre.LIVRE / n) for n in ("livre.yaml", "structure.yaml")})
+                chemins={n: str(livre.LIVRE / n) for n in ("livre.yaml", "structure.yaml", "capacites.yaml", "frise.yaml")
+                         if n in ("livre.yaml", "structure.yaml") or (livre.LIVRE / n).is_file()})
 
 
 @app.get("/api/livre")
