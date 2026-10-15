@@ -6,6 +6,7 @@ package-mode = false
 name = "limalibri"
 version = "0.1.0"
 description = "LimaLibri — la lime du livre : un atelier d'écriture de livres (serveur + front), sur un dossier de livre."
+license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi (>=0.115,<1.0)",

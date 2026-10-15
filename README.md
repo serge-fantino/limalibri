@@ -817,3 +817,7 @@ publication:
 | LimaLibri | l'application | — |
 
 Les scripts qui ont importé *Une vie* depuis son ancien dépôt (`migrer/`) sont restés avec le livre.
+
+## Licence
+
+LimaLibri est distribué sous la [licence Apache 2.0](LICENSE). Copyright 2026 Serge Fantino.
