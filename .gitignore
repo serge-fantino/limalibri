@@ -2,3 +2,4 @@ __pycache__/
 .venv/
 .wrangler/
 .logs/
+CLAUDE.local.md
