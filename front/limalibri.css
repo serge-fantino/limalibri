@@ -1355,3 +1355,16 @@ body[data-vue="planche"] #page{max-width:60rem}
   52.5%{transform:translate(13.2px,0)} 61.25%{transform:translate(15.4px,1.3px)} 70%{transform:translate(17.6px,0)}
   82%{transform:translate(12px,-5px)} 100%{transform:translate(0,0)}}
 @media (prefers-reduced-motion:reduce){#attente .ecrit,#attente .plume{animation:none;stroke-dashoffset:0}}
+
+/* toutes les planches (#fiches/planches) */
+.planches-chap{font-size:1.15rem;margin:1.6rem 0 .6rem}
+.planches-chap a{color:inherit;text-decoration:none}
+.planches-grille{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:1rem}
+.planche-carte{display:flex;flex-direction:column;gap:.3rem;font-family:var(--ui);font-size:.85rem}
+.planche-vignette{display:flex;align-items:center;justify-content:center;aspect-ratio:4/3;background:#fffdf8;border:1px solid var(--rule);
+  border-radius:4px;overflow:hidden;cursor:zoom-in}
+.planche-vignette img{width:100%;height:100%;object-fit:contain}
+.planche-vide{color:#b3a993;font-style:italic;cursor:default}
+.planche-carte-titre{color:var(--fg);text-decoration:none;font-weight:600}
+.planche-carte-titre:hover{color:var(--acc)}
+#page figure.planche a.planche-lien,.planche-vue a,.planche-grande{cursor:zoom-in}

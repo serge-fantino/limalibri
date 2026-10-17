@@ -783,6 +783,13 @@ taille, à l'écran, dans le PDF et sur le site, et du texte qui se versionne av
 - **Dans LimaLibri :** la colonne du chapitre a une rubrique **Planches** (numéro, titre, état) ; un clic ouvre la
   planche, avec l'appel à copier et le fichier à ouvrir (application par défaut ou VS Code). Un dessin manquant ou un
   `planches.yaml` illisible s'y disent.
+- **La visionneuse :** un clic sur une planche (dans le texte, sur sa page, dans sa fenêtre, dans le tiroir d'un
+  dessin, et sur le site public) l'ouvre par-dessus la page : zoomer à la molette, au pincement ou avec + et −
+  (autour du pointeur), glisser pour la parcourir, double-clic pour passer d'« ajuster » à ×2, **⛶ plein écran**,
+  ↗ le dessin seul dans un onglet, Échap pour fermer. Le dessin reste net à toutes les échelles. ⌘-clic ouvre
+  toujours l'onglet. (`front/visionneuse.js`, un seul fichier partagé avec le site public.)
+- **Toutes les planches** (onglet « planches » des fiches, `#fiches/planches`) : les planches du livre, chapitre par
+  chapitre, en vignettes ; la vignette ouvre la visionneuse, le titre mène à la page de la planche ; leurs fiches.
 - **Sa page** (⤢ sur sa ligne, ou « pleine page → » dans sa fenêtre ; adresse `#planche/<chapitre>/<id>`) : le dessin
   en grand, sa légende, l'état et les actions ; comment il a été fait (la demande qui l'a retenu, le modèle, le coût,
   le nombre de regards, ce qu'il affiche et d'où, ce qui est laissé en blanc ; ou « fait hors de LimaLibri ») ; le

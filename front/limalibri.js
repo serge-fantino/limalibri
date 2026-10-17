@@ -508,7 +508,8 @@ async function tiroirPlanche(t, d) {
       img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(R.svg);
       img.alt = R.titre ?? "";
       const a = el("a");
-      a.href = img.src; a.target = "_blank"; a.rel = "noopener"; a.title = "ouvrir en grand";
+      a.href = img.src; a.target = "_blank"; a.rel = "noopener"; a.title = "zoomer, plein écran (la visionneuse)";
+      Object.assign(a.dataset, { visionneuse: img.src, titre: R.titre ?? "Planche", legende: R.legende ?? "" });
       a.append(img);
       t.append(a);
     }
@@ -590,7 +591,12 @@ function ouvrePlanche(slug, p) {
     const img = el("img");
     img.src = `/api/planches/${slug}/${p.id}.svg?v=${Date.now()}`;
     img.alt = p.titre;
-    f.append(img);
+    const a = el("a");
+    a.href = `/api/planches/${slug}/${p.id}.svg`;
+    a.title = "zoomer, plein écran (la visionneuse)";
+    Object.assign(a.dataset, { visionneuse: img.src, titre: `Planche ${p.numero} — ${p.titre}`, legende: p.legende ?? "" });
+    a.append(img);
+    f.append(a);
   } else f.append(el("p", "fiche-alerte", "Pas encore de dessin : " + p.fichier));
   if (p.legende) f.append(el("p", "petit", p.legende));
   const B = p.brief ?? {};
@@ -631,6 +637,58 @@ function ouvrePlanche(slug, p) {
   ac.append(pp, cp, ouvrir, vs);
   f.append(ac);
   enModale("Planche " + p.numero + " — " + p.titre, nomChapitre(slug), f);
+}
+
+// Toutes les planches du livre (#fiches/planches), chapitre par chapitre : la vignette ouvre la visionneuse,
+// le titre la page de la planche.
+async function pageToutesPlanches() {
+  const page = document.getElementById("page");
+  barreFiches("planches");
+  document.getElementById("volet-chapitre").hidden = true;
+  document.getElementById("fiche").replaceChildren();
+  const fin = attente("Les planches", null, "tous les chapitres");
+  let C;
+  try { C = await api("/planches"); } catch (e) { page.replaceChildren(el("p", "err", String(e))); return; } finally { fin(); }
+  const n = C.reduce((s, c) => s + c.planches.length, 0);
+  page.replaceChildren(el("h1", null, "Planches"), el("p", "mut",
+    n ? `${n} planche(s) dans ${C.length} chapitre(s). Une vignette s'ouvre dans la visionneuse (zoom, plein écran) ; ` +
+      "le titre mène à la page de la planche." : "Aucune planche encore : elles se proposent depuis la colonne d'un chapitre (« ✦ proposer des planches »)."));
+  for (const c of C) {
+    const h = el("h2", "planches-chap");
+    const a = el("a", null, `${c.numero ? c.numero + ". " : ""}${c.titre}`);
+    a.href = `#${c.chapitre}/recit/texte`;
+    h.append(a);
+    page.append(h);
+    for (const x of c.avertissements) page.append(el("p", "fiche-alerte petit", x));
+    const g = el("div", "planches-grille");
+    for (const p of c.planches) {
+      const carte = el("div", "planche-carte");
+      if (p.existe) {
+        const v = el("a", "planche-vignette");
+        const src = `/api/planches/${c.chapitre}/${p.id}.svg`;
+        v.href = src;
+        Object.assign(v.dataset, { visionneuse: src + "?v=" + Date.now(), titre: `Planche ${p.numero} — ${p.titre}`, legende: p.legende ?? "" });
+        v.title = "zoomer, plein écran";
+        const img = el("img");
+        img.loading = "lazy";
+        img.src = src;
+        img.alt = p.titre;
+        v.append(img);
+        carte.append(v);
+      } else carte.append(el("div", "planche-vignette planche-vide", "à dessiner"));
+      const t = el("a", "planche-carte-titre", `${p.numero} · ${p.titre}`);
+      t.href = `#planche/${c.chapitre}/${p.id}`;
+      carte.append(t);
+      if (p.etat !== "retenue") carte.append(el("span", "mut petit", p.etat));
+      if (p.fiches?.length) {
+        const f = el("div", "pastilles");
+        for (const x of p.fiches) f.append(puceFiche(x.slug));
+        carte.append(f);
+      }
+      g.append(carte);
+    }
+    page.append(g);
+  }
 }
 
 // La page d'une planche (#planche/<chapitre>/<id>) : le dessin en grand, le brief, ce qu'il affiche et d'où ;
@@ -683,7 +741,8 @@ async function pagePlanche_(slug, ident) {
   page.append(barre);
   if (p.existe) {
     const a = el("a", "planche-grande");
-    a.href = `/api/planches/${slug}/${p.id}.svg`; a.target = "_blank"; a.rel = "noopener"; a.title = "le dessin seul (pour zoomer)";
+    a.href = `/api/planches/${slug}/${p.id}.svg`; a.target = "_blank"; a.rel = "noopener"; a.title = "zoomer, plein écran (la visionneuse)";
+    Object.assign(a.dataset, { visionneuse: `/api/planches/${slug}/${p.id}.svg?v=${Date.now()}`, titre: `Planche ${p.numero} — ${p.titre}`, legende: p.legende ?? "" });
     const img = el("img");
     img.src = `/api/planches/${slug}/${p.id}.svg?v=${Date.now()}`;
     img.alt = p.titre;
@@ -7680,6 +7739,7 @@ async function vueFiches(slug, section) {
   const I = await indexFiches();
   if (slug === "graphe") return pageGraphe();
   if (slug === "creation") return pageCreation();
+  if (slug === "planches") return pageToutesPlanches();
   if (!slug) return indexPage(I);
   return pageFiche(slug, section, I);
 }
@@ -7776,7 +7836,7 @@ function barreFiches(actif, actionsPage = null) {
   o.hidden = false;
   const g = el("span", "groupe");
   for (const [k, lib, h] of [["liste", "liste", "fiches"], ["creation", "en création", "fiches/creation"],
-    ["graphe", "graphe", "fiches/graphe"], ["biblio", "bibliographie", "biblio"]]) {
+    ["graphe", "graphe", "fiches/graphe"], ["planches", "planches", "fiches/planches"], ["biblio", "bibliographie", "biblio"]]) {
     const b = el("button", k === actif ? "actif" : null, lib);
     b.onclick = () => { location.hash = h; };
     if (k === "creation") b.id = "onglet-creation";

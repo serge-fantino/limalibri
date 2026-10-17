@@ -179,6 +179,19 @@ def lie_fiches(slug, ident, fiches):
     return detail(slug, ident)
 
 
+def toutes():
+    """Les planches du livre, chapitre par chapitre : [{chapitre, numero, titre, planches: [...], avertissements}]."""
+    out = []
+    for c in livre.chapitres_seuls():
+        d = livre.dossier(c["slug"])
+        if not ((d / FICHIER).exists() or (d / "planches").is_dir()):
+            continue
+        L = liste(c["slug"])
+        if L["planches"] or L["avertissements"]:
+            out.append({"chapitre": c["slug"], "numero": c.get("numero"), "titre": c.get("title"), **L})
+    return out
+
+
 def de_fiche(fiche):
     """Les planches liées à une fiche, dans tout le livre : [{chapitre, numero, id, titre, etat, existe, lien}]."""
     out = []

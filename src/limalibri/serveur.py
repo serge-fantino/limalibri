@@ -1619,6 +1619,13 @@ async def enregistre_version(request: Request):
     return _edition(lambda: edition.enregistre(c.get("message", "")))
 
 
+@app.get("/api/planches")
+def planches_du_livre():
+    """Toutes les planches du livre, chapitre par chapitre (planches.py)."""
+    from . import planches
+    return planches.toutes()
+
+
 @app.get("/api/planches/{slug}")
 def planches_du_chapitre(slug: str):
     """Les planches d'un chapitre (planches.py) : dessins, titres, états, et ce qui cloche."""

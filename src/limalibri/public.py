@@ -68,7 +68,8 @@ PDFS = [("recit", "recit", None, "Le récit"), ("essai", "essai", None, "L'essai
 
 def _empreinte_livre():
     L = livre.LIVRE
-    fichiers = sorted(list(L.glob("chapters/*/*.md")) + list(L.glob("chapters/*/*.yaml")) + list(L.glob("kb/fiches/*.md"))
+    fichiers = sorted(list(L.glob("chapters/*/*.md")) + list(L.glob("chapters/*/*.yaml")) + list(L.glob("chapters/*/planches/*.svg"))
+                      + list(L.glob("kb/fiches/*.md"))
                       + list(L.glob("kb/sources/*.yaml")) + [L / "livre.yaml", L / "structure.yaml", L / "synopsis.yaml", L / "frise.yaml"])
     ici = pathlib.Path(__file__).resolve().parent             # et le code qui les dessine : un PDF refait quand l'export change
     fichiers += [ici / "export.py", ici / "compagnon.py", ici / "public.py", ici.parents[1] / "front" / "limalibri.js"]
@@ -343,9 +344,11 @@ def _page(titre, corps, base, barre="", description=""):
     return """<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>%s</title>%s%s<link rel="stylesheet" href="%sstyle.css"></head>
-<body>%s<main>%s</main><footer class="site">%s — publié en l'état, depuis LimaLibri · %s</footer>%s</body></html>
+<body>%s<main>%s</main><footer class="site">%s — publié en l'état, depuis LimaLibri · %s</footer>%s%s</body></html>
 """ % (html.escape(titre), '<meta name="description" content="%s">' % html.escape(description) if description else "", THEME,
-       base, barre, corps, html.escape(livre.meta().get("titre") or ""), livre._maintenant()[:10], SCRIPT)
+       base, barre, corps, html.escape(livre.meta().get("titre") or ""), livre._maintenant()[:10], SCRIPT,
+       # la visionneuse des planches (front/visionneuse.js, copiée à la racine du site), là où il y en a
+       '<script src="%svisionneuse.js" defer></script>' % base if 'class="planche-lien"' in corps else "")
 
 
 # ------------------------------------------------------------------ le site
@@ -870,6 +873,7 @@ def genere(avec_pdf=True):
     tmp.mkdir(parents=True)
     ecrit = lambda chemin, texte: ((tmp / chemin).parent.mkdir(parents=True, exist_ok=True), (tmp / chemin).write_text(texte, encoding="utf-8"))
     ecrit("style.css", CSS)
+    shutil.copy2(pathlib.Path(__file__).resolve().parents[2] / "front" / "visionneuse.js", tmp / "visionneuse.js")
     ordre = [c["slug"] for c in S.chapitres]
     for (slug, v) in S.textes:
         ecrit("chapitres/%s/%s.html" % (slug, v), S.chapitre(slug, v, ordre))
