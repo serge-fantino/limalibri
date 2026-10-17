@@ -1390,14 +1390,21 @@ body[data-vue="grande-frise"] #page > h1,.gf-barre{margin-left:2rem;margin-right
 .gf-aide{margin-left:auto}
 .gf-defile{overflow:auto;max-height:calc(100vh - 13rem);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-top:.6rem}
 .gf-toile{position:relative;font-family:var(--ui);font-size:.78rem}
-.gf-axe{position:sticky;top:0;z-index:3;height:62px;border-bottom:1px solid var(--rule);background:var(--bar)}
-.gf-epoque{position:absolute;top:6px;height:22px;line-height:22px;padding:0 .35rem;color:#fff;font-size:.7rem;overflow:hidden;
+.gf-axe{position:sticky;top:0;z-index:3;border-bottom:1px solid var(--rule);background:var(--bar)}
+.gf-epoque{position:absolute;height:22px;line-height:22px;padding:0 .35rem;color:#fff;font-size:.7rem;overflow:hidden;
   white-space:nowrap;text-overflow:ellipsis;opacity:.85;border-right:1px solid var(--bg)}
-.gf-grad{position:absolute;top:34px;transform:translateX(-50%);color:var(--mut);font-size:.68rem;white-space:nowrap;padding-top:8px}
+.gf-grad{position:absolute;transform:translateX(-50%);color:var(--mut);font-size:.68rem;white-space:nowrap;padding-top:8px}
 .gf-grad::before{content:"";position:absolute;left:50%;top:0;height:6px;border-left:1px solid var(--mut)}
 .gf-couloir{position:relative;border-bottom:1px dashed var(--rule)}
 .gf-etiq{position:sticky;left:0;display:inline-block;padding:.35rem .8rem;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;
-  font-size:.68rem;background:var(--bg);z-index:2;border-radius:0 0 4px 0}
+  font:inherit;font-size:.68rem;background:var(--bg);z-index:2;border:0;border-radius:0 0 4px 0;cursor:pointer}
+.gf-etiq:hover{color:var(--acc)}
+.gf-defile{cursor:grab}
+.gf-defile.gf-prise{cursor:grabbing;user-select:none}
+.gf-valeur{position:absolute;height:22px;line-height:22px;padding-left:3px;border-left:1px solid rgba(255,255,255,.7);color:#fff;
+  font-size:.66rem;white-space:nowrap;z-index:1;text-shadow:0 0 3px rgba(0,0,0,.6)}
+.gf-bande-nom{position:absolute;left:.4rem;height:22px;line-height:22px;font-size:.62rem;color:#fff;opacity:.9;
+  text-transform:uppercase;letter-spacing:.05em;text-shadow:0 0 3px rgba(0,0,0,.7);pointer-events:none;z-index:2}
 .gf-duree{position:absolute;height:3px;border-radius:2px;opacity:.8}
 .gf-carte{position:absolute;box-sizing:border-box;height:70px;padding:.35rem .5rem;background:var(--bar);border:1px solid var(--rule);
   border-top:3px solid var(--acc);border-radius:4px;overflow:hidden;z-index:1}
@@ -1417,4 +1424,4 @@ body[data-vue="grande-frise"] #page > h1,.gf-barre{margin-left:2rem;margin-right
 .gf-planche{position:absolute;z-index:1}
 .gf-planche img{aspect-ratio:4/3}
 .gf-repere{position:absolute;top:0;bottom:0;border-left:1px dashed var(--acc);opacity:.55;pointer-events:none;z-index:0}
-.gf-repere span{position:absolute;top:64px;left:3px;font-size:.66rem;color:var(--acc);white-space:nowrap;background:var(--bg);padding:0 .2rem}
+.gf-repere span{position:absolute;left:3px;font-size:.66rem;color:var(--acc);white-space:nowrap;background:var(--bg);padding:0 .2rem}

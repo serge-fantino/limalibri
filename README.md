@@ -842,11 +842,13 @@ l'histoire. On peut aussi y dessiner des frises internes, par exemple les scène
 découvertes.
 
 **La grande frise** (Plan → **grande frise**, `#plan/grande-frise`) : le livre dans le temps, sur une page qui défile
-de côté. En haut, la frise (époques, graduations, repères), qui reste visible quand on descend ; en dessous, trois
+de côté. En haut, la frise (ses bandes : les époques, le décalage vers le rouge en dégradé avec ses valeurs ; les
+graduations, les repères), qui reste visible quand on descend ; elle va jusqu'au bout des bandes, le futur compris. En dessous, trois
 couloirs alignés sur le temps : les **chapitres** (leur durée, leur date, des liens vers le récit et l'essai avec leur
 niveau), les **fiches** (au premier chapitre qui s'appuie sur elles, un pointillé jusqu'au dernier), les **planches**
-(en vignettes, qui s'ouvrent dans la visionneuse). La molette avance dans le temps, ctrl + molette (ou le pincement du
-trackpad) zoome autour du pointeur ; l'échelle se choisit (par défaut, celle qui donne la même place à chaque date
+(en vignettes, qui s'ouvrent dans la visionneuse) ; un clic sur le nom d'un couloir le masque. On glisse à la souris
+pour se déplacer dans les deux sens ; la molette descend dans les couloirs, et avance dans le temps sur la frise du
+haut ; ctrl + molette (ou le pincement du trackpad) zoome autour du pointeur ; l'échelle se choisit (par défaut, celle qui donne la même place à chaque date
 connue, pour que la fin du livre ne soit pas écrasée). Un chapitre pas encore daté est placé d'après ses voisins dans
 l'ordre du livre, en pointillé : « date à poser ».
 
