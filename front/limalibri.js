@@ -5931,6 +5931,7 @@ function barrePlan(niveau, cible, actions) {
   const b = (lib, h, actif) => { const x = el("button", actif ? "actif" : null, lib); x.onclick = () => { location.hash = h; }; g.append(x); };
   b("le livre", "plan", niveau === "livre");
   b("frise", "plan/frise", niveau === "frise");
+  b("grande frise", "plan/grande-frise", niveau === "grande-frise");
   if (niveau !== "livre" && niveau !== "frise") {
     const pid = niveau === "partie" ? cible : P.parties.find((p) => p.chapitres.some((c) => c.slug === cible))?.id;
     const p = P.parties.find((x) => x.id === pid);
@@ -6016,6 +6017,7 @@ async function vuePlan(vue, id) {
   if (vue === "p") return pagePartie(id);
   if (vue === "c") return pageChapitrePlan(id);
   if (vue === "frise") return pageFrise(id);
+  if (vue === "grande-frise") return pageGrandeFrise();
   return pageLivrePlan();
 }
 
@@ -6057,6 +6059,7 @@ function listeChapitres(p) {
 function vuePlanCourant() {
   const [, vue, id] = decodeURIComponent(location.hash.slice(1)).split("/");
   if (vue === "frise") return pageFrise(id);
+  if (vue === "grande-frise") return pageGrandeFrise();
   if (vue === "p") return pagePartie(id);
   if (vue === "c") return pageChapitrePlan(id);
   return pageLivrePlan();
@@ -12489,6 +12492,198 @@ function dessineFrise(F, ech, items, { bandes = [], reperes = [], fleches = fals
   svg.setAttribute("height", hT);
   svg.querySelectorAll(".fr-rep-ligne").forEach((l) => l.setAttribute("y2", hT));
   return svg;
+}
+
+// La grande frise (#plan/grande-frise) : le livre dans le temps, sur une page qui défile de côté. En haut, la frise
+// (époques, graduations, repères) ; en dessous, des couloirs alignés sur le temps : les chapitres (récit, essai),
+// les fiches (à la place des chapitres qui s'appuient sur elles), les planches (la visionneuse). On zoome (boutons,
+// ctrl + molette) ; la molette fait défiler. Les chapitres pas encore datés sont placés d'après leurs voisins dans
+// l'ordre du livre, en pointillé.
+const GF = { zoom: 3, echelle: "fixe" };
+try { Object.assign(GF, JSON.parse(localStorage.getItem("limalibri-grande-frise") || "{}")); } catch { /* */ }
+
+async function pageGrandeFrise() {
+  const fin = attente("La grande frise", null, "le livre dans le temps");
+  try { return await pageGrandeFrise_(); } finally { fin(); }
+}
+
+async function pageGrandeFrise_() {
+  document.body.dataset.vue = "grande-frise";
+  const page = document.getElementById("page");
+  barrePlan("grande-frise", null, null);
+  const [F, I, PL] = await Promise.all([api("/frise").catch((e) => ({ erreur: String(e) })), indexFiches().catch(() => []),
+    api("/planches").catch(() => [])]);
+  page.replaceChildren(el("h1", null, "La grande frise"));
+  if (F.erreur || !F.existe) return page.append(el("p", "mut", F.erreur ?? "Le livre n'a pas encore de frise : l'amorcer depuis l'onglet « frise »."));
+  const echs = F.echelles.filter((e) => e.variable === "depuis_origine");
+  if (!echs.some((e) => e.type === "fixe")) echs.unshift({ id: "fixe", titre: "les dates connues à intervalles réguliers", type: "fixe", variable: "depuis_origine" });
+  if (!echs.some((e) => e.id === GF.echelle)) GF.echelle = (echs.find((e) => e.type === "fixe") ?? echs[0]).id;
+  const barre = el("div", "frise-barre gf-barre");
+  const se = el("select", "livre-select");
+  for (const e of echs) se.append(new Option(`échelle : ${e.titre}`, e.id, false, e.id === GF.echelle));
+  const moins = el("button", "pan-lien", "−"), plus = el("button", "pan-lien", "+"), niv = el("span", "mut petit");
+  moins.title = "dézoomer (ctrl + molette)"; plus.title = "zoomer (ctrl + molette)";
+  barre.append(se, el("span", "mut petit", "zoom"), moins, niv, plus,
+    el("span", "mut petit gf-aide", "molette : avancer dans le temps · ctrl + molette : zoomer · une vignette : la visionneuse"));
+  const defile = el("div", "gf-defile");
+  page.append(barre, defile);
+
+  const temps = (c) => [c.place?.debut, c.place?.fin].filter((x) => x != null && isFinite(x));
+  const tsConnus = [...F.chapitres.flatMap(temps), ...F.reperes.map((r) => r.t)];
+  const dessine = (garde) => {
+    const ech = echs.find((e) => e.id === GF.echelle) ?? echs[0];
+    const E = echelleFrise(ech, F, tsConnus);
+    const vue = defile.clientWidth || page.clientWidth || 1000;
+    const W = Math.round(vue * GF.zoom), pad = 90, X = (t) => pad + E.x(t) * (W - 2 * pad);
+    niv.textContent = "×" + GF.zoom;
+    const toile = el("div", "gf-toile");
+    toile.style.width = W + "px";
+    // les chapitres : leur place, ou une place estimée entre leurs voisins datés
+    const C = F.chapitres.map((c) => {
+      const ts = temps(c);
+      return { c, g: ts.length ? X(Math.min(...ts)) : null, d: ts.length ? X(Math.max(...ts)) : null, estime: !ts.length };
+    });
+    for (let i = 0; i < C.length; i++) {
+      if (C[i].g != null) continue;
+      let a = i - 1; while (a >= 0 && C[a].estime) a--;
+      let b = i + 1; while (b < C.length && C[b].g == null) b++;
+      const xa = a >= 0 ? C[a].d : pad, xb = b < C.length ? C[b].g : W - pad;
+      const n = b - a, k = i - a;
+      C[i].g = C[i].d = xa + (xb - xa) * k / n;
+    }
+    const parties = [...new Set(F.chapitres.map((c) => c.partie))];
+    const couleur = (c) => COULEURS_FRISE[parties.indexOf(c.partie) % COULEURS_FRISE.length];
+    // en haut : les époques, les graduations, les repères
+    const axe = el("div", "gf-axe");
+    for (const b of F.bandes) {
+      if (ech.bandes && !ech.bandes.includes(b.id)) continue;
+      const segs = b.segments ?? [];
+      segs.forEach((s, i) => {
+        const g = X(s.debut), d = X(s.fin ?? s.debut);
+        if (d - g < 1) return;
+        const z = el("div", "gf-epoque", s.nom);
+        z.style.left = g + "px"; z.style.width = (d - g) + "px";
+        z.style.background = s.couleur ?? melange(b.couleurs?.[0] ?? "#2d5f8a", b.couleurs?.[1] ?? "#c0622f", segs.length > 1 ? i / (segs.length - 1) : 0);
+        z.title = s.nom;
+        axe.append(z);
+      });
+    }
+    for (const t of E.ticks) {
+      const g = el("div", "gf-grad", t.texte ?? libelleT(t.t, F, E.variable));
+      g.style.left = X(t.t) + "px";
+      axe.append(g);
+    }
+    toile.append(axe);
+    const couloir = (titre, hauteur) => {
+      const z = el("div", "gf-couloir");
+      z.style.height = hauteur + "px";
+      z.append(el("div", "gf-etiq", titre));
+      toile.append(z);
+      return z;
+    };
+    // les chapitres
+    const LC = 178, HC = 70;
+    const itC = C.map((x) => ({ ...x, g0: x.g, gc: x.g, dc: x.g + LC })).sort((a, b) => a.gc - b.gc);
+    const nC = couloirs(itC.map((x) => Object.assign(x, { g: x.gc, d: x.dc })), 8);
+    const zc = couloir("Chapitres", 30 + nC * (HC + 10));
+    for (const x of itC) {
+      const c = x.c;
+      const ligne = el("div", "gf-duree");                    // sa durée sur l'axe
+      ligne.style.left = x.g0 + "px"; ligne.style.width = Math.max(4, (C.find((y) => y.c === c).d - x.g0)) + "px";
+      ligne.style.top = (30 + x.couloir * (HC + 10) - 6) + "px"; ligne.style.background = couleur(c);
+      const k = el("div", "gf-carte" + (x.estime ? " gf-estime" : ""));
+      k.style.left = x.g0 + "px"; k.style.top = (30 + x.couloir * (HC + 10)) + "px"; k.style.width = LC + "px";
+      k.style.borderTopColor = couleur(c);
+      const t = el("a", "gf-titre", `${c.numero ?? ""} · ${c.titre}`);
+      t.href = `#plan/c/${c.slug}`;
+      t.title = [c.place?.texte, c.note, x.estime ? "position estimée : pas encore daté (frise.yaml)" : ""].filter(Boolean).join("\n");
+      const l = el("div", "gf-liens");
+      for (const v of ["recit", "essai"]) {
+        const a = el("a", null, v === "recit" ? "récit" : "essai");
+        a.href = `#${c.slug}/${v}/texte`;
+        a.title = c.niveau?.[v] ?? "";
+        a.append(el("span", "gf-niv gf-niv-" + (c.niveau?.[v] ?? "aucun")));
+        l.append(a);
+      }
+      k.append(t, el("div", "gf-date", x.estime ? "date à poser" : c.place?.texte ?? ""), l);
+      zc.append(ligne, k);
+    }
+    const xChap = Object.fromEntries(C.map((x) => [x.c.slug, (x.g + x.d) / 2]));
+    // les fiches : au premier chapitre qui s'appuie sur elles ; un pointillé court jusqu'au dernier
+    const LF = 140, HF = 34;
+    const itF = I.filter((f) => (f.chapitres ?? []).some((c) => xChap[c.slug ?? c] != null)).map((f) => {
+      const xs = f.chapitres.map((c) => xChap[c.slug ?? c]).filter((v) => v != null);
+      const m = Math.min(...xs);
+      return { f, xs, g: m, d: m + LF };
+    }).sort((a, b) => a.g - b.g);
+    const nF = couloirs(itF, 6);
+    const zf = couloir(`Fiches · ${itF.length}`, 30 + nF * (HF + 6));
+    for (const x of itF) {
+      const top = 30 + x.couloir * (HF + 6);
+      if (x.xs.length > 1) {                                   // l'étendue des chapitres qui la citent
+        const s = el("div", "gf-etendue");
+        s.style.left = Math.min(...x.xs) + "px"; s.style.width = (Math.max(...x.xs) - Math.min(...x.xs)) + "px"; s.style.top = (top + HF / 2) + "px";
+        zf.append(s);
+      }
+      const a = el("a", "gf-fiche", x.f.titre ?? x.f.slug);
+      a.href = `#fiches/${x.f.slug}`;
+      a.title = `${x.f.titre ?? x.f.slug}\n${x.xs.length} chapitre(s)`;
+      a.style.left = x.g + "px"; a.style.top = top + "px"; a.style.width = LF + "px";
+      zf.append(a);
+    }
+    // les planches : sous leur chapitre
+    const LP = 130;
+    const itP = PL.flatMap((c) => c.planches.filter((p) => p.existe).map((p) => ({ c, p, g: (xChap[c.chapitre] ?? pad) - LP / 2, d: (xChap[c.chapitre] ?? pad) + LP / 2 })))
+      .sort((a, b) => a.g - b.g);
+    const nP = couloirs(itP, 8);
+    const zp = couloir(`Planches · ${itP.length}`, 30 + Math.max(1, nP) * 128);
+    for (const x of itP) {
+      const src = `/api/planches/${x.c.chapitre}/${x.p.id}.svg`;
+      const a = el("a", "planche-vignette-fiche gf-planche");
+      a.href = src;
+      Object.assign(a.dataset, { visionneuse: src, titre: `Planche ${x.p.numero} — ${x.p.titre}`, legende: x.p.legende ?? "" });
+      const img = el("img"); img.src = src; img.alt = x.p.titre; img.loading = "lazy";
+      a.append(img, el("span", null, `${x.p.numero} · ${x.p.titre}`));
+      a.style.left = x.g + "px"; a.style.top = (30 + x.couloir * 128) + "px"; a.style.width = LP + "px";
+      zp.append(a);
+    }
+    // les repères : un trait sur toute la hauteur
+    for (const r of F.reperes) {
+      const m = el("div", "gf-repere");
+      m.style.left = X(r.t) + "px";
+      m.append(el("span", null, r.titre));
+      m.title = `${r.titre} — ${r.texte ?? ""}`;
+      toile.append(m);
+    }
+    defile.replaceChildren(toile);
+    if (garde) defile.scrollLeft = garde(W);
+  };
+  const zoome = (f, px) => {
+    const z = Math.max(1, Math.min(40, Math.round(GF.zoom * f * 2) / 2));
+    if (z === GF.zoom) return;
+    const W0 = defile.scrollWidth, mx = px ?? defile.clientWidth / 2, r = (defile.scrollLeft + mx) / W0;
+    GF.zoom = z;
+    try { localStorage.setItem("limalibri-grande-frise", JSON.stringify(GF)); } catch { /* */ }
+    dessine((W) => r * W - mx);
+  };
+  moins.onclick = () => zoome(1 / 1.5);
+  plus.onclick = () => zoome(1.5);
+  se.onchange = () => {
+    GF.echelle = se.value;
+    try { localStorage.setItem("limalibri-grande-frise", JSON.stringify(GF)); } catch { /* */ }
+    const r = defile.scrollLeft / (defile.scrollWidth || 1);
+    dessine((W) => r * W);
+  };
+  defile.addEventListener("wheel", (e) => {
+    if (e.ctrlKey) {                                          // ctrl + molette (et le pincement d'un trackpad) : zoomer
+      e.preventDefault();
+      zoome(e.deltaY < 0 ? 1.25 : 0.8, e.clientX - defile.getBoundingClientRect().left);
+    } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {     // la molette : défiler de côté
+      e.preventDefault();
+      defile.scrollLeft += e.deltaY;
+    }
+  }, { passive: false });
+  dessine();
 }
 
 async function pageFrise(id) {

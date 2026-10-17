@@ -841,6 +841,15 @@ taille, à l'écran, dans le PDF et sur le site, et du texte qui se versionne av
 l'histoire. On peut aussi y dessiner des frises internes, par exemple les scènes d'un chapitre dans l'histoire des
 découvertes.
 
+**La grande frise** (Plan → **grande frise**, `#plan/grande-frise`) : le livre dans le temps, sur une page qui défile
+de côté. En haut, la frise (époques, graduations, repères), qui reste visible quand on descend ; en dessous, trois
+couloirs alignés sur le temps : les **chapitres** (leur durée, leur date, des liens vers le récit et l'essai avec leur
+niveau), les **fiches** (au premier chapitre qui s'appuie sur elles, un pointillé jusqu'au dernier), les **planches**
+(en vignettes, qui s'ouvrent dans la visionneuse). La molette avance dans le temps, ctrl + molette (ou le pincement du
+trackpad) zoome autour du pointeur ; l'échelle se choisit (par défaut, celle qui donne la même place à chaque date
+connue, pour que la fin du livre ne soit pas écrasée). Un chapitre pas encore daté est placé d'après ses voisins dans
+l'ordre du livre, en pointillé : « date à poser ».
+
 Tout vient de **`frise.yaml`**, à la racine du livre. Ce fichier s'édite à la main ; LimaLibri le lit et le
 dessine. Un bouton « Amorcer » le crée à partir des périodes des chapitres, et ne remplace jamais un fichier
 existant.
