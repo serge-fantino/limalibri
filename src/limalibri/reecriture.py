@@ -72,7 +72,8 @@ LIMITES = {"verification": {"tours": 25, "recherches": 6, "pages": 12},
            "relecture": {"tours": 90, "recherches": 0, "pages": 0},
            "storyboard": {"tours": 40, "recherches": 0, "pages": 0},
            "recit": {"tours": 40, "recherches": 0, "pages": 0},
-           "reecriture": {"tours": 16, "recherches": 0, "pages": 0}}
+           "reecriture": {"tours": 16, "recherches": 0, "pages": 0},
+           "planche": {"tours": 40, "recherches": 0, "pages": 0}}
 # Un message du CLI peut porter un gros résultat d'outil (un PDF lu d'un bloc) : 1 Mo par défaut
 # ne suffit pas. Et un PDF se lit par pages, jamais entier (voir le crochet).
 TAMPON = 32 * 1024 * 1024
@@ -285,6 +286,10 @@ def _relance(slug, ident, d, consigne, modele_choisi):
     elif d.get("type") == "naive":
         from . import naif
         n = naif.cree(slug, {"version": c["version"], "modele": mc})
+    elif d.get("type") == "planche":
+        from . import dessin
+        n = dessin.cree({"chapitre": c["chapitre"], "mode": d.get("mode"), "planche": c.get("planche"), "consigne": consigne,
+                         "poser": d.get("poser"), "modele": mc})
     elif d.get("type") == "fiche":
         from . import creation
         n = creation.cree({"question": c["question"], "slug": c.get("slug"), "chapitres": c.get("chapitres"),
@@ -561,11 +566,13 @@ def titre_de(d):
     if d.get("type") == "naive":
         from . import naif
         return naif.titre_de(d)
+    if d.get("type") == "planche":
+        from . import dessin
+        return dessin.titre_de(d)
     if d.get("type") == "document":
         return "Texte original de %s" % d["cible"].get("cle")
     if d.get("type") == "redaction":
-        from . import redaction
-        return "redaction", redaction.SCHEMA, redaction.conclut, None
+        return d.get("titre") or "Essai — %s" % (d.get("cible") or {}).get("chapitre", "?")
     if d.get("type") == "plan":
         from . import planif
         return planif.titre_de(d)
@@ -929,6 +936,9 @@ def _genre(d):
     if d.get("type") == "naive":
         from . import naif
         return "naive", naif.SCHEMA, naif.conclut, None
+    if d.get("type") == "planche":
+        from . import dessin
+        return "planche", dessin.schema_de(d), dessin.conclut, None
     if d.get("type") == "document":
         from . import documents
         return "document", documents.SCHEMA, documents.conclut, None

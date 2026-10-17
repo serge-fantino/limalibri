@@ -68,6 +68,17 @@ CATALOGUE = {
                      "paragraphe (son rang dans le plan) : un paragraphe par micro-récit, les assertions du plan dans "
                      "l'ordre de sa séquence, les faits pris dans l'essai, selon les règles du récit. Fable par défaut.",
                      "recit", {"chapitre": "chapitre!", "plan": "texte", "rang": "nombre", "consigne": "texte"}, "pose", "claude"),
+    "proposer_planches": ("proposer des planches",
+                          "Claude lit un chapitre (essai, récit, fiches) et propose des planches — des schémas ou des courbes "
+                          "qui font voir ce que le texte déroule : ce que chacune montre, pourquoi, où le texte l'appellerait, "
+                          "ses sources et ce qui manque pour la sourcer. L'auteur retient : elles entrent « à dessiner ».",
+                          "planche", {"chapitre": "chapitre!", "consigne": "texte"}, "decision", "claude"),
+    "dessiner_planche": ("dessiner une planche",
+                         "Claude dessine une planche du chapitre en SVG, depuis son brief, en la regardant (il la voit rendue "
+                         "dans un navigateur, et corrige chevauchements et débordements) ; tout ce qu'elle affiche est sourcé, "
+                         "le reste laissé en blanc. Retenir écrit le dessin (l'ancien archivé) ; la planche reste « en "
+                         "construction » jusqu'à ce que l'auteur la retienne.",
+                         "planche", {"chapitre": "chapitre!", "planche": "texte!", "consigne": "texte"}, "pose", "claude"),
     "naif": ("lecture naïve",
              "Un lecteur qui n'a lu ni le cadre ni le reste du livre relève chaque endroit où il doit deviner.",
              "naive", {"chapitre": "chapitre!"}, "lecture", "claude"),
@@ -112,6 +123,10 @@ ARTEFACTS = {
     "ecrire_recit": (["posé d'office : chapters/<slug>/recit.md (les paragraphes de la portée remplacés, le reste gardé) et "
                       "links.yaml (plan, assertions, ajout) ; l'ancien récit dans historique/"],
                      ["chapters/<slug>/recit.md et links.yaml ; l'ancien récit dans chapters/<slug>/historique/"]),
+    "proposer_planches": ([], ["chapters/<slug>/planches.yaml : une entrée « à dessiner » par planche retenue, avec son brief"]),
+    "dessiner_planche": (["posé d'office (dans un plan) : chapters/<slug>/planches/<id>.svg ; l'ancien dessin dans planches/historique/"],
+                         ["chapters/<slug>/planches/<id>.svg (l'ancien dans planches/historique/) ; planches.yaml : titre, "
+                          "légende, « en construction »"]),
     "naif": ([], ["chapters/<slug>/<version>.md : les paragraphes corrigés (relevés appliqués)",
                   "chapters/<slug>/annotations.jsonl : les relevés gardés en annotations",
                   "chapters/<slug>/relectures.json : la lecture enregistrée (la porte « naïf » du harnais)"]),
@@ -130,6 +145,23 @@ CADRE = {
     "critere": "un critère mesuré ajouté à l'objectif (objectifs.yaml), un de ceux que l'atelier sait mesurer",
     "consigne": "une consigne commune (objectifs.yaml), ajoutée à toutes les actions de Claude lancées pour cet objectif",
 }
+
+
+def tout():
+    """Le catalogue de LimaLibri, plus les capacités propres au livre (capacites.yaml, capacites_livre.py)."""
+    from . import capacites_livre
+    C = dict(CATALOGUE)
+    for k, c in capacites_livre.toutes().items():
+        C[k] = capacites_livre.pour_catalogue(c)
+    return C
+
+
+def artefacts(cap):
+    if cap in ARTEFACTS:
+        return ARTEFACTS[cap]
+    from . import capacites_livre
+    c = capacites_livre.toutes().get(cap)
+    return capacites_livre.artefacts(c) if c else ([], [])
 
 
 def _chapitres():
@@ -151,12 +183,13 @@ def _parties():
 
 def valide(cap, params, connus=None):
     """Les problèmes d'une action (liste vide : lançable)."""
-    if cap not in CATALOGUE:
+    C = tout()
+    if cap not in C:
         return ["capacité inconnue : %s" % cap]
     P = params or {}
     K = connus or {"chapitres": _chapitres(), "fiches": _fiches(), "parties": _parties()}
     out = []
-    for k, t in CATALOGUE[cap][3].items():
+    for k, t in C[cap][3].items():
         v = P.get(k)
         if t.endswith("!") and v in (None, "", []):
             out.append("paramètre manquant : %s" % k)
@@ -186,6 +219,11 @@ def lance(cap, params, consigne_commune="", options=None):
     P = dict(params or {})
     O = options or {}
     cons = "\n\n".join(x for x in ((P.get("consigne") or "").strip(), (consigne_commune or "").strip()) if x)
+    if cap not in CATALOGUE:                            # une capacité propre au livre (sa primitive : plan_de_tete)
+        from . import capacites_livre, narration
+        capacites_livre.une(cap)
+        return SLUG_KB, narration.cree({"chapitre": P["chapitre"], "capacite": cap, "consigne": cons,
+                                         "modele": O.get("modele"), "poser": O.get("poser", True)})
     if cap == "fiche":
         from . import creation
         return SLUG_KB, creation.cree({"question": P["question"], "slug": P.get("slug"), "chapitres": P.get("chapitres") or [],
@@ -227,6 +265,11 @@ def lance(cap, params, consigne_commune="", options=None):
         from . import relecture
         return SLUG_KB, relecture.cree({"partie": P.get("partie"), "chapitres": P.get("chapitres") or [], "consigne": cons,
                                          "version": O.get("version") or "essai", "modele": O.get("modele")})
+    if cap in ("proposer_planches", "dessiner_planche"):
+        from . import dessin
+        return SLUG_KB, dessin.cree({"chapitre": P["chapitre"], "mode": "proposer" if cap == "proposer_planches" else "dessiner",
+                                      "planche": P.get("planche"), "consigne": cons, "modele": O.get("modele"),
+                                      "poser": O.get("poser", True)})
     if cap == "naif":
         from . import naif
         return P["chapitre"], naif.cree(P["chapitre"], {"version": O.get("version") or "essai"})
@@ -238,7 +281,7 @@ def lance(cap, params, consigne_commune="", options=None):
 
 def cout(cap, moyennes=None):
     """(dollars, secondes) moyens d'une capacité dans ce livre."""
-    g = CATALOGUE.get(cap, (None,) * 6)[2]
+    g = tout().get(cap, (None,) * 6)[2]
     if not g:
         return (0.0, 0)
     from . import execution
@@ -247,27 +290,38 @@ def cout(cap, moyennes=None):
 
 
 def catalogue():
-    from . import execution
+    from . import execution, capacites_livre
     M = execution._moyennes()
+    L = capacites_livre.lit()
     return {"capacites": [{"id": k, "libelle": v[0], "quoi": v[1], "genre": v[2], "params": v[3], "fin": v[4], "par": v[5],
-                           "au_resultat": ARTEFACTS.get(k, ([], []))[0], "a_la_decision": ARTEFACTS.get(k, ([], []))[1],
+                           "au_resultat": artefacts(k)[0], "a_la_decision": artefacts(k)[1], "livre": k not in CATALOGUE,
                            "cout": round(cout(k, M)[0], 2) if v[2] else None, "duree_s": round(cout(k, M)[1]) if v[2] else None}
-                          for k, v in CATALOGUE.items()],
-            "cadre": [{"type": k, "quoi": v} for k, v in CADRE.items()]}
+                          for k, v in tout().items()],
+            "cadre": [{"type": k, "quoi": v} for k, v in CADRE.items()],
+            "livre": {"fichier": capacites_livre.FICHIER, "existe": L["existe"], "avertissements": L["avertissements"],
+                      "capacites": [{"id": k, "libelle": c["libelle"], "quoi": pour_livre(c), "primitive": c["primitive"],
+                                     "plan": c["plan"]["id"], "titre": c["plan"]["titre"], "mots": c["mots"],
+                                     "sauf": c.get("sauf") or []}
+                                    for k, c in L["capacites"].items()]}}
+
+
+def pour_livre(c):
+    from . import capacites_livre
+    return capacites_livre.pour_catalogue(c)[1]
 
 
 def texte_pour_claude():
     """Le catalogue, tel que Claude le lit dans un cadrage."""
     M = None
     L = []
-    for k, v in CATALOGUE.items():
+    for k, v in tout().items():
         c = cout(k, M) if v[2] else None
         L.append("- `%s` — %s. %s Paramètres : %s.%s%s" % (
             k, v[0], v[1], ", ".join("%s (%s)" % (p, t) for p, t in v[3].items()),
             {"decision": " Le résultat attend la décision de l'auteur.", "pose": " Le résultat s'écrit dans le livre.",
              "lecture": " Rend un rapport.", "auteur": ""}[v[4]],
             " Coût moyen ici : ~%.2f $, ~%d min." % (c[0], max(1, round(c[1] / 60))) if c else ""))
-        a, b = ARTEFACTS.get(k, ([], []))
+        a, b = artefacts(k)
         if a or b:
             L.append("  Écrit : " + " ; ".join(a + b) + ".")
     L.append("\nPropositions de cadre (appliquées si l'auteur les accepte) :")

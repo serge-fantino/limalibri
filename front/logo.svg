@@ -1,0 +1,16 @@
+<!-- LimaLibri : une plume qui écrit sur un livre ouvert -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="2 0 60 56" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- le livre ouvert -->
+  <path d="M32 50 C24 45 14 45 5 48 V20 C14 17 24 17 32 22 Z" fill="#f4ecdc" stroke="#6b6357" stroke-width="2"/>
+  <path d="M32 50 C40 45 50 45 59 48 V20 C50 17 40 17 32 22 Z" fill="#fffdf8" stroke="#6b6357" stroke-width="2"/>
+  <path d="M32 22 V50" stroke="#6b6357" stroke-width="2"/>
+  <!-- les lignes déjà écrites -->
+  <path d="M10 27 C15 25.6 21 25.6 27 27 M10 32 C15 30.6 21 30.6 27 32 M10 37 C14 35.8 18 35.8 22 36.6" stroke="#b3a993" stroke-width="1.6"/>
+  <!-- la ligne qui s'écrit -->
+  <path d="M37 33 q2.2 -2.6 4.4 0 t4.4 0 t4.4 0 t4.4 0" stroke="#2d5f8a" stroke-width="1.8"/>
+  <!-- la plume : la pointe en (37,33) -->
+  <g>
+    <path d="M37 33 C40 24 48 12 61 3 C57 14 49 25 37 33 Z" fill="#c9893f" stroke="#8a5a2b" stroke-width="1.4"/>
+    <path d="M37 33 L55 10 M45 23.5 L48.5 23 M49 18 L52.5 17" stroke="#8a5a2b" stroke-width="1.1"/>
+  </g>
+</svg>

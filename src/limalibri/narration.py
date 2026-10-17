@@ -13,6 +13,11 @@ Il rend, pour chaque plan de la portée, ses paragraphes dans l'ordre — un par
 permis — chacun avec les assertions qu'il porte (ou « ajout »). Poser réécrit recit.md : les paragraphes du
 plan (ou le paragraphe du rang) sont remplacés, le reste est gardé tel quel, avec ses ancres ; links.yaml
 suit (plan, assertions, ajout) ; l'ancien récit est archivé dans historique/.
+
+Un plan d'en-tête (livre.en_tete : l'ouverture d'Un Monde) s'écrit par sa capacité du livre (capacites_livre.py,
+primitive plan_de_tete) : la même demande t-, avec « capacite » dans sa cible — Claude reçoit la section des règles
+qui donne la voix de ce texte et la consigne du livre, et rend les micro-récits avec les paragraphes ; poser met le
+plan en tête du storyboard (créé s'il manque). Le récit ordinaire laisse ces plans tels quels.
 """
 import re
 import json
@@ -136,38 +141,62 @@ def portee_lisible(c, plan=None, rang=None):
     return c["title"]
 
 
+def recit_ecrit(slug):
+    """Le récit du chapitre a-t-il des paragraphes, hors plans d'en-tête ?"""
+    tete = livre.plans_en_tete(slug)
+    return any(L for pid, L in _groupes(slug).items() if pid not in tete)
+
+
 def cree(corps):
-    """{chapitre, plan?, rang? (1, 2…), consigne?, modele?, poser?}."""
+    """{chapitre, plan?, rang? (1, 2…), capacite? (une capacité du livre : son plan d'en-tête), consigne?, modele?, poser?}."""
+    from . import capacites_livre
     slug = (corps.get("chapitre") or "").strip()
     c = next((x for x in livre.chapitres() if x["slug"] == slug), None)
     if not c:
         raise ValueError("chapitre inconnu : %s" % slug)
     beats = _brief(slug).get("beats") or []
-    if not beats:
-        raise ValueError("le chapitre n'a pas de storyboard : le récit s'écrit depuis ses plans")
     plan = str(corps.get("plan") or "").strip() or None
     rang = int(corps["rang"]) if corps.get("rang") else None
-    if plan and plan not in {str(b.get("id")) for b in beats}:
+    capacite = (corps.get("capacite") or "").strip() or None
+    if not capacite and plan and plan in livre.plans_en_tete(slug):     # un plan d'en-tête : sa capacité l'écrit
+        cap = capacites_livre.de_plan(plan)
+        if not cap:
+            raise ValueError("le plan %s est à part (en-tête) : la capacité du livre qui l'écrit n'est plus déclarée" % plan)
+        capacite = cap["id"]
+    if capacite:
+        cap = capacites_livre.une(capacite)
+        plan, rang = cap["plan"]["id"], None
+        if capacites_livre.exclu(cap, slug):
+            raise ValueError("ce chapitre n'a pas de plan « %s » (capacites.yaml : sauf)" % cap["plan"]["titre"])
+        if not recit_ecrit(slug):
+            raise ValueError("le plan « %s » s'écrit après le récit du chapitre : écrire d'abord le récit" % cap["plan"]["titre"])
+    elif not beats:
+        raise ValueError("le chapitre n'a pas de storyboard : le récit s'écrit depuis ses plans")
+    if not capacite and plan and plan not in {str(b.get("id")) for b in beats}:
         raise ValueError("plan inconnu : %s" % plan)
     if rang and not plan:
         raise ValueError("un paragraphe se désigne par son plan et son rang")
     if rang is not None and rang < 1:
         raise ValueError("rang : 1, 2…")
-    choisi = reecriture._choix_modele(corps)
+    choisi = reecriture._choix_modele(corps) or (cap.get("modele") if capacite else None)
     d = {"id": "t-" + time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2),
          "type": "recit", "portee": "recit", "mode": "ecriture",
          "consigne": (corps.get("consigne") or "").strip(),
          "modele_choisi": choisi or (None if reecriture.modele("recit") else DEFAUT),
          "poser": bool(corps.get("poser")),
-         "cible": {"chapitre": slug, "version": "recit", "plan": plan, "rang": rang},
+         "cible": {"chapitre": slug, "version": "recit", "plan": plan, "rang": rang, **({"capacite": capacite} if capacite else {})},
          "etat": "en_attente", "cree": livre._maintenant(), "rang": time.time()}
-    d["titre"] = "Récit — %s%s" % ("%s. " % c["numero"] if c.get("numero") else "", portee_lisible(c, plan, rang))
+    d["titre"] = "%s — %s%s" % (cap["libelle"][:1].upper() + cap["libelle"][1:] if capacite else "Récit",
+                                "%s. " % c["numero"] if c.get("numero") else "", c["title"] if capacite else portee_lisible(c, plan, rang))
     reecriture._ecrit(SLUG_KB, d)
     from . import file
     return file.part(SLUG_KB, d, "narration", "demarre", d["id"])
 
 
 def _plan_texte(b, V):
+    if livre.en_tete(b):
+        return ["## Plan %s — %s (à part : un texte en tête du chapitre, dans une autre voix ; il n'est pas à écrire ici)"
+                % (b.get("id"), b.get("title") or "")]
     L = ["## Plan %s — %s" % (b.get("id"), b.get("title") or "")]
     for k in ("lieu", "temps", "ambiance", "attaque", "chute"):
         if b.get(k):
@@ -188,6 +217,8 @@ def _plan_texte(b, V):
 
 def compile_contexte(d):
     from . import plan as P_, regles
+    if d["cible"].get("capacite"):
+        return _contexte_tete(d)
     slug, plan, rang = d["cible"]["chapitre"], d["cible"].get("plan"), d["cible"].get("rang")
     systeme = SYSTEME.format(titre=livre.meta().get("titre", ""), regles=regles.texte_pour_claude("recit") or "(aucune)")
     P = P_.lit()
@@ -213,7 +244,7 @@ def compile_contexte(d):
     # ce que la demande écrit
     L += ["", "# La portée"]
     if not plan:
-        L.append("Le chapitre entier : tous les plans, dans l'ordre.")
+        L.append("Le chapitre entier : tous les plans, dans l'ordre (sauf les plans à part, en tête : ils restent tels quels).")
     elif not rang:
         L.append("Le plan %s seulement : tous ses paragraphes, exactement un par micro-récit." % plan)
     else:
@@ -229,7 +260,7 @@ def compile_contexte(d):
             ps = _effectifs(G.get(str(b.get("id"))) or [])
             L.append("\n## %s%s" % (b.get("id"), "" if ps else " — rien d'écrit"))
             for r, (_, t, _l) in ps:
-                dedans = not plan or (str(b.get("id")) == plan and (not rang or r == rang))
+                dedans = (not plan and not livre.en_tete(b)) or (str(b.get("id")) == plan and (not rang or r == rang))
                 L.append("%d.%s %s" % (r, " [à remplacer]" if dedans else "", t))
     if i > 0:
         pc = ordre[i - 1][1]
@@ -241,6 +272,165 @@ def compile_contexte(d):
     from . import refs
     L.append(refs.annexe(d.get("consigne")))
     return systeme, "\n".join(L)
+
+
+# ------------------------------------------------------------------ un plan d'en-tête (capacité du livre)
+
+SYSTEME_TETE = """Tu écris {libelle} d'un chapitre du livre « {titre} ». Le livre a deux versions alignées chapitre pour
+chapitre : l'essai, qui explique, et le récit, qui raconte. Ce que tu écris n'est ni l'un ni l'autre : un texte à part,
+en tête du chapitre du récit, avant son premier plan, rendu à part (italique, un blanc après). Sa voix, sa matière et
+sa forme sont dans la section « {regle} » des règles ci-dessous et dans la consigne du livre : pour ce texte, elles
+priment sur la voix du récit. Les autres règles du récit valent aussi, sauf ce qu'elles disent de la voix.
+
+Le récit du chapitre est écrit : il est plus bas, en entier. Ton texte vient en tête, mais il s'écrit après lui, en
+le connaissant ; il ne le résume pas, il ne l'annonce pas.
+
+Les faits viennent de l'essai : lis l'essai du chapitre (chapters/{slug}/essai.md). Tu peux lire les fiches
+(kb/fiches/) et le récit des chapitres (chapters/*/recit.md). Pas de web. Tu ne dis rien que l'essai n'établisse.
+
+Longueur : {longueur}. Rends le plan « {plan} » avec ses paragraphes, dans l'ordre ; pour chacun : texte (un
+paragraphe, sans titre, sans ancre ^) et micro (le micro-récit qu'il réalise : ce qu'il fait voir, en une phrase ; il
+devient la ligne du storyboard en regard). Et des remarques : ce que tu n'as pas pu faire, ce que tu proposes. Tout en
+français.
+
+## La voix de ce texte : {regle}
+{texte_regle}
+
+## La consigne du livre pour ce texte
+{consigne}
+
+## Les règles du récit
+{regles}"""
+
+SCHEMA_TETE = {
+    "type": "object",
+    "properties": {
+        "plans": {"type": "array", "items": {"type": "object", "properties": {
+            "id": {"type": "string"},
+            "paragraphes": {"type": "array", "items": {"type": "object", "properties": {
+                "texte": {"type": "string"}, "micro": {"type": "string"}}, "required": ["texte", "micro"]}}},
+            "required": ["id", "paragraphes"]}},
+        "remarques": {"type": "string"}},
+    "required": ["plans"]}
+
+
+def _longueur(cap):
+    L = []
+    if cap.get("mots"):
+        L.append("%d à %d mots en tout" % tuple(cap["mots"]))
+    if cap.get("paragraphes"):
+        a, b = cap["paragraphes"]
+        L.append("%d paragraphe%s" % (a, "s" if a > 1 else "") if a == b else "%d à %d paragraphes" % (a, b))
+    return ", ".join(L) or "celle que la règle donne"
+
+
+def _texte_tete(slug, pid):
+    """Les paragraphes d'un plan (d'en-tête), dans l'ordre."""
+    return [t for _, (_, t, _) in _effectifs(_groupes(slug).get(pid) or [])]
+
+
+def _contexte_tete(d):
+    from . import plan as P_, regles, capacites_livre
+    slug = d["cible"]["chapitre"]
+    cap = capacites_livre.une(d["cible"]["capacite"])
+    pid = cap["plan"]["id"]
+    sec = capacites_livre.regle(cap)
+    systeme = SYSTEME_TETE.format(
+        libelle=cap["libelle"].replace("écrire ", "", 1), titre=livre.meta().get("titre", ""), slug=slug, plan=pid,
+        regle=(sec or {}).get("titre") or cap.get("regle") or "(aucune)", longueur=_longueur(cap),
+        texte_regle=(sec or {}).get("texte") or "(la section n'est pas encore écrite : suis la consigne du livre)",
+        consigne=cap.get("consigne") or "(aucune)", regles=regles.texte_pour_claude("recit") or "(aucune)")
+    P = P_.lit()
+    ordre = [(p, c) for p in P["parties"] for c in p["chapitres"]]
+    i = next(k for k, (_, c) in enumerate(ordre) if c["slug"] == slug)
+    p, c = ordre[i]
+    ch = next((x for x in livre.chapitres() if x["slug"] == slug), {})
+    br = _brief(slug)
+    L = ["# Le chapitre : %s — %s" % (slug, c["title"])]
+    if ch.get("periode"):
+        L.append("Son moment : %s" % ch["periode"])
+    L += ["Sa partie : %s%s" % (p["title"], " — " + p["arc"] if p.get("arc") else ""),
+          "Son essai : chapters/%s/essai.md (à lire pour les faits)" % slug]
+    if isinstance(br.get("intent"), dict) and br["intent"]:
+        L.append("Ce que le chapitre fait comprendre : " + " · ".join(" ".join(str(v).split()) for v in br["intent"].values()))
+    ordinaires = [b for b in br.get("beats") or [] if not livre.en_tete(b)]
+    if ordinaires:
+        L += ["", "# Le récit qui suit ton texte : ses plans (pour savoir où il entre, pas pour le résumer)"]
+        L += ["- %s %s — attaque : %s" % (b.get("id"), b.get("title") or "", " ".join(str(b.get("attaque") or "—").split()))
+              for b in ordinaires]
+    G = _groupes(slug)
+    tout = [t for b in ordinaires for _, (_, t, _) in _effectifs(G.get(str(b.get("id"))) or [])]
+    if tout:
+        L += ["", "# Le chapitre, en entier : ton texte vient avant lui, mais s'écrit après. Il ouvre ce que le chapitre "
+              "va faire, sans l'annoncer ni le résumer ; n'en reprends ni les images ni les formules."] + tout
+    deja = _texte_tete(slug, pid)
+    if deja:
+        L += ["", "# Le texte actuel de ce plan (à remplacer en entier)"] + deja
+    if i > 0:
+        pc = ordre[i - 1][1]
+        prec = _texte_tete(pc["slug"], pid) if livre.dossier(pc["slug"]).is_dir() else []
+        if prec:
+            L += ["", "# Le même texte, au chapitre précédent (%s — %s) : ne reprends aucune de ses formules"
+                  % (pc["slug"], pc["title"])] + prec
+    L += ["", "Les textes de ce plan dans les autres chapitres : chapters/*/recit.md, les paragraphes du plan « %s » "
+          "dans chapters/*/links.yaml — une formule ne sert qu'une fois." % pid]
+    if d.get("consigne"):
+        L += ["", "# La consigne de l'auteur", d["consigne"]]
+    from . import refs
+    L.append(refs.annexe(d.get("consigne")))
+    return systeme, "\n".join(L)
+
+
+def _resultat_tete(d, sortie):
+    from . import capacites_livre
+    cap = capacites_livre.une(d["cible"]["capacite"])
+    pid = cap["plan"]["id"]
+    ps = []
+    for p in sortie.get("plans") or []:
+        if str(p.get("id") or "").strip() not in (pid, ""):
+            continue
+        ps += [{"texte": _propre(x.get("texte")), "micro": " ".join(str(x.get("micro") or "").split()),
+                "assertions": [], "ajout": True} for x in p.get("paragraphes") or [] if _propre(x.get("texte"))]
+    mots = sum(len(x["texte"].split()) for x in ps)
+    hors = []
+    if cap.get("mots") and not cap["mots"][0] <= mots <= cap["mots"][1]:
+        hors.append("%d mots pour %d à %d" % (mots, cap["mots"][0], cap["mots"][1]))
+    if cap.get("paragraphes") and not cap["paragraphes"][0] <= len(ps) <= cap["paragraphes"][1]:
+        hors.append("%d paragraphes pour %d à %d" % (len(ps), cap["paragraphes"][0], cap["paragraphes"][1]))
+    return {"plans": [{"id": pid, "paragraphes": ps}] if ps else [], "remarques": sortie.get("remarques") or "", "mots": mots,
+            "capacite": cap["id"], "controle": {"inconnues": [], "non_portees": [], "ecarts": [], "longueur": hors}}
+
+
+def _pose_plan_tete(slug, capacite, R):
+    """Le plan d'en-tête dans brief.yaml : créé en tête s'il manque, ses micro-récits remplacés par ceux de la réponse."""
+    from . import capacites_livre
+    from ruamel.yaml.comments import CommentedMap, CommentedSeq
+    cap = capacites_livre.une(capacite)
+    pid = cap["plan"]["id"]
+    ps = next((p["paragraphes"] for p in R["plans"] if p["id"] == pid), None)
+    if not ps:
+        raise ValueError("rien à poser : la réponse n'a aucun paragraphe pour le plan %s" % pid)
+    p = livre.dossier(slug) / "brief.yaml"
+    y = livre.yaml_rt()
+    doc = (y.load(p.read_text(encoding="utf-8")) if p.exists() else None) or CommentedMap()
+    if doc.get("beats") is None:
+        doc["beats"] = CommentedSeq()
+    beats = doc["beats"]
+    b = next((x for x in beats if str(x.get("id")) == pid), None)
+    if b is None:
+        b = CommentedMap()
+        b["id"] = pid
+        b["sorte"] = cap["id"]
+        b["title"] = cap["plan"]["titre"]
+        beats.insert(sum(1 for x in beats if livre.en_tete(x)), b)     # après les autres plans d'en-tête, avant le récit
+    else:
+        b["sorte"] = cap["id"]
+        tete = [x for x in beats if livre.en_tete(x)]
+        if beats.index(b) >= len(tete):                                 # un plan d'en-tête reste en tête
+            beats.remove(b)
+            beats.insert(len(tete) - 1, b)
+    b["recits"] = [x.get("micro") or "(paragraphe %d)" % (k + 1) for k, x in enumerate(ps)]
+    p.write_text(livre.rt_texte(y, doc), encoding="utf-8")
 
 
 def demarre(ident):
@@ -261,7 +451,7 @@ async def _execute(ident):
         max_buffer_size=reecriture.TAMPON, thinking=reecriture.PENSEE,
         tools=outils, allowed_tools=outils, max_turns=lim["tours"] + 2, setting_sources=[],
         cwd=str(livre.LIVRE), system_prompt=d["contexte"]["systeme"],
-        output_format={"type": "json_schema", "schema": SCHEMA},
+        output_format={"type": "json_schema", "schema": SCHEMA_TETE if d["cible"].get("capacite") else SCHEMA},
         hooks=reecriture.garde(d, lim), model=reecriture.modele("recit", d))
     await reecriture._lance(SLUG_KB, d, options, d["contexte"]["message"], conclut)
 
@@ -272,7 +462,19 @@ def _propre(t):
 
 def conclut(d, sortie):
     plan, rang = d["cible"].get("plan"), d["cible"].get("rang")
-    beats = {str(b.get("id")): b for b in _brief(d["cible"]["chapitre"]).get("beats") or []}
+    R = _resultat_tete(d, sortie) if d["cible"].get("capacite") else _resultat(d, sortie)
+    d.update(etat="prete", resultat=R)
+    if d.get("poser"):
+        try:
+            e = pose(d["cible"]["chapitre"], R, d["id"], plan, rang, d["cible"].get("capacite"))
+            d.update(etat="decidee", decision={"proposition": "posee", "d_office": True, "date": livre._maintenant(), **e})
+        except Exception as e:                          # noqa: BLE001 — la proposition reste à décider
+            d["erreur_pose"] = "%s" % e
+
+
+def _resultat(d, sortie):
+    plan, rang = d["cible"].get("plan"), d["cible"].get("rang")
+    beats = {str(b.get("id")): b for b in _brief(d["cible"]["chapitre"]).get("beats") or [] if not livre.en_tete(b)}
     V = _verrou(d["cible"]["chapitre"])
     plans = []
     for p in sortie.get("plans") or []:
@@ -292,13 +494,7 @@ def conclut(d, sortie):
          "mots": sum(len(x["texte"].split()) for p in plans for x in p["paragraphes"]),
          "controle": {"inconnues": sorted(a for a in portees if V and a not in V),
                       "non_portees": [] if rang else sorted(attendues - portees), "ecarts": ecarts}}
-    d.update(etat="prete", resultat=R)
-    if d.get("poser"):
-        try:
-            e = pose(d["cible"]["chapitre"], R, d["id"], plan, rang)
-            d.update(etat="decidee", decision={"proposition": "posee", "d_office": True, "date": livre._maintenant(), **e})
-        except Exception as e:                          # noqa: BLE001 — la proposition reste à décider
-            d["erreur_pose"] = "%s" % e
+    return R
 
 
 def _nouvel_id(pris):
@@ -309,10 +505,13 @@ def _nouvel_id(pris):
             return i
 
 
-def pose(slug, R, demande, plan=None, rang=None):
-    """Réécrit recit.md : les paragraphes de la portée remplacés, le reste gardé avec ses ancres ; links.yaml suit."""
+def pose(slug, R, demande, plan=None, rang=None, capacite=None):
+    """Réécrit recit.md : les paragraphes de la portée remplacés, le reste gardé avec ses ancres ; links.yaml suit.
+    Avec une capacité du livre : son plan d'en-tête est d'abord posé (ou mis à jour) en tête du storyboard."""
     from . import plan as P_
     dossier = livre.dossier(slug)
+    if capacite:
+        _pose_plan_tete(slug, capacite, R)
     beats = [str(b.get("id")) for b in _brief(slug).get("beats") or []]
     nouveaux = {p["id"]: p["paragraphes"] for p in R["plans"]}
     if not nouveaux:
@@ -571,7 +770,8 @@ def decide(ident, corps):
     if corps.get("action") == "rejeter":
         d.update(etat="decidee", decision={"proposition": None, "motif": (corps.get("motif") or "").strip(), "date": livre._maintenant()})
     else:
-        e = pose(d["cible"]["chapitre"], d["resultat"], ident, d["cible"].get("plan"), d["cible"].get("rang"))
+        e = pose(d["cible"]["chapitre"], d["resultat"], ident, d["cible"].get("plan"), d["cible"].get("rang"),
+                 d["cible"].get("capacite"))
         d.update(etat="decidee", decision={"proposition": "posee", "date": livre._maintenant(), **e})
     reecriture._ecrit(SLUG_KB, d)
     return d

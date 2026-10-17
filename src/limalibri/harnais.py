@@ -197,7 +197,7 @@ def portes_recit(slug):
     P.append(_porte("repetitions", "Répétitions", _repetitions(B)))
     # R14 : les formules réservées
     rel = []
-    autres = [c["slug"] for c in livre.chapitres() if c.get("atelier") and c["slug"] != slug]
+    autres = [c["slug"] for c in livre.chapitres_seuls() if c.get("atelier") and c["slug"] != slug]
     for f in br.get("derogations") or []:
         f = str(f).strip()
         if len(f) < 4:

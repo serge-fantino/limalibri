@@ -19,7 +19,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--pf);font-si
 #versions button.actif{color:var(--fg);border-color:var(--acc)}
 #cadre{display:grid;grid-template-columns:var(--gauche-l, 16rem) minmax(0,1fr) var(--droite-l, 20rem);height:calc(100vh - 2.8rem)}
 body{overflow:hidden}
-#centre{display:flex;flex-direction:column;min-width:0;min-height:0}
+#centre{display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
 #defile{flex:1;overflow:auto;min-height:0}
 #gauche{border-right:1px solid var(--rule);font-family:var(--ui);font-size:.85rem;
  height:100%;display:flex;flex-direction:column;overflow:hidden;min-height:0}
@@ -97,6 +97,11 @@ body[data-vue="storyboard"] #page{max-width:none;padding:2rem 2rem 6rem}
 .par-sb.ligne > *:not(.sb-rang){grid-column:2}
 .sb-rang{color:var(--mut);font-size:.72rem;padding-top:.12rem;text-align:right}
 .par-texte.ligne.ajout p{border-left:2px dotted var(--acc);padding-left:.5rem;margin-left:-.6rem}
+/* un plan d'en-tête (une capacité du livre : l'ouverture…) : à part, en italique, un blanc au lieu du trait après */
+p.tete{font-style:italic}
+p.tete + hr{border:0;height:0;margin:2.6rem 0 0}
+.cap-livre{color:var(--acc)}
+.pl-recit .pl-tete{font-style:italic}
 .par .survol{background:var(--bar)}
 .par .choisi{background:color-mix(in srgb,var(--hl) 40%,transparent)}
 .par .choisi.par-gout{background:none}
@@ -1257,6 +1262,8 @@ a.obj-titre:hover{text-decoration:underline}
 .sb-outils-para{margin-top:.2rem}
 .sb-a-ecrire .pan-lien{display:inline;padding:0}
 /* la configuration du site public : des champs simples, libellé à gauche */
+.pub-adresse{display:flex;flex-wrap:wrap;align-items:baseline;gap:.35rem;margin:.4rem 0 .8rem}
+.pub-adresse .pan-lien{font-size:1rem}
 .pub-config{max-width:36rem;margin:.6rem 0 1rem}
 .pub-champ{display:grid;grid-template-columns:10rem 1fr;align-items:center;gap:.8rem;margin:.35rem 0;font-size:.85rem}
 .pub-champ span{color:var(--mut)}
@@ -1289,8 +1296,75 @@ a.obj-titre:hover{text-decoration:underline}
 .mini-frise-at{border:1px solid var(--rule);border-radius:8px;background:var(--bar);padding:.4rem .7rem .2rem;margin:.6rem 0 1rem}
 .mini-frise-at .mini-tete{display:flex;flex-wrap:wrap;gap:.3rem .8rem;align-items:baseline}
 .mini-frise-at .mini-tete .pan-lien{font-size:.78rem}
+.mini-frise-at .mini-echelle{font-size:.74rem;padding:.05rem .3rem;margin-left:auto}
 .mini-svg-at{display:block;overflow:visible;font-family:system-ui,-apple-system,sans-serif}
 .mini-svg-at .mini-axe{stroke:var(--rule)}
 .mini-svg-at .mini-autre{stroke:var(--mut);opacity:.55}
 .mini-svg-at .mini-ici{fill:var(--acc)}
 .mini-svg-at .mini-lib{fill:var(--mut);font-size:10px}
+
+/* les planches d'un chapitre (limalibri/planches.py) : dans le texte, et dans la colonne du chapitre */
+figure.planche{margin:1.4rem 0}
+figure.planche img{display:block;width:100%;height:auto;border:1px solid var(--rule);border-radius:6px;background:#fffdf8}
+figure.planche figcaption{font-family:var(--ui);font-size:.8rem;color:var(--mut);margin-top:.4rem;line-height:1.45}
+figure.planche figcaption b{color:var(--fg);font-weight:600}
+.planche-etat{font-style:italic}
+a.renvoi-planche{font-family:var(--ui);font-size:.85em}
+.planche-absente{color:#c0622f}
+#planches-col{padding:0 .6rem 1.5rem;font-family:var(--ui);font-size:.8rem}
+#planches-col h4{margin:0 0 .4rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}
+#planches-col .pl-ligne{padding:.16rem .3rem}
+.pl-planche{cursor:pointer;display:flex;gap:.4rem;align-items:baseline}
+.pl-planche:hover .pl-debut{text-decoration:underline}
+.planche-vue img{display:block;width:100%;max-width:900px;background:#fffdf8;border:1px solid var(--rule);border-radius:6px}
+.planche-tiroir{display:block;width:100%;background:#fffdf8;border:1px solid var(--rule);border-radius:6px;margin:.5rem 0}
+.planche-prop{display:block;cursor:pointer}
+/* la page d'une planche (#planche/<chapitre>/<id>) */
+body[data-vue="planche"] #page{max-width:60rem}
+.pl-planche .pl-pleine{margin-left:auto;padding:0 .3rem;color:var(--mut);text-decoration:none}
+.pl-planche .pl-pleine:hover{color:var(--acc)}
+.planche-barre{align-items:center;flex-wrap:wrap;gap:.6rem;margin:.4rem 0 1rem}
+.planche-grande{display:block;border:1px solid var(--rule);border-radius:4px;background:#fffdf8;overflow:hidden}
+.planche-grande img{display:block;width:100%;height:auto}
+.planche-legende{font-style:italic;margin:.6rem 0}
+.planche-appel{display:block;font-size:.85rem;line-height:1.35;margin:.2rem 0 .5rem}
+.planche-fiche{margin:.2rem 0 .5rem}
+.planche-fiche .lien-fiche{display:inline;margin:0}
+.planche-fiche .mut{margin-left:.3rem}
+.planche-ajout{display:flex;gap:.3rem;margin:.3rem 0 .6rem}
+.planche-ajout input{flex:1;min-width:0;background:var(--bg);color:var(--fg);border:1px solid var(--rule);border-radius:3px;padding:.2rem .4rem;font:inherit}
+.planche-dem{display:block;text-align:left;margin:.15rem 0}
+
+/* le logo, et la page d'attente : la plume qui écrit sur le livre (attente() dans limalibri.js) */
+#barre strong .logo{width:1.35em;height:1.35em;vertical-align:-.3em;margin-right:.35em}
+#attente{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:1.2rem;padding:2rem;background:var(--bg);animation:attente-vient .25s ease both}
+#attente[hidden]{display:none}
+.attente-plume svg{width:9rem;height:9rem;display:block;overflow:visible}
+.attente-texte{text-align:center;max-width:32rem}
+.attente-titre{font-family:var(--pf);font-size:1.5rem;line-height:1.25}
+.attente-sous{color:var(--mut);font-style:italic;margin-top:.3rem}
+.attente-quoi{font-family:var(--ui);color:var(--mut);font-size:.85rem;margin-top:.8rem;letter-spacing:.03em}
+#attente .ecrit{stroke-dasharray:100;stroke-dashoffset:100;animation:attente-ecrit 2.4s ease-in-out infinite}
+#attente .plume{animation:attente-plume 2.4s ease-in-out infinite}
+@keyframes attente-vient{from{opacity:0}to{opacity:1}}
+@keyframes attente-ecrit{0%{stroke-dashoffset:100;opacity:1}70%{stroke-dashoffset:0;opacity:1}88%{stroke-dashoffset:0;opacity:0}100%{stroke-dashoffset:100;opacity:0}}
+@keyframes attente-plume{
+  0%{transform:translate(0,0)} 8.75%{transform:translate(2.2px,-1.3px)} 17.5%{transform:translate(4.4px,0)}
+  26.25%{transform:translate(6.6px,1.3px)} 35%{transform:translate(8.8px,0)} 43.75%{transform:translate(11px,-1.3px)}
+  52.5%{transform:translate(13.2px,0)} 61.25%{transform:translate(15.4px,1.3px)} 70%{transform:translate(17.6px,0)}
+  82%{transform:translate(12px,-5px)} 100%{transform:translate(0,0)}}
+@media (prefers-reduced-motion:reduce){#attente .ecrit,#attente .plume{animation:none;stroke-dashoffset:0}}
+
+/* toutes les planches (#fiches/planches) */
+.planches-chap{font-size:1.15rem;margin:1.6rem 0 .6rem}
+.planches-chap a{color:inherit;text-decoration:none}
+.planches-grille{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:1rem}
+.planche-carte{display:flex;flex-direction:column;gap:.3rem;font-family:var(--ui);font-size:.85rem}
+.planche-vignette{display:flex;align-items:center;justify-content:center;aspect-ratio:4/3;background:#fffdf8;border:1px solid var(--rule);
+  border-radius:4px;overflow:hidden;cursor:zoom-in}
+.planche-vignette img{width:100%;height:100%;object-fit:contain}
+.planche-vide{color:#b3a993;font-style:italic;cursor:default}
+.planche-carte-titre{color:var(--fg);text-decoration:none;font-weight:600}
+.planche-carte-titre:hover{color:var(--acc)}
+#page figure.planche a.planche-lien,.planche-vue a,.planche-grande{cursor:zoom-in}
