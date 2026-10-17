@@ -379,10 +379,11 @@ def modeles():
     """Les modèles qu'on peut choisir, et ceux que le livre retient par défaut."""
     return {"modeles": reecriture.MODELES,
             "defaut": {g: reecriture.modele(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan",
-                                                               "redaction", "cadrage")}
+                                                               "conversation", "redaction", "cadrage", "planche")}
                        | {g: reecriture.modele(g) or "claude-fable-5-1" for g in ("relecture", "storyboard", "recit")},   # Fable, sauf réglage
             "limites": {g: reecriture.limites(g) for g in ("verification", "reecriture", "fiche", "pistes", "reference", "naive", "document", "plan",
-                                                           "conversation", "redaction", "cadrage", "relecture", "storyboard", "recit")}}
+                                                           "conversation", "redaction", "cadrage", "relecture", "storyboard", "recit",
+                                                           "planche")}}
 
 
 @app.get("/api/fiches")
@@ -1431,6 +1432,9 @@ async def decide(slug: str, ident: str, request: Request):
             return references.decide(ident, await request.json())
         if ident.startswith("n-"):
             return naif.decide(slug, ident, await request.json())
+        if ident.startswith("g-"):
+            from . import dessin
+            return dessin.decide(ident, await request.json())
         if ident.startswith("o-"):
             return documents.decide(ident, await request.json())
         if ident.startswith("s-"):
@@ -1613,6 +1617,97 @@ async def enregistre_version(request: Request):
     """Enregistrer une version : un commit des seuls fichiers du livre."""
     c = await request.json()
     return _edition(lambda: edition.enregistre(c.get("message", "")))
+
+
+@app.get("/api/planches/{slug}")
+def planches_du_chapitre(slug: str):
+    """Les planches d'un chapitre (planches.py) : dessins, titres, états, et ce qui cloche."""
+    from . import planches
+    if not livre.dossier(slug).is_dir():
+        raise HTTPException(404, "chapitre inconnu : %s" % slug)
+    return planches.liste(slug)
+
+
+@app.post("/api/planches/{slug}/proposer")
+async def planches_proposer(slug: str, request: Request):
+    """Claude propose des planches pour le chapitre (dessin.py) : {consigne?, modele?}."""
+    from . import dessin
+    c = await request.json()
+    try:
+        return dessin.cree({"chapitre": slug, "mode": "proposer", "consigne": c.get("consigne"), "modele": c.get("modele")})
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/planches/{slug}/{ident}/dessiner")
+async def planche_dessiner(slug: str, ident: str, request: Request):
+    """Claude dessine (ou redessine) une planche, en la regardant (dessin.py) : {consigne?, modele?}."""
+    from . import dessin
+    c = await request.json()
+    try:
+        return dessin.cree({"chapitre": slug, "mode": "dessiner", "planche": ident, "consigne": c.get("consigne"),
+                            "modele": c.get("modele")})
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.put("/api/planches/{slug}/{ident}/etat")
+async def planche_etat(slug: str, ident: str, request: Request):
+    """{etat: à dessiner | en construction | retenue}."""
+    from . import planches
+    try:
+        return planches.change_etat(slug, ident, (await request.json()).get("etat"))
+    except KeyError:
+        raise HTTPException(404, "pas de planche %s dans %s" % (ident, slug))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.put("/api/planches/{slug}/{ident}/fiches")
+async def planche_fiches(slug: str, ident: str, request: Request):
+    """Les fiches déclarées d'une planche : {fiches: [slug, …]}."""
+    from . import planches
+    try:
+        return planches.lie_fiches(slug, ident, (await request.json()).get("fiches") or [])
+    except KeyError:
+        raise HTTPException(404, "pas de planche %s dans %s" % (ident, slug))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/planches/{slug}/{ident}/detail")
+def planche_detail(slug: str, ident: str):
+    """Tout sur une planche, pour sa page : appels dans le texte, demandes, dessins archivés, fiches liées."""
+    from . import planches
+    try:
+        return planches.detail(slug, ident)
+    except KeyError:
+        raise HTTPException(404, "pas de planche %s dans %s" % (ident, slug))
+
+
+@app.get("/api/planches/{slug}/historique/{nom}")
+def planche_archivee(slug: str, nom: str):
+    from . import planches
+    try:
+        return FileResponse(planches.archive(slug, nom), media_type="image/svg+xml")
+    except KeyError:
+        raise HTTPException(404, "pas de dessin archivé %s dans %s" % (nom, slug))
+
+
+@app.get("/api/fiches/{slug}/planches")
+def planches_de_fiche(slug: str):
+    """Les planches liées à une fiche (déclarées, ou dont les sources la citent)."""
+    from . import planches
+    return planches.de_fiche(slug)
+
+
+@app.get("/api/planches/{slug}/{ident}.svg")
+def planche(slug: str, ident: str):
+    from . import planches
+    try:
+        return FileResponse(planches.chemin(slug, ident), media_type="image/svg+xml", headers={"Cache-Control": "no-cache"})
+    except KeyError:
+        raise HTTPException(404, "pas de planche %s dans %s" % (ident, slug))
 
 
 @app.get("/api/chapitres/{slug}/{version}")

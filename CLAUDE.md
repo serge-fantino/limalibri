@@ -34,14 +34,18 @@ Poetry installe les dépendances au premier lancement (`.venv/` dans le projet).
 |---|---|
 | le livre | `livre` (accès, `livre.yaml`, textes rendus, annotations), `plan`, `essai`, `kb`, `sources`, `regles`, `verrou`, `avancement`, `validation`, `versions` (git du livre) |
 | les demandes à Claude | `reecriture` (le moteur commun : `_lance`, budgets, déroulé, relance, `tache`), `file` (file d'attente, lots), `filiation`, `serie`, `capacites` (le catalogue), `capacites_livre` (les capacités déclarées par le livre, `capacites.yaml`), `outils_livre` (outils MCP donnés à Claude : `annoter`) |
-| les sortes de demandes | `verification` (v-), `creation` (fiche, f-), `pistes` (p-), `renvois` (l-), `references` (r-), `documents` (o-), `planif` (s-), `redaction` (e-), `naif` (n-), `conversation` (c-), `cadrage` (k-), `relecture` (q-), `storyboard` (b-), `narration` (récit, t-), réécriture (d-) |
+| les sortes de demandes | `verification` (v-), `creation` (fiche, f-), `pistes` (p-), `renvois` (l-), `references` (r-), `documents` (o-), `planif` (s-), `redaction` (e-), `naif` (n-), `conversation` (c-), `cadrage` (k-), `relecture` (q-), `storyboard` (b-), `narration` (récit, t-), `dessin` (planches, g-), réécriture (d-) |
 | le pilotage | `objectifs`, `suivi`, `travail`, `execution`, `cadrage`, `pilotage` |
-| la sortie | `export` (PDF, imprimable), `compagnon` (essai + base), `public` (le site public statique, Cloudflare Pages), `frise` |
+| la sortie | `export` (PDF, imprimable), `compagnon` (essai + base), `public` (le site public statique, Cloudflare Pages), `frise`, `planches` (les dessins SVG d'un chapitre) |
 | le serveur | `serveur` (routes FastAPI), `evenements` (SSE) |
+
+**`livre.chapitres()` est coûteux** (l'état de chaque chapitre : annotations, validation — environ 1 s sur un livre
+de 25 chapitres) : pour un slug, un numéro, un titre ou « atelier », prendre `livre.chapitres_seuls()` (la structure
+seule). Appelé dans une boucle, il a déjà rendu le catalogue des capacités lent de 16 s (le storyboard restait blanc).
 
 `front/limalibri.js` est un seul fichier (plus de 600 Ko) avec ses helpers (`el`, `api`, `poste`, `tiroir`,
 `enModale`, `ouvreDemande`…) ; `front/limalibri.css` porte la palette (`--bg`, `--fg`, `--mut`, `--acc`,
-`--rule`, `--bar`) en clair et en sombre. Le préfixe d'une demande dit où elle vit : `[fplrosekqbt]-` dans
+`--rule`, `--bar`) en clair et en sombre. Le préfixe d'une demande dit où elle vit : `[fplrosekqbtg]-` dans
 `kb/demandes`, le reste dans `chapters/<slug>/demandes` (`slugDe` côté front).
 
 Le récit et son storyboard sont **alignés ligne à ligne** : une ligne = un micro-récit et son paragraphe

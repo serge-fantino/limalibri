@@ -68,6 +68,17 @@ CATALOGUE = {
                      "paragraphe (son rang dans le plan) : un paragraphe par micro-récit, les assertions du plan dans "
                      "l'ordre de sa séquence, les faits pris dans l'essai, selon les règles du récit. Fable par défaut.",
                      "recit", {"chapitre": "chapitre!", "plan": "texte", "rang": "nombre", "consigne": "texte"}, "pose", "claude"),
+    "proposer_planches": ("proposer des planches",
+                          "Claude lit un chapitre (essai, récit, fiches) et propose des planches — des schémas ou des courbes "
+                          "qui font voir ce que le texte déroule : ce que chacune montre, pourquoi, où le texte l'appellerait, "
+                          "ses sources et ce qui manque pour la sourcer. L'auteur retient : elles entrent « à dessiner ».",
+                          "planche", {"chapitre": "chapitre!", "consigne": "texte"}, "decision", "claude"),
+    "dessiner_planche": ("dessiner une planche",
+                         "Claude dessine une planche du chapitre en SVG, depuis son brief, en la regardant (il la voit rendue "
+                         "dans un navigateur, et corrige chevauchements et débordements) ; tout ce qu'elle affiche est sourcé, "
+                         "le reste laissé en blanc. Retenir écrit le dessin (l'ancien archivé) ; la planche reste « en "
+                         "construction » jusqu'à ce que l'auteur la retienne.",
+                         "planche", {"chapitre": "chapitre!", "planche": "texte!", "consigne": "texte"}, "pose", "claude"),
     "naif": ("lecture naïve",
              "Un lecteur qui n'a lu ni le cadre ni le reste du livre relève chaque endroit où il doit deviner.",
              "naive", {"chapitre": "chapitre!"}, "lecture", "claude"),
@@ -112,6 +123,10 @@ ARTEFACTS = {
     "ecrire_recit": (["posé d'office : chapters/<slug>/recit.md (les paragraphes de la portée remplacés, le reste gardé) et "
                       "links.yaml (plan, assertions, ajout) ; l'ancien récit dans historique/"],
                      ["chapters/<slug>/recit.md et links.yaml ; l'ancien récit dans chapters/<slug>/historique/"]),
+    "proposer_planches": ([], ["chapters/<slug>/planches.yaml : une entrée « à dessiner » par planche retenue, avec son brief"]),
+    "dessiner_planche": (["posé d'office (dans un plan) : chapters/<slug>/planches/<id>.svg ; l'ancien dessin dans planches/historique/"],
+                         ["chapters/<slug>/planches/<id>.svg (l'ancien dans planches/historique/) ; planches.yaml : titre, "
+                          "légende, « en construction »"]),
     "naif": ([], ["chapters/<slug>/<version>.md : les paragraphes corrigés (relevés appliqués)",
                   "chapters/<slug>/annotations.jsonl : les relevés gardés en annotations",
                   "chapters/<slug>/relectures.json : la lecture enregistrée (la porte « naïf » du harnais)"]),
@@ -250,6 +265,11 @@ def lance(cap, params, consigne_commune="", options=None):
         from . import relecture
         return SLUG_KB, relecture.cree({"partie": P.get("partie"), "chapitres": P.get("chapitres") or [], "consigne": cons,
                                          "version": O.get("version") or "essai", "modele": O.get("modele")})
+    if cap in ("proposer_planches", "dessiner_planche"):
+        from . import dessin
+        return SLUG_KB, dessin.cree({"chapitre": P["chapitre"], "mode": "proposer" if cap == "proposer_planches" else "dessiner",
+                                      "planche": P.get("planche"), "consigne": cons, "modele": O.get("modele"),
+                                      "poser": O.get("poser", True)})
     if cap == "naif":
         from . import naif
         return P["chapitre"], naif.cree(P["chapitre"], {"version": O.get("version") or "essai"})
@@ -280,7 +300,8 @@ def catalogue():
             "cadre": [{"type": k, "quoi": v} for k, v in CADRE.items()],
             "livre": {"fichier": capacites_livre.FICHIER, "existe": L["existe"], "avertissements": L["avertissements"],
                       "capacites": [{"id": k, "libelle": c["libelle"], "quoi": pour_livre(c), "primitive": c["primitive"],
-                                     "plan": c["plan"]["id"], "titre": c["plan"]["titre"], "mots": c["mots"]}
+                                     "plan": c["plan"]["id"], "titre": c["plan"]["titre"], "mots": c["mots"],
+                                     "sauf": c.get("sauf") or []}
                                     for k, c in L["capacites"].items()]}}
 
 

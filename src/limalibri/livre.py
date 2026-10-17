@@ -81,6 +81,10 @@ CLAUDE_GENRES = {"verification": ("tours", "recherches", "pages", "modele"), "re
                  "cadrage": ("tours", "modele"), "relecture": ("tours", "modele"),
                  "storyboard": ("tours", "modele"), "recit": ("tours", "modele")}
 NUMEROTATIONS = ("aucune", "sections", "paragraphes")
+# Les intertitres du récit (versions.recit dans livre.yaml), à l'export et sur le site public : le titre de chaque plan
+# du storyboard, avec ou sans son numéro (4.2, ou B) ; « aucun », un séparateur entre les plans.
+INTERTITRES = ("aucun", "titre", "numero")
+NUMEROS = ("chiffres", "lettres")
 
 
 def initialise():
@@ -185,6 +189,11 @@ def ecrit_meta(champs, version):
                         x[k] = t
                     else:
                         x.pop(k, None)
+            for k, permis in (("intertitres", INTERTITRES), ("numeros", NUMEROS)):
+                if k in (d or {}):
+                    if v != "recit" or d[k] not in permis:
+                        raise KeyError("versions.%s.%s : %s" % (v, k, "|".join(permis)))
+                    x[k] = d[k]
     if "publication" in champs:               # le site public (limalibri/public.py) : projet, adresse, wrangler
         pub = champs.pop("publication") or {}
         cible = doc.get("publication")
@@ -301,8 +310,9 @@ def dossier(slug):
     return LIVRE / "chapters" / slug
 
 
-def chapitres():
-    """Tous les chapitres dans l'ordre, numéro injecté depuis la position."""
+def chapitres_seuls():
+    """Les chapitres dans l'ordre, numéro injecté depuis la position — la structure seule, sans leur état
+    (annotations, validation) : léger, pour qui n'a besoin que d'un slug, d'un numéro ou d'un titre."""
     s = structure()
     out = [dict(c, numero=None, partie=None, partie_titre=None) for c in s.get("prefaces", [])]
     n = 0
@@ -312,6 +322,13 @@ def chapitres():
             out.append(dict(c, numero=n, partie=p["id"], partie_titre=p["title"]))
     for c in out:
         c["atelier"] = dossier(c["slug"]).is_dir()
+    return out
+
+
+def chapitres():
+    """Tous les chapitres dans l'ordre, numéro injecté depuis la position, avec leur état."""
+    out = chapitres_seuls()
+    for c in out:
         c["annotations"] = sum(1 for a in annotations(c["slug"]) if a.get("etat") == "ouverte") \
             if c["atelier"] else 0
         if c["atelier"]:
@@ -423,7 +440,7 @@ def rendu(md, numeros, structure=None):
 def texte(slug, version):
     if version not in VERSIONS:
         raise KeyError(version)
-    tous = {c["slug"]: c for c in chapitres()}
+    tous = {c["slug"]: c for c in chapitres_seuls()}
     if slug not in tous:
         raise KeyError(slug)
     c = tous[slug]
@@ -449,6 +466,9 @@ def texte(slug, version):
     html = rendu(md, numeros, structure)
     if version == "recit" and c["atelier"]:
         html = marque_en_tete(slug, html)
+    if c["atelier"]:
+        from . import planches
+        html = planches.insere(slug, html)
     return {"slug": slug, "version": version, "atelier": c["atelier"],
             "html": html, "origine": affiche(p),
             "numerotation": meta().get("numerotation_essai") or "aucune"}
@@ -482,6 +502,39 @@ def marque_en_tete(slug, html):
     return re.sub(r'<p data-block="([a-z0-9]+)"',
                   lambda m: '<p class="tete tete-%s" data-block="%s"' % (sorte[m.group(1)], m.group(1)) if m.group(1) in sorte
                   else m.group(0), html)
+
+
+def intertitres_recit(slug, html):
+    """Le récit à l'export et sur le site public : selon versions.recit.intertitres, le titre de chaque plan (hors plans
+    d'en-tête) devant son premier paragraphe, à la place du séparateur ; numéroté par sa place dans le storyboard,
+    en chiffres (4.2 : chapitre.plan) ou en lettres (B). Appelé avant que les data-block ne soient retirés."""
+    R = (meta().get("versions") or {}).get("recit") or {}
+    mode = R.get("intertitres") or "aucun"
+    if mode not in ("titre", "numero"):
+        return html
+    p = dossier(slug) / "brief.yaml"
+    br = (yaml.safe_load(p.read_text(encoding="utf-8")) or {}) if p.exists() else {}
+    beats = [b for b in br.get("beats") or [] if not en_tete(b)]
+    if not beats:
+        return html
+    pl = dossier(slug) / "links.yaml"
+    liens = ((yaml.safe_load(pl.read_text(encoding="utf-8")) or {}).get("recit") or {}) if pl.exists() else {}
+    num = next((c.get("numero") for c in chapitres_seuls() if c["slug"] == slug), None)
+    titres = {}
+    for k, b in enumerate(beats, 1):
+        n = (chr(64 + k) if k <= 26 else str(k)) if R.get("numeros") == "lettres" else \
+            ("%s.%d" % (num, k) if num is not None else str(k))
+        titres[str(b.get("id"))] = ('<span class="num">%s</span> ' % n if mode == "numero" else "") + html_lib.escape(str(b.get("title") or ""), quote=False)
+    vus, entete = set(), html.find("<hr")              # le premier séparateur clôt l'en-tête du chapitre : il reste
+
+    def h2(m):
+        pid = str((liens.get(m.group(3)) or {}).get("plan"))
+        if pid not in titres or pid in vus:
+            return m.group(0)
+        vus.add(pid)
+        hr = m.group(1) if m.group(1) and m.start() == entete else ""
+        return '%s<h2 class="intertitre-plan">%s</h2>\n%s' % (hr, titres[pid], m.group(2))
+    return re.sub(r'(<hr\s*/?>\s*)?(<p(?: class="[^"]*")? data-block="([a-z0-9]+)")', h2, html)
 
 
 def atelier(slug):
@@ -812,7 +865,7 @@ def modifie_brief(slug, champs, empreinte, motif=""):
 def toutes_annotations():
     """Les annotations de tous les chapitres de l'atelier, avec leur chapitre."""
     out = []
-    for c in chapitres():
+    for c in chapitres_seuls():
         if c.get("atelier"):
             for a in annotations(c["slug"]):
                 out.append(dict(a, chapitre=c["slug"], chapitre_titre=c["title"], chapitre_numero=c["numero"]))

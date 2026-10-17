@@ -9,7 +9,8 @@ La primitive, pour l'instant :
   plan_de_tete   un plan à part, en tête du storyboard d'un chapitre du récit (brief.yaml, « sorte ») : Claude
                  écrit ses micro-récits et ses paragraphes d'un même geste (narration.py, une demande t-) ; ils se
                  rendent à part (livre.marque_en_tete : italique, un blanc après). Les demandes du storyboard et du
-                 récit le gardent tel quel, en tête.
+                 récit le gardent tel quel, en tête, et ne le planifient pas : la section de sa règle ne va qu'à lui
+                 (regles.texte_pour_claude). Il s'écrit après le récit du chapitre, qu'il lit en entier.
 
   ouverture:
     libelle: écrire l'ouverture
@@ -21,6 +22,7 @@ La primitive, pour l'instant :
     paragraphes: [2, 4]
     consigne: |                 # ce que Claude reçoit en plus de la règle
       …
+    sauf: [qui-raconte]         # les chapitres qui n'en ont pas (une série les saute, le bouton n'y paraît pas)
 
 Une erreur dans le fichier se dit (avertissements), elle ne casse rien : la capacité fautive est écartée.
 """
@@ -64,6 +66,7 @@ def lit():
         return {"capacites": {}, "avertissements": ["%s : une capacité par clé (id: {…})" % FICHIER], "existe": True}
     from . import capacites
     plans = {}
+    connus = {c["slug"] for c in livre.chapitres_seuls()}
     for k, v in doc.items():
         k = str(k)
         a = []
@@ -90,8 +93,12 @@ def lit():
                "mots": _bornes(v.get("mots"), "mots", a),
                "paragraphes": _bornes(v.get("paragraphes"), "paragraphes", a),
                "consigne": str(v.get("consigne") or "").strip(),
-               "modele": str(v.get("modele") or "").strip() or None}
-        bloquant = bool(a)
+               "modele": str(v.get("modele") or "").strip() or None,
+               "sauf": [str(x) for x in (v.get("sauf") or [])] if isinstance(v.get("sauf") or [], list) else []}
+        if v.get("sauf") and not isinstance(v.get("sauf"), list):
+            a.append("sauf : une liste de chapitres, [slug, slug]")
+        a += ["sauf : chapitre inconnu « %s »" % x for x in cap["sauf"] if x not in connus]
+        bloquant = any(not x.startswith("sauf :") for x in a)
         if cap["regle"] and not regle(cap):                 # pas bloquant : la section est peut-être encore à écrire
             a.append("regle : pas de section « %s » dans regles/recit.md — Claude n'aura que la consigne" % cap["regle"])
         A += ["%s — %s" % (k, x) for x in a]
@@ -115,6 +122,10 @@ def une(ident):
 def de_plan(pid):
     """La capacité qui écrit ce plan d'en-tête (ou None)."""
     return next((c for c in toutes().values() if c["plan"]["id"] == str(pid)), None)
+
+
+def exclu(cap, slug):
+    return slug in (cap.get("sauf") or [])
 
 
 def regle(cap):

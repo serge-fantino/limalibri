@@ -69,13 +69,39 @@ PDFS = [("recit", "recit", None, "Le récit"), ("essai", "essai", None, "L'essai
 def _empreinte_livre():
     L = livre.LIVRE
     fichiers = sorted(list(L.glob("chapters/*/*.md")) + list(L.glob("chapters/*/*.yaml")) + list(L.glob("kb/fiches/*.md"))
-                      + list(L.glob("kb/sources/*.yaml")) + [L / "livre.yaml", L / "structure.yaml", L / "synopsis.yaml"])
+                      + list(L.glob("kb/sources/*.yaml")) + [L / "livre.yaml", L / "structure.yaml", L / "synopsis.yaml", L / "frise.yaml"])
+    ici = pathlib.Path(__file__).resolve().parent             # et le code qui les dessine : un PDF refait quand l'export change
+    fichiers += [ici / "export.py", ici / "compagnon.py", ici / "public.py", ici.parents[1] / "front" / "limalibri.js"]
     h = hashlib.sha1()
     for f in fichiers:
         if f.exists():
             s = f.stat()
-            h.update(("%s:%s:%s;" % (f.relative_to(L), s.st_mtime_ns, s.st_size)).encode())
+            h.update(("%s:%s:%s;" % (f, s.st_mtime_ns, s.st_size)).encode())
     return h.hexdigest()[:16]
+
+
+def version_livre():
+    """La version marquée du livre (onglet « révisions ») : « v2 », « v2+ » s'il a changé depuis, « » sans version."""
+    from . import versions
+    try:
+        E = versions.etat()
+        if not E.get("actif") or not E.get("tags"):
+            return ""
+        t = E["tags"][0]
+        apres = E["modifie"] or versions._git("rev-list", "--count", t["tag"] + "..HEAD", "--", E["chemin"],
+                                              cwd=E["racine"]).strip() not in ("", "0")
+    except Exception:                                       # noqa: BLE001 — sans git : pas de version
+        return ""
+    return t["nom"] + ("+" if apres else "")
+
+
+def nom_pdf(nom, version, date):
+    """« un-monde-recit-v2.pdf » ; changé depuis la version : « un-monde-recit-v2-2026-10-17.pdf » ; sans version : la date."""
+    v = version.rstrip("+")
+    suite = [v] if v else []
+    if not v or version.endswith("+"):
+        suite.append(date[:10])
+    return "-".join([_slug(livre.meta().get("titre")), nom] + [_slug(x) for x in suite if x]) + ".pdf"
 
 
 def pdfs(versions_ecrites):
@@ -86,6 +112,7 @@ def pdfs(versions_ecrites):
     pm = d / "pdf.json"
     meta = json.loads(pm.read_text(encoding="utf-8")) if pm.exists() else {}
     emp = _empreinte_livre()
+    vl = version_livre()
     out = []
     for nom, quoi, portee, titre in PDFS:
         if quoi in livre.VERSIONS and quoi not in versions_ecrites or quoi == "complet" and "essai" not in versions_ecrites:
@@ -102,7 +129,9 @@ def pdfs(versions_ecrites):
             f.write_bytes(donnees)
             m = {"empreinte": emp, "date": livre._maintenant()}
             meta[nom] = m
-        out.append({"fichier": f.name, "titre": titre, "octets": f.stat().st_size, "date": m.get("date", "")})
+        date = m.get("date", "")
+        out.append({"fichier": f.name, "titre": titre, "octets": f.stat().st_size, "date": date,
+                    "publie": nom_pdf(nom, vl, date), "version": vl})
     pm.write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
     return out
 
@@ -138,7 +167,7 @@ h3{font-size:1.05rem;margin:1.4rem 0 .4rem}
 .chip.brouillon{border-color:#c9a25a;color:#a4561b}.chip.relu{border-color:var(--essai);color:var(--essai)}.chip.valide{border-color:var(--ok);color:var(--ok)}
 .texte p{margin:0 0 1em;text-align:left;hyphens:auto}
 .texte hr{border:0;text-align:center;margin:1.6rem 0}.texte hr::after{content:"⁂";color:var(--mut)}
-.texte p.tete{font-style:italic}.texte p.tete + hr{margin:2.4rem 0 0}.texte p.tete + hr::after{content:none}
+.texte h2.intertitre-plan .num{margin-right:.35em}.texte p.tete{font-style:italic}.texte p.tete + hr{margin:2.4rem 0 0}.texte p.tete + hr::after{content:none}
 .texte img{max-width:100%}
 .texte table{display:block;overflow-x:auto;font-size:.85rem;border-collapse:collapse}
 .texte td,.texte th{border:1px solid var(--filet);padding:.2rem .4rem}
@@ -175,6 +204,16 @@ details[open].partie summary::before{content:"▾ ";}
 .carte-ch .liens{display:flex;gap:.5rem;margin-top:.45rem;flex-wrap:wrap}
 .carte-ch .liens a,.carte-ch .liens span{border:1px solid var(--filet);border-radius:6px;padding:.15rem .6rem;text-decoration:none;font-size:.82rem}
 .carte-ch .liens span{color:var(--mut);opacity:.7}
+.carte-ch .statuts{margin-top:.4rem;opacity:.85;font-size:.85em}
+.commencer{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:.6rem;margin:1.4rem 0 .4rem}
+.commencer a{display:block;background:var(--carte);border:1px solid var(--acc);border-radius:10px;padding:.7rem .9rem;text-decoration:none}
+.commencer b{font-family:system-ui,sans-serif;font-weight:600}
+.commencer .meta{display:block;color:var(--mut);font-size:.85rem}
+.suivi#ou-en-est{margin-top:3rem;border-top:1px solid var(--filet)}
+.par-chapitre summary{cursor:pointer}
+.ch-prog{display:grid;grid-template-columns:1.8rem 1fr;gap:0 .3rem;padding:.35rem 0;border-bottom:1px solid var(--filet);font-size:.85rem}
+.ch-prog .n{color:var(--mut)}
+.ch-prog .mini{grid-column:2}
 .mini{display:grid;grid-template-columns:3.4rem 1fr 2.6rem;gap:.4rem;align-items:center;font-size:.75rem;color:var(--mut);margin-top:.3rem}
 .fiches-liste a{display:block;padding:.4rem 0;border-bottom:1px solid var(--filet);text-decoration:none}
 .fiches-liste .meta{display:block}
@@ -241,6 +280,13 @@ details[open].partie summary::before{content:"▾ ";}
 .frise-legende{display:flex;flex-wrap:wrap;gap:.3rem .9rem;font-size:.78rem;color:var(--mut);margin:.7rem 0}
 .frise-svg .fr-item.ici rect,.frise-svg .fr-item.ici circle{stroke:var(--acc);stroke-width:2.5}
 .frise-svg .fr-item.ici .fr-titre{font-weight:700;fill:var(--acc)}
+figure.planche{margin:1.6rem 0}
+figure.planche img{display:block;width:100%;height:auto;border:1px solid var(--filet);border-radius:8px;background:#fffdf8}
+figure.planche figcaption{font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mut);margin-top:.45rem;line-height:1.45}
+figure.planche figcaption b{color:var(--texte);font-weight:600}
+.planche-etat{font-style:italic}
+a.renvoi-planche{font-family:system-ui,sans-serif;font-size:.85em}
+.planche-absente{color:#c0622f}
 .mini-frise{background:var(--carte);border:1px solid var(--filet);border-radius:10px;padding:.5rem .8rem .3rem;margin:.6rem 0 1.4rem}
 .mini-frise .sur{margin:0 0 .2rem}
 .mini-frise .mini-tete{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.3rem .6rem;margin-bottom:.2rem}
@@ -315,13 +361,15 @@ class Site:
         self.sources = livre.sources()
         self.cites = set()
         self.cite_ou = {}                                   # clé -> {(libellé, adresse depuis la racine)}
+        self.planches = set()                               # (chapitre, planche) appelées par les textes publiés
         # les textes publiés : chaque chapitre écrit, dans chaque version
         self.textes = {}
         for c in self.chapitres:
             for v in livre.VERSIONS:
                 if avancement.niveau(c, v) in ("brouillon", "relu", "valide"):
                     try:
-                        self.textes[(c["slug"], v)] = livre.texte(c["slug"], v)["html"]
+                        h = livre.texte(c["slug"], v)["html"]
+                        self.textes[(c["slug"], v)] = livre.intertitres_recit(c["slug"], h) if v == "recit" else h
                     except KeyError:
                         pass
         # les fiches : celles que les chapitres citent (leurs briefs)
@@ -374,6 +422,9 @@ class Site:
             from .export import _courte
             return '<a class="cite" href="%sbibliographie.html#%s">%s</a>' % (base, k, html.escape(_courte(k)))
         h = re.sub(r'<cite data-cle="([^"]+)">[^<]*</cite>', cite, h)
+        h = re.sub(r'(src|href)="/api/planches/([\w-]+)/([\w-]+)\.svg"',
+                   lambda m: (self.planches.add((m.group(2), m.group(3))),
+                              '%s="%splanches/%s/%s.svg"' % (m.group(1), base, m.group(2), m.group(3)))[1], h)
         return re.sub(r'\sdata-(?:empreinte|block|num|section)="[^"]*"', "", h)
 
     # ---------------------------------------------------------------- les morceaux
@@ -386,7 +437,7 @@ class Site:
         return '<div class="jauge %s"><i style="width:%s%%"></i></div>' % (v, max(0, min(100, round(pct or 0))))
 
     def bloc_suivi(self):
-        H = ['<section class="suivi"><p class="sur">Où en est le livre</p>']
+        H = ['<section class="suivi" id="ou-en-est"><h2>Où en est le livre</h2>']
         for v in livre.VERSIONS:
             S = self.suivi[v]
             rep = " ".join('<span class="chip">%s · %d</span>' % (NIVEAU.get(k, k), n) for k, n in S["repartition"].items() if n)
@@ -418,8 +469,22 @@ class Site:
                 H.append('<li><span class="date">%s</span><span>%s — %s%s</span></li>' % (
                     e["date"][:10], t, EVENEMENTS[e["type"]], " · %d mots" % e["mots"] if e.get("mots") else ""))
             H.append("</ul>")
+        H.append(self.par_chapitre())
         H.append("</section>")
         return "".join(H)
+
+    def par_chapitre(self):
+        score = {v: {c["slug"]: c["score"] for c in self.suivi[v]["chapitres"]} for v in livre.VERSIONS}
+        L = []
+        for c in self.chapitres:
+            if not any(c["slug"] in score[v] for v in ("recit", "essai")):
+                continue
+            L.append('<div class="ch-prog"><span class="n">%s</span><span class="t">%s</span>%s</div>' % (
+                c.get("numero") or "", html.escape(c["title"]), "".join(
+                    '<span class="mini"><span>%s</span>%s<span>%d %%</span></span>' % (
+                        NOM_VERSION[v].lower(), self.jauge(score[v].get(c["slug"], 0), v), round(score[v].get(c["slug"], 0)))
+                    for v in ("recit", "essai"))))
+        return '<details class="par-chapitre"><summary class="sur">Par chapitre</summary>%s</details>' % "".join(L) if L else ""
 
     def evenements(self, n=12):
         p = livre.LIVRE / "journal.jsonl"
@@ -437,7 +502,6 @@ class Site:
 
     def sommaire(self):
         H = ['<p class="sur">Sommaire</p>']
-        score = {v: {c["slug"]: c["score"] for c in self.suivi[v]["chapitres"]} for v in livre.VERSIONS}
         for p in self.plan["parties"]:
             H.append('<details class="partie" open><summary>%s</summary>%s</details>' % (
                 html.escape(p["title"]), '<p class="meta">%s</p>' % html.escape(p["sens"]) if p.get("sens") else ""))
@@ -448,15 +512,33 @@ class Site:
                 liens = "".join(('<a href="chapitres/%s/%s.html">%s</a>' % (c["slug"], v, NOM_VERSION[v]))
                                 if (c["slug"], v) in self.textes else '<span>%s · à venir</span>' % NOM_VERSION[v]
                                 for v in ("recit", "essai"))
-                mini = "".join('<div class="mini"><span>%s</span>%s<span>%d %%</span></div>' % (
-                    NOM_VERSION[v].lower(), self.jauge(score[v].get(c["slug"], 0), v), round(score[v].get(c["slug"], 0)))
-                    for v in ("recit", "essai"))
-                H.append('<div class="carte-ch"><span class="n">%s</span><span class="t">%s</span>%s<div>%s%s</div>%s'
-                         '<div class="liens">%s</div></div>' % (
+                H.append('<div class="carte-ch"><span class="n">%s</span><span class="t">%s</span>%s'
+                         '<div class="liens">%s</div><div class="statuts">%s%s</div></div>' % (
                              c.get("numero") or "", html.escape(c["title"]),
                              '<div class="meta">%s</div>' % html.escape(c["periode"]) if c.get("periode") else "",
-                             self.statut(c, "recit"), self.statut(c, "essai"), mini, liens))
+                             liens, self.statut(c, "recit"), self.statut(c, "essai")))
         return "".join(H)
+
+    def quand_pdf(self, p):
+        j = "/".join(reversed(p["date"][:10].split("-")))
+        v = p.get("version") or ""
+        if not v:
+            return "du %s" % j
+        if v.endswith("+"):
+            return "version %s, mise à jour du %s" % (v[:-1], j)
+        return "version %s · %s" % (v, j)
+
+    def commencer(self):
+        """Commencer la lecture : le premier chapitre écrit de chaque version."""
+        ordre = [c["slug"] for c in self.chapitres]
+        A = []
+        for v in ("recit", "essai"):
+            s = next((x for x in ordre if (x, v) in self.textes), None)
+            if s:
+                A.append('<a href="chapitres/%s/%s.html"><b>Lire %s</b><span class="meta">ch. %s · %s</span></a>' % (
+                    s, v, "le récit" if v == "recit" else "l'essai", self.par_slug[s].get("numero") or "",
+                    html.escape(self.par_slug[s]["title"])))
+        return '<div class="commencer">%s</div>' % "".join(A) if A else ""
 
     # ---------------------------------------------------------------- les pages
     def accueil(self):
@@ -466,24 +548,26 @@ class Site:
             corps.append('<p class="meta">%s</p>' % html.escape(m["sous_titre"]))
         if m.get("auteur"):
             corps.append('<p class="meta">%s</p>' % html.escape(m["auteur"]))
-        corps.append('<p class="avert">Un livre en cours d\'écriture, publié en l\'état : chaque chapitre dit où il en est — '
-                     'brouillon, relu, validé. Deux versions alignées chapitre pour chapitre : le <b>récit</b>, qui raconte, '
-                     'et l\'<b>essai</b>, qui explique ; les <a href="fiches/index.html">fiches</a> rassemblent ce sur quoi '
-                     'l\'essai s\'appuie.</p>')
         for k in ("synopsis", "quatrieme"):
             if m.get(k):
                 corps.append("".join("<p>%s</p>" % html.escape(x.strip()) for x in str(m[k]).split("\n\n") if x.strip()))
                 break
-        corps.append(self.bloc_suivi())
+        corps.append('<p class="avert">Deux versions alignées chapitre pour chapitre : le <b>récit</b>, qui raconte, '
+                     'et l\'<b>essai</b>, qui explique ; les <a href="fiches/index.html">fiches</a> rassemblent ce sur quoi '
+                     'l\'essai s\'appuie. Un livre en cours d\'écriture, publié en l\'état : chaque chapitre dit où il en est '
+                     '(brouillon, relu, validé) — <a href="#ou-en-est">où en est le livre</a>.</p>')
+        corps.append(self.commencer())
         corps.append(self.sommaire())
         if getattr(self, "pdf", None):
             corps.append('<p class="sur">À télécharger</p><div class="fiches-liste">%s</div>' % "".join(
-                '<a href="pdf/%s" download>%s<span class="meta">PDF · %s Mo · %s</span></a>' % (
-                    p["fichier"], html.escape(p["titre"]), str(round(p["octets"] / 1e6, 1)).replace(".", ","), p["date"][:10])
+                '<a href="pdf/%s" download="%s">%s<span class="meta">PDF · %s Mo · %s</span></a>' % (
+                    p["publie"], p["publie"], html.escape(p["titre"]), str(round(p["octets"] / 1e6, 1)).replace(".", ","),
+                    html.escape(self.quand_pdf(p)))
                 for p in self.pdf))
         corps.append('<p class="sur">Et aussi</p><p class="ui">%s<a href="fiches/index.html">Les fiches (%d)</a> · '
                      '<a href="bibliographie.html">La bibliographie</a></p>' % (
                          '<a href="frise.html">La frise</a> · ' if self.frise else "", len(self.inclus)))
+        corps.append(self.bloc_suivi())
         return _page(m.get("titre") or "Livre", "".join(corps), "", description=str(m.get("synopsis") or "")[:200])
 
     def chapitre(self, slug, v, ordre):
@@ -674,9 +758,19 @@ function miniFrises() {
       tete.append(s, sel);
     }
     if (sel) sel.value = ech.id;
+    var svg = miniSvg(F, ech, c, Math.max(div.clientWidth, 260));
+    var lien = document.createElement("a"); lien.href = base + "frise.html?ch=" + slug; lien.title = "la frise du livre"; lien.append(svg);
+    div.replaceChildren(lien);
+    txt.textContent = c.place.texte.replace(/…/g, "").replace(/^ → | → $/g, "");
+  });
+}
+
+// le dessin du bandeau : tous les chapitres en traits discrets, celui-ci en évidence (le site et le PDF)
+function miniSvg(F, ech, c, W) {
+    var slug = c.slug, places = F.chapitres.filter(function (x) { return x.place; });
     var ts = []; places.forEach(function (x) { ts.push(x.place.debut, x.place.fin); });
     var E = echelleFrise(ech, F, ts);
-    var W = Math.max(div.clientWidth, 260), G = 6, L = W - 12;
+    var G = 6, L = W - 12;
     var X = function (t) { return G + Math.max(0, Math.min(1, E.x(t))) * L; };
     var svg = svgEl("svg", { width: W, height: 58, class: "mini-svg" });
     var bande = (F.bandes || []).find(function (b) { return b.rendu !== "gradient" && (!ech.bandes || ech.bandes.indexOf(b.id) >= 0); });
@@ -696,10 +790,7 @@ function miniFrises() {
     var k = E.ticks, premier = k[0], dernier = k[k.length - 1];
     if (premier) svg.append(svgEl("text", { x: G, y: 54, class: "mini-lib" }, premier.texte || libelleT(premier.t, F, E.variable)));
     if (dernier) svg.append(svgEl("text", { x: G + L, y: 54, "text-anchor": "end", class: "mini-lib" }, dernier.texte || libelleT(dernier.t, F, E.variable)));
-    var lien = document.createElement("a"); lien.href = base + "frise.html?ch=" + slug; lien.title = "la frise du livre"; lien.append(svg);
-    div.replaceChildren(lien);
-    txt.textContent = c.place.texte.replace(/…/g, "").replace(/^ → | → $/g, "");
-  });
+    return svg;
 }
 if (!document.getElementById("fr-zone") && window.FRISE) {
   miniFrises();
@@ -792,14 +883,22 @@ def genere(avec_pdf=True):
         ecrit("frise-donnees.js", S.donnees_frise())
         ecrit("frise.js", script_frise())
     ecrit("etat.json", json.dumps(S.etat(), ensure_ascii=False, indent=1))
+    from . import planches
+    for slug, k in S.planches:
+        try:
+            src = planches.chemin(slug, k)
+        except KeyError:
+            continue
+        (tmp / "planches" / slug).mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, tmp / "planches" / slug / (k + ".svg"))
     for p in S.pdf:
         (tmp / "pdf").mkdir(exist_ok=True)
-        shutil.copy2(racine() / "pdf" / p["fichier"], tmp / "pdf" / p["fichier"])
+        shutil.copy2(racine() / "pdf" / p["fichier"], tmp / "pdf" / p["publie"])
     shutil.rmtree(d, ignore_errors=True)
     tmp.rename(d)
     n = sum(1 for _ in d.rglob("*.html"))
     return {"dossier": str(d), "pages": n, "textes": len(S.textes), "fiches": len(S.inclus), "oeuvres": len(S.cites & set(S.sources)),
-            "pdf": [p["fichier"] for p in S.pdf]}
+            "pdf": [p["publie"] for p in S.pdf]}
 
 
 # ------------------------------------------------------------------ publier

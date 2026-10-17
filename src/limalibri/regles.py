@@ -96,7 +96,32 @@ def texte_pour_claude(version):
     if not p.exists():
         return ""
     # les contrôles mécaniques (motifs) ne disent rien à Claude : ils sont retirés
-    return CONTROLE.sub("", ENTETE.sub("", p.read_text(encoding="utf-8"), count=1)).strip()
+    texte = CONTROLE.sub("", ENTETE.sub("", p.read_text(encoding="utf-8"), count=1)).strip()
+    return _sans_capacites(version, texte)
+
+
+def _sans_capacites(version, texte):
+    """La section qui donne sa voix à une capacité du livre (« L'ouverture ») ne va qu'à elle (capacites_livre :
+    elle la reçoit à part) : aux autres demandes, une ligne dit que ce texte s'écrit à part, après le chapitre."""
+    from . import capacites_livre
+    caps = {}
+    for c in capacites_livre.toutes().values():
+        if c.get("regle") and c["version"] == version:
+            caps[c["regle"].strip().lower()] = c
+    if not caps:
+        return texte
+    tete, secs = _decoupe(texte)
+    morceaux = [tete.rstrip("\n")]
+    for t, corps in secs:
+        e = _element(t, corps)
+        c = caps.get(str(e["id"]).lower()) or caps.get(str(e["titre"]).strip().lower())
+        if c:
+            corps = ("(Cette section est la voix d'un texte à part, « %s » : le plan « %s », en tête du chapitre, rendu à "
+                     "part. Il s'écrit par sa propre demande, après le chapitre : ne le planifie pas, ne l'écris pas. "
+                     "S'il existe déjà, il reste tel quel, et les autres règles ne jugent pas sa voix.)"
+                     % (c["plan"]["titre"], c["plan"]["id"]))
+        morceaux.append("## %s\n\n%s" % (t, corps.strip("\n")))
+    return "\n\n".join(m for m in morceaux if m.strip()).strip()
 
 
 def _ecrit(version, empreinte, transforme):

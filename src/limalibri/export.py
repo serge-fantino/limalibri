@@ -13,6 +13,7 @@ Chrome, la version imprimable s'imprime depuis le navigateur (⌘P, « Enregistr
 """
 import os
 import re
+import json
 import html
 import shutil
 import asyncio
@@ -325,6 +326,7 @@ CSS_ESSAI = """
 .chapitre p{text-align:justify;hyphens:auto}
 .chapitre p.tete{font-style:italic}                      /* un plan d'en-tête (l'ouverture…) : à part */
 .chapitre p.tete + hr{border:0;margin:2em 0 0}
+.chapitre h2.intertitre-plan .num{font-variant-numeric:tabular-nums;margin-right:.35em}
 .chapitre p em:only-child{color:#6b6357}
 .chapitre .footnote{font-size:8.5pt;border-top:1px solid #ddd6c8;margin-top:1.5em}
 .chapitre .footnote hr{display:none}
@@ -387,6 +389,8 @@ def _avancement(c, version="essai"):
 def _chapitre_html(c, version="essai"):
     """Le texte d'un chapitre, sans l'en-tête que livre.texte lui met, ancres préfixées par le slug."""
     h = livre.texte(c["slug"], version)["html"]
+    if version == "recit":
+        h = livre.intertitres_recit(c["slug"], h)            # les titres des plans, si le livre le demande
     h = re.sub(r"^\s*<h1>.*?</h1>\s*(<p><em>.*?</em></p>\s*)?(<hr\s*/?>)?", "", h, count=1, flags=re.S)
     s = c["slug"]
     h = re.sub(r'id="sec-([\w-]+)"', r'id="sec-%s--\1"' % s, h)
@@ -394,8 +398,140 @@ def _chapitre_html(c, version="essai"):
     h = re.sub(r'(id|href)="#?fn(ref)?:', lambda m: '%s="%sfn%s:%s-' % (m.group(1), "#" if m.group(1) == "href" else "", m.group(2) or "", s), h)
     h = re.sub(r'<a class="renvoi-chap" href="#([\w-]+)/essai/texte"', r'<a class="renvoi-chap" href="#chap-\1"', h)
     h = re.sub(r' data-(block|sec|section|chap)="[^"]*"', "", h)
+    h = re.sub(r'<a class="planche-lien"[^>]*>(<img[^>]*>)</a>', r"\1", h)
+    h = re.sub(r'src="/api/planches/([\w-]+)/([\w-]+)\.svg"', _planche_data, h)
     return re.sub(r'<cite data-cle="([\w-]+)">[^<]*</cite>',
                   lambda m: '<cite><a href="#oeuvre-%s">%s</a></cite>' % (m.group(1), html.escape(_courte(m.group(1)))), h)
+
+
+def _frise():
+    """La frise du livre pour le PDF (frise.yaml) : ses chapitres renvoient à leur page ; None sans frise."""
+    from . import frise
+    F = frise.lit()
+    if not (F.get("existe") and any(c.get("place") for c in F["chapitres"])):
+        return None
+    F = dict(F)
+    F.pop("fichier", None)
+    F["chapitres"] = [dict(c, lien="#chap-%s" % c["slug"]) for c in F["chapitres"]]
+    return F
+
+
+def _frise_page(F):
+    return ('<section class="frise-page"><h2>La frise</h2><p class="frise-intro">Où se place chaque chapitre dans le temps de '
+            'l\'histoire — échelle : %s.</p><div class="pdf-frise" data-quoi="livre"></div><p class="frise-legende"></p></section>'
+            % html.escape(F["echelles"][0]["titre"])) if F["echelles"] else ""
+
+
+def _frise_chapitre(F, slug):
+    """Sous le titre d'un chapitre : le bandeau, et ses frises internes."""
+    c = next((x for x in F["chapitres"] if x["slug"] == slug), None)
+    h = '<div class="pdf-frise mini" data-quoi="mini" data-slug="%s"></div>' % slug if c and c.get("place") and F["echelles"] else ""
+    for f in F["frises"]:
+        if f.get("chapitre") == slug:
+            h += ('<div class="frise-interne"><p class="sur">%s</p><div class="pdf-frise" data-quoi="interne" data-id="%s"></div>%s</div>' % (
+                html.escape(f.get("titre") or ""), html.escape(f["id"]), '<p class="note">%s</p>' % html.escape(f["note"]) if f.get("note") else ""))
+    return h
+
+
+def _frise_script(F):
+    from . import public
+    return "<script>window.FRISE = %s;\n%s\n%s</script>" % (
+        json.dumps(F, ensure_ascii=False).replace("</", "<\\/"), public.script_frise(), FRISE_PDF)
+
+
+# les frises dessinées à l'ouverture de la page (Chrome les imprime ensuite), par le moteur du site public
+FRISE_PDF = r"""
+(function () {
+  var F = window.FRISE, ech = F.echelles[0], W = 640;
+  var parties = Array.from(new Set(F.chapitres.map(function (c) { return c.partie; })));
+  document.querySelectorAll(".pdf-frise").forEach(function (div) {
+    var q = div.dataset.quoi;
+    if (q === "mini") {
+      var c = F.chapitres.find(function (x) { return x.slug === div.dataset.slug; });
+      div.append(miniSvg(F, ech, c, W));
+      return;
+    }
+    if (q === "interne") {
+      var fr = F.frises.find(function (f) { return f.id === div.dataset.id; });
+      var items = fr.evenements.map(function (e, i) {
+        return { debut: e.debut, fin: e.fin == null ? e.debut : e.fin, titre: e.titre, sous: [e.date, e.texte].filter(Boolean).join(" — "),
+          couleur: COULEURS_FRISE[1], ordre: i };
+      });
+      div.append(dessineFrise(F, fr.echelle, items, { fleches: fr.rendu === "fleche", largeur: W }));
+      return;
+    }
+    var items = F.chapitres.filter(function (c) { return c.place; }).map(function (c, i) {
+      return { debut: c.place.debut, fin: c.place.fin, ouvert_debut: c.place.ouvert_debut, ouvert_fin: c.place.ouvert_fin,
+        approx: c.place.approx, titre: ((c.numero || "") + " " + c.titre).trim(), sous: c.place.texte,
+        couleur: COULEURS_FRISE[parties.indexOf(c.partie) % COULEURS_FRISE.length], ordre: i, lien: c.lien };
+    });
+    var bandes = F.bandes.filter(function (b) { return !ech.bandes || ech.bandes.indexOf(b.id) >= 0; });
+    div.append(dessineFrise(F, ech, items, { bandes: bandes, reperes: F.reperes, fleches: F.rendu === "fleche", largeur: W }));
+    var leg = div.parentNode.querySelector(".frise-legende");
+    parties.forEach(function (p, k) {
+      var c0 = F.chapitres.find(function (c) { return c.partie === p; });
+      var s = document.createElement("span"), i = document.createElement("i");
+      i.style.background = COULEURS_FRISE[k % COULEURS_FRISE.length];
+      s.append(i, (c0 && c0.partie_titre) || "hors partie"); leg.append(s);
+    });
+    var sans = F.chapitres.filter(function (c) { return !c.place; });
+    if (sans.length) {
+      var p = document.createElement("p"); p.className = "frise-intro";
+      p.textContent = "Hors de la frise : " + sans.map(function (c) { return ((c.numero || "") + " " + c.titre).trim(); }).join(" · ");
+      div.parentNode.append(p);
+    }
+  });
+})();
+"""
+
+CSS_PLANCHE = """
+figure.planche{margin:1.2em 0;break-inside:avoid;page-break-inside:avoid}
+figure.planche img{display:block;width:100%;border:1px solid #ddd6c8}
+figure.planche figcaption{font-family:system-ui,sans-serif;font-size:8.5pt;color:#6b6357;margin-top:.4em}
+figure.planche figcaption b{color:#1f1c17;font-weight:600}
+.planche-etat{font-style:italic}
+a.renvoi-planche{font-family:system-ui,sans-serif;font-size:.85em}
+.planche-absente{color:#c0622f}
+"""
+
+CSS_FRISE = """
+.frise-page{page-break-before:always;--mut:#6b6357;--texte:#1f1c17;--acc:#8a5a2b;--filet:#ddd6c8}
+.frise-page h2{font-size:15pt;font-weight:normal;margin:0 0 .3em}
+.frise-intro{font-family:system-ui,sans-serif;font-size:8.5pt;color:#6b6357;margin:.2em 0 .8em}
+.pdf-frise{--mut:#6b6357;--texte:#1f1c17;--acc:#8a5a2b;--filet:#ddd6c8;break-inside:avoid}
+.pdf-frise.mini{margin:.4em 0 1em}
+.frise-interne{break-inside:avoid;margin:.6em 0 1.2em;border-top:1px solid #ddd6c8;padding-top:.3em}
+.frise-interne .sur{font-family:system-ui,sans-serif;font-size:7.5pt;letter-spacing:.12em;text-transform:uppercase;color:#6b6357;margin:.2em 0}
+.frise-interne .note{font-family:system-ui,sans-serif;font-size:8pt;color:#6b6357;margin:.2em 0}
+.frise-svg{display:block;font-family:system-ui,-apple-system,sans-serif}
+.frise-svg .fr-axe line{stroke:var(--mut)}
+.frise-svg .fr-axe text,.frise-svg .fr-lib{fill:var(--mut);font-size:10px}
+.frise-svg .fr-seg{opacity:.55}
+.frise-svg .fr-seg-lib,.frise-svg .fr-val,.frise-svg .fr-titre{fill:var(--texte);font-size:10px}
+.frise-svg .fr-titre{font-size:10.5px}
+.frise-svg .fr-rep{fill:var(--acc)}
+.frise-svg .fr-rep-ligne{stroke:var(--acc);stroke-dasharray:2 3;opacity:.35}
+.frise-svg .fr-fleche{fill:none;stroke:var(--mut);stroke-width:1.1;opacity:.55}
+.frise-svg .fr-fleche.arriere{stroke:#c0622f;opacity:.85}
+.frise-svg .fl-tete{fill:var(--mut)}.frise-svg .fl-tete.arriere{fill:#c0622f}
+.frise-legende{display:flex;flex-wrap:wrap;gap:.2em 1em;font-family:system-ui,sans-serif;font-size:8pt;color:#6b6357;margin:.6em 0}
+.frise-legende i{display:inline-block;width:.7em;height:.7em;border-radius:2px;margin-right:.35em;vertical-align:-1px}
+.mini-svg{display:block;overflow:visible}
+.mini-svg .mini-axe{stroke:var(--filet)}
+.mini-svg .mini-autre{stroke:var(--mut);opacity:.55}
+.mini-svg .mini-ici{fill:var(--acc)}
+.mini-svg .mini-lib{fill:var(--mut);font-size:10px;font-family:system-ui,sans-serif}
+"""
+
+
+def _planche_data(m):
+    import base64
+    from . import planches
+    try:
+        donnees = planches.chemin(m.group(1), m.group(2)).read_bytes()
+    except KeyError:
+        return m.group(0)
+    return 'src="data:image/svg+xml;base64,%s"' % base64.b64encode(donnees).decode()
 
 
 def _nom_version(version):
@@ -456,6 +592,8 @@ def version_imprimable(version="essai", compagnon=None):
     for c in chapitres:
         citees.update(re.findall(r'href="#oeuvre-([\w-]+)"', c["corps"] or ""))
 
+    F = _frise()
+
     def badges(c):
         return "".join('<span class="st %s">%s</span>' % (k, html.escape(v)) for k, v in c["etiq"])
 
@@ -463,8 +601,9 @@ def version_imprimable(version="essai", compagnon=None):
         return "%s" % c["numero"] if c.get("numero") else ""
 
     H = ['<!doctype html><html lang="%s"><head><meta charset="utf-8">' % (m.get("langue") or "fr"),
-         "<title>%s — %s</title><style>%s%s%s</style></head><body>" % (html.escape(m.get("titre", "")), html.escape(nom.lower()), CSS, CSS_ESSAI,
-                                                                         compagnon.css if compagnon else "")]
+         "<title>%s — %s</title><style>%s%s%s%s%s</style></head><body>" % (html.escape(m.get("titre", "")), html.escape(nom.lower()), CSS, CSS_ESSAI,
+                                                                             compagnon.css if compagnon else "", CSS_FRISE if F else "",
+                                                                             CSS_PLANCHE)]
     # la page de garde
     H.append('<section class="couverture">%s<div class="sur">%s</div><h1>%s</h1>%s<div class="kb">%s</div>'
              '<div class="synopsis">%s</div><div class="meta">%d chapitres · %d rédigés%s · état au %s</div></section>' % (
@@ -493,6 +632,8 @@ def version_imprimable(version="essai", compagnon=None):
     if compagnon:
         H.append(compagnon.sommaire())
     H.append('<div class="partie"><a href="#bibliographie">Bibliographie</a></div></section>' if citees or version == "essai" or compagnon else "</section>")
+    if F:
+        H.append(_frise_page(F))
 
     def chapitre(c):
         a = c["av"]
@@ -521,6 +662,8 @@ def version_imprimable(version="essai", compagnon=None):
                 corps = '<p class="avertit">Ni texte ni synopsis pour l\'instant.</p>'
         if compagnon:
             corps += compagnon.apres_chapitre(c)
+        if F:
+            tete += _frise_chapitre(F, c["slug"])
         return '<section class="%s" id="chap-%s">%s%s</section>' % (classes, c["slug"], tete, corps)
 
     for c in chapitres:
@@ -540,10 +683,12 @@ def version_imprimable(version="essai", compagnon=None):
         H.append(compagnon.annexe())
         H.append(compagnon.bibliographie(citees, chapitres))
         H.append(compagnon.script())
+        H.append(_frise_script(F) if F else "")
         H.append("</body></html>")
         return "\n".join(H)
     # la bibliographie des œuvres citées (le récit n'en a pas, d'ordinaire)
     if not citees and version != "essai":
+        H.append(_frise_script(F) if F else "")
         H.append("</body></html>")
         return "\n".join(H)
     O = {o["cle"]: o for o in kb.oeuvres()} if (livre.LIVRE / "kb").exists() else {}
@@ -556,7 +701,9 @@ def version_imprimable(version="essai", compagnon=None):
         ref = o.get("ref") and _md(o["ref"]) or refs.get(k)
         doi = ' <a href="https://doi.org/%s">doi:%s</a>' % (o["doi"], html.escape(o["doi"])) if o.get("doi") else ""
         H.append('<p id="oeuvre-%s">%s%s <span class="cle">%s</span></p>' % (k, ref or "<em>référence introuvable</em>", doi, k))
-    H.append("</section></body></html>")
+    H.append("</section>")
+    H.append(_frise_script(F) if F else "")
+    H.append("</body></html>")
     return "\n".join(H)
 
 

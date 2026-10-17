@@ -106,7 +106,7 @@ def _slugs():
 
 def _chapitres_par_fiche():
     out = {}
-    for c in livre.chapitres():
+    for c in livre.chapitres_seuls():
         p = livre.dossier(c["slug"]) / "brief.yaml"
         if not c.get("atelier") or not p.exists():
             continue
@@ -314,7 +314,7 @@ def oeuvres():
             o["doi"] = d.group(1).rstrip(".") if d else None
             m = re.search(r"^fiches:\s*(.*)$", bloc, re.M)
             o["fiches"] = [x.strip() for x in (m.group(1).split(",") if m else []) if x.strip() not in ("", "—")]
-    for c in livre.chapitres():
+    for c in livre.chapitres_seuls():
         pb = livre.dossier(c["slug"]) / "bibliographie.yaml"
         if not c.get("atelier") or not pb.exists():
             continue
@@ -368,7 +368,7 @@ def fiche(slug):
             entrants.append(s)
     # les œuvres : celles des chapitres migrés (avec les notes qui les citent), puis la base centrale
     oeuvres = {}
-    for c in livre.chapitres():
+    for c in livre.chapitres_seuls():
         p = livre.dossier(c["slug"]) / "bibliographie.yaml"
         if not c.get("atelier") or not p.exists():
             continue
@@ -409,7 +409,7 @@ def _fiches_de_tous_les_chapitres():
     depot, h = livre.heritage()
     rep = depot / h.get("chapitres", {}).get("essai", "") if depot else None
     out = {}
-    for c in livre.chapitres():
+    for c in livre.chapitres_seuls():
         liste = None
         p = livre.dossier(c["slug"]) / "brief.yaml"
         if c.get("atelier") and p.exists():
@@ -552,7 +552,7 @@ def consequences(slug):
         if n:
             citee.append({"fiche": s, "liens": n})
     chapitres, oeuvres = [], []
-    for c in livre.chapitres():
+    for c in livre.chapitres_seuls():
         if not c.get("atelier"):
             continue
         br = livre.dossier(c["slug"]) / "brief.yaml"

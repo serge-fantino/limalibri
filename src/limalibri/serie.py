@@ -15,8 +15,9 @@ Les actions :
   storyboard  Claude prépare les plans du récit depuis l'essai, posés d'office.
   recit    Claude écrit le récit depuis le storyboard (narration), posé d'office.
   naif     une lecture naïve de la version (naif) ; les relevés restent à décider par l'auteur.
-  <id>     une capacité propre au livre (capacites.yaml : l'ouverture…), posée d'office ; sautée si le chapitre a
-           déjà son plan d'en-tête, ou pas encore d'essai (les faits viennent de lui).
+  <id>     une capacité propre au livre (capacites.yaml : l'ouverture…), posée d'office, après le récit du chapitre
+           (elle le lit) ; sautée si le chapitre a déjà son plan d'en-tête, s'il est exclu (« sauf »), ou s'il n'a pas
+           encore d'essai (les faits) ou de récit.
 
 Une étape sans objet est sautée (un brief déjà prêt, un essai déjà écrit). Une étape en erreur arrête
 la série, qui le dit ; on la reprend (l'étape est relancée) ou on l'abandonne.
@@ -235,8 +236,8 @@ def _lance(s, e):
         # une capacité du livre (un plan d'en-tête) : une fois par chapitre, depuis son essai
         from . import capacites_livre, narration
         cap = capacites_livre.toutes().get(e["action"])
-        if not cap or cap["plan"]["id"] in livre.plans_en_tete(c["slug"]) \
-                or avancement.niveau(c, "essai") not in ("brouillon", "relu", "valide"):
+        if not cap or cap["plan"]["id"] in livre.plans_en_tete(c["slug"]) or capacites_livre.exclu(cap, c["slug"]) \
+                or avancement.niveau(c, "essai") not in ("brouillon", "relu", "valide") or not narration.recit_ecrit(c["slug"]):
             return False
         d = narration.cree({"chapitre": c["slug"], "capacite": cap["id"], "consigne": o.get("consigne") or "",
                             "modele": o.get("modele"), "poser": o.get("poser") is not False})

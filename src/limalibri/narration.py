@@ -141,6 +141,12 @@ def portee_lisible(c, plan=None, rang=None):
     return c["title"]
 
 
+def recit_ecrit(slug):
+    """Le récit du chapitre a-t-il des paragraphes, hors plans d'en-tête ?"""
+    tete = livre.plans_en_tete(slug)
+    return any(L for pid, L in _groupes(slug).items() if pid not in tete)
+
+
 def cree(corps):
     """{chapitre, plan?, rang? (1, 2…), capacite? (une capacité du livre : son plan d'en-tête), consigne?, modele?, poser?}."""
     from . import capacites_livre
@@ -160,6 +166,10 @@ def cree(corps):
     if capacite:
         cap = capacites_livre.une(capacite)
         plan, rang = cap["plan"]["id"], None
+        if capacites_livre.exclu(cap, slug):
+            raise ValueError("ce chapitre n'a pas de plan « %s » (capacites.yaml : sauf)" % cap["plan"]["titre"])
+        if not recit_ecrit(slug):
+            raise ValueError("le plan « %s » s'écrit après le récit du chapitre : écrire d'abord le récit" % cap["plan"]["titre"])
     elif not beats:
         raise ValueError("le chapitre n'a pas de storyboard : le récit s'écrit depuis ses plans")
     if not capacite and plan and plan not in {str(b.get("id")) for b in beats}:
@@ -272,6 +282,9 @@ en tête du chapitre du récit, avant son premier plan, rendu à part (italique,
 sa forme sont dans la section « {regle} » des règles ci-dessous et dans la consigne du livre : pour ce texte, elles
 priment sur la voix du récit. Les autres règles du récit valent aussi, sauf ce qu'elles disent de la voix.
 
+Le récit du chapitre est écrit : il est plus bas, en entier. Ton texte vient en tête, mais il s'écrit après lui, en
+le connaissant ; il ne le résume pas, il ne l'annonce pas.
+
 Les faits viennent de l'essai : lis l'essai du chapitre (chapters/{slug}/essai.md). Tu peux lire les fiches
 (kb/fiches/) et le récit des chapitres (chapters/*/recit.md). Pas de web. Tu ne dis rien que l'essai n'établisse.
 
@@ -346,9 +359,10 @@ def _contexte_tete(d):
         L += ["- %s %s — attaque : %s" % (b.get("id"), b.get("title") or "", " ".join(str(b.get("attaque") or "—").split()))
               for b in ordinaires]
     G = _groupes(slug)
-    debut = [t for b in ordinaires for _, (_, t, _) in _effectifs(G.get(str(b.get("id"))) or [])][:2]
-    if debut:
-        L += ["", "# Le récit commence ainsi (ton texte le précède : n'en reprends ni les images ni les formules)"] + debut
+    tout = [t for b in ordinaires for _, (_, t, _) in _effectifs(G.get(str(b.get("id"))) or [])]
+    if tout:
+        L += ["", "# Le chapitre, en entier : ton texte vient avant lui, mais s'écrit après. Il ouvre ce que le chapitre "
+              "va faire, sans l'annoncer ni le résumer ; n'en reprends ni les images ni les formules."] + tout
     deja = _texte_tete(slug, pid)
     if deja:
         L += ["", "# Le texte actuel de ce plan (à remplacer en entier)"] + deja

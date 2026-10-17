@@ -273,7 +273,7 @@ def un(version, slug):
     """Le suivi d'un seul chapitre (le bandeau « prochaine étape »)."""
     if version not in livre.VERSIONS:
         raise KeyError(version)
-    c = next((x for x in livre.chapitres() if x["slug"] == slug), None)
+    c = next((x for x in livre.chapitres_seuls() if x["slug"] == slug), None)
     if not c:
         raise KeyError(slug)
     r = chapitre(c, version, _demandes())
@@ -288,7 +288,7 @@ def suivi(version):
     D = _demandes()
     from . import travail, objectifs
     T = travail.par_chapitre()
-    C = [chapitre(c, version, D) for c in livre.chapitres() if version in (c.get("versions") or [version]) or True]
+    C = [chapitre(c, version, D) for c in livre.chapitres_seuls() if version in (c.get("versions") or [version]) or True]
     for c in C:                                        # le travail en cours du chapitre (demandes, manques)
         c["travail"] = travail.public({c["slug"]: T.get(c["slug"]) or {"en_file": [], "en_cours": [], "a_decider": [],
                                                                          "manques": 0, "demandes": set()}})[c["slug"]]

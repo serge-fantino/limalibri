@@ -39,6 +39,10 @@ Il faut Python 3.11+, Poetry (installe les dépendances au premier lancement) et
 Claude, Claude Code connecté (le SDK Claude Agent s'appuie sur lui). Pour publier un site de livre :
 Node (`npx wrangler`) et un compte Cloudflare.
 
+Le logo de LimaLibri, une plume qui écrit sur un livre ouvert, est `front/logo.svg` (l'icône de l'onglet). Quand
+un chapitre, son storyboard, le suivi, la frise ou une planche mettent plus d'un instant à venir, la plume l'écrit
+sur la colonne centrale, avec le titre et la période du chapitre.
+
 Un livre est un dossier avec `structure.yaml` (l'ordre des chapitres) et `livre.yaml` (ce
 qui le décrit, et un éventuel dépôt d'« héritage » lu en lecture seule). Un dossier qui ne
 les a pas les reçoit, vides, au démarrage ; un dossier inexistant est créé après confirmation.
@@ -261,8 +265,17 @@ fiches (R8) : l'appareil est en encart et en annexe.
 Le **récit** s'exporte de la même façon (**⎙ récit PDF** dans la barre du livre, **⎙ PDF** dans celle du
 récit ; `/api/recit/pdf`, `/api/recit/imprimable`), avec un niveau d'avancement à lui : entre le synopsis
 et le texte, le **storyboard** — les plans du chapitre, chacun avec son cadre (lieu, temps, ambiance) et
-ses micro-récits. Pas de numérotation (elle est propre à l'essai) ; la bibliographie n'y paraît que si le
-récit cite une œuvre.
+ses micro-récits. Ses **intertitres** se règlent dans Livre → récit · essai (`versions.recit.intertitres` dans
+`livre.yaml`) : aucun (un séparateur entre les plans, par défaut), le titre de chaque plan du storyboard, ou le
+titre et son numéro — en chiffres (4.2 : chapitre et place du plan) ou en lettres (B ; `versions.recit.numeros`).
+Ils valent pour l'export et le site public ; dans LimaLibri, les plans restent en marge. L'ouverture (un plan
+d'en-tête) n'a pas d'intertitre. La bibliographie n'y paraît que si le récit cite une œuvre.
+
+**Les frises dans les exports** (récit, essai, essai + fiches), quand le livre a un `frise.yaml` : après la table
+des matières, une page **« La frise »** (les chapitres sur la première échelle, avec les bandes, les repères, la
+légende des parties et les chapitres hors frise ; un clic mène au chapitre) ; sous le titre de chaque chapitre
+placé, son **bandeau** (le chapitre en évidence parmi les autres, comme sur le site public), et ses **frises
+internes**. Elles sont dessinées par le moteur de LimaLibri à l'ouverture de la page, puis imprimées.
 
 La **bibliographie du livre** vit dans `kb/sources/<cle>.yaml`, une œuvre par fichier
 (`limalibri/sources.py`) : clé stable, référence, DOI (lu, jamais de mémoire), fiches où l'œuvre est
@@ -588,8 +601,15 @@ tête de la page des capacités ; la capacité fautive est écartée. La primiti
   section des règles du récit qui donne sa voix (`regle`), la consigne du livre et sa longueur (`mots`,
   `paragraphes`). Ses paragraphes s'affichent à part, en italique et suivis d'un blanc : dans LimaLibri, dans
   le PDF, sur le site public. Ils ne portent pas d'assertion : ni le verrou, ni la séquence, ni le harnais ne
-  les comptent. Refaire le storyboard ou tout le récit le garde tel quel. Dans le storyboard, « ✦ écrire
-  l'ouverture » apparaît en tête d'un chapitre qui ne l'a pas ; une série la saute là où elle existe déjà.
+  les comptent. Refaire le storyboard ou tout le récit le garde tel quel.
+
+  **Une étape à part, après le récit.** La section de sa règle ne va qu'à elle : le storyboard, la rédaction, la
+  relecture reçoivent à sa place une ligne qui dit que ce texte s'écrit à part et qu'ils ne le planifient pas (un
+  plan qui porterait son identifiant sans en être un est écarté du storyboard). Elle s'écrit quand le récit du
+  chapitre est écrit, et Claude lit alors le chapitre en entier : dans le storyboard, « ✦ écrire l'ouverture »
+  apparaît en tête d'un chapitre qui ne l'a pas, grisé tant que le récit manque ; dans une série, l'étape vient
+  après le récit, et elle est sautée là où l'ouverture existe déjà, où le récit manque, et sur les chapitres
+  exclus. Elle est facultative : `sauf` liste les chapitres qui n'en ont pas (ni bouton, ni étape de série).
 
 ```yaml
 ouverture:
@@ -602,6 +622,7 @@ ouverture:
   paragraphes: [2, 4]
   consigne: |
     Suis la section « L'ouverture » des règles…
+  sauf: [qui-raconte]           # facultatif : les chapitres sans ouverture
 ```
 
 **Les demandes, en pleine page** (`#demandes`) : la même liste que le tiroir (filtres, file, commande de
@@ -668,7 +689,8 @@ l'action devient une demande ordinaire, qu'on ouvre depuis la conversation. La c
 donne à Claude la référence de ce que l'auteur regarde (le paragraphe choisi, la fiche, l'œuvre…).
 Une conversation se poursuit dans la même session : Claude garde ce qu'il a lu. Elles vivent dans
 `kb/conversations/<id>.json` (`limalibri/conversation.py`) ; budget et modèle dans les réglages Claude
-du livre (`claude.conversation` : 30 tours, 4 recherches, 6 pages par question).
+du livre (`claude.conversation` : 30 tours, 4 recherches, 6 pages par question). Le modèle se choisit aussi
+au début d'une conversation (le menu à côté de « envoyer ») ; ensuite la session garde le sien, affiché à sa place.
 
 La **consommation** de Claude est journalisée dans `consommation.jsonl`, à la racine du livre : une
 ligne JSON par exécution (demande, reprise, « chercher encore », tour de conversation, lecture de
@@ -744,6 +766,60 @@ poetry run uvicorn limalibri.serveur:app --reload --port 8765
 Puis <http://localhost:8765>. Le récit d'un chapitre migré montre ses plans en marge ; un
 clic sur un paragraphe ouvre sa fiche : plan, micro-récit, assertions du verrou.
 
+## Les planches d'un chapitre
+
+Des dessins qui accompagnent le texte (`limalibri/planches.py`) : un schéma, une courbe, en **SVG** (net à toute
+taille, à l'écran, dans le PDF et sur le site, et du texte qui se versionne avec le livre).
+
+- **Où elles vivent :** `chapters/<slug>/planches/<id>.svg` (l'identifiant : minuscules, chiffres, tirets), et
+  `chapters/<slug>/planches.yaml`, facultatif, qui donne l'ordre, le titre, la légende et l'état de chacune :
+  ```yaml
+  escalier-des-masses:
+    titre: L'escalier des masses
+    legende: La chaîne monte de deux en deux jusqu'à l'hélium 4…
+    etat: en construction        # ou : retenue
+    fiches: [nucleosynthese-primordiale]   # facultatif : les fiches dont elle tire ses données
+  ```
+- **Dans LimaLibri :** la colonne du chapitre a une rubrique **Planches** (numéro, titre, état) ; un clic ouvre la
+  planche, avec l'appel à copier et le fichier à ouvrir (application par défaut ou VS Code). Un dessin manquant ou un
+  `planches.yaml` illisible s'y disent.
+- **Sa page** (⤢ sur sa ligne, ou « pleine page → » dans sa fenêtre ; adresse `#planche/<chapitre>/<id>`) : le dessin
+  en grand, sa légende, l'état et les actions ; comment il a été fait (la demande qui l'a retenu, le modèle, le coût,
+  le nombre de regards, ce qu'il affiche et d'où, ce qui est laissé en blanc ; ou « fait hors de LimaLibri ») ; le
+  brief. À droite : **appelée par** (les paragraphes du récit ou de l'essai qui l'appellent ; un clic y mène), ses
+  **fiches**, sa **fabrication** (toutes les demandes qui l'ont proposée ou dessinée ; un clic ouvre le tiroir) et
+  ses **dessins archivés**.
+- **Ses fiches :** une planche reste une pièce du chapitre (son numéro, sa place dans le texte), mais elle est liée
+  aux fiches dont elle tire ses données : celles que citent les sources de son brief (`@fiche/…`), et celles qu'elle
+  déclare (`fiches` dans `planches.yaml` ; « lier une fiche… » sur sa page). Claude lit les fiches déclarées quand il
+  la dessine, et la page d'une fiche montre, en retour, les planches qui en sont tirées.
+- **L'appel, dans le texte** (récit ou essai) : écrire `@planche/<id>` dans un paragraphe. L'appel devient
+  « planche 5.1 » (le numéro du chapitre, puis le rang de la planche), et la planche s'insère **après ce
+  paragraphe**, la première fois qu'il l'appelle, avec sa légende (et « en construction » tant qu'elle n'est pas
+  retenue). Les paragraphes ne changent pas : l'alignement du récit et de son storyboard tient. Dans le texte, un
+  clic sur « planche 5.1 » va à la planche ; dans le storyboard, qui ne montre que les paragraphes, il l'ouvre.
+- **Partout :** dans LimaLibri, dans le PDF (le dessin est inclus dans le document), et sur le site public (les
+  dessins appelés sont copiés dans `planches/` ; toucher une planche l'ouvre seule, en grand, pour zoomer).
+- **Leur état :** « à dessiner » (une proposition retenue, sans dessin encore), « en construction » (un dessin, à
+  revoir), « retenue ». Il se change dans la fenêtre de la planche ; tant qu'elle n'est pas retenue, sa légende le dit.
+
+**Claude propose et dessine les planches** (`limalibri/dessin.py`, une demande `g-` dans `kb/demandes`) :
+- **« ✦ proposer des planches »** (sous la liste, dans la colonne du chapitre) : Claude lit l'essai, le récit et les
+  fiches du chapitre, et propose une à quatre planches — ce que chacune montre, pourquoi, où le texte l'appellerait,
+  ses sources, et ce qu'il faudrait sourcer d'abord. On coche celles qu'on retient : elles entrent dans
+  `planches.yaml`, « à dessiner », avec ce brief.
+- **« ✦ dessiner »** (dans la fenêtre d'une planche ; « redessiner… » avec une consigne quand elle a un dessin) :
+  Claude dessine la planche en SVG, au format du livre (largeur 800, fond clair, la palette, aucun texte sous la taille
+  11 pour rester lisible en A4), et **la regarde** : l'outil `regarder` l'affiche dans Chrome et lui rend l'image ; il
+  corrige ce qui se chevauche, déborde ou vise mal, au moins deux fois, dix au plus. Tout ce qu'elle affiche est
+  sourcé (l'essai, les fiches), le reste est laissé en blanc. Le tiroir montre le dessin, sa légende, ce qu'il affiche
+  et d'où, ce qui est laissé en blanc, le nombre de regards. **Retenir** écrit `planches/<id>.svg` (l'ancien dessin dans
+  `planches/historique/`), et la planche passe « en construction ».
+- **Contrôlé avant d'être retenu :** du XML lisible, une racine `<svg>` avec `viewBox`, ni script, ni gestionnaire
+  d'événement, ni lien ou image hors du dessin. Un dessin fautif se montre, il ne se retient pas.
+- Au catalogue : `proposer_planches` et `dessiner_planche` (page Capacités, plans d'objectif ; dans un plan, le dessin
+  se pose d'office). Le modèle se règle par `claude.planche.modele` dans `livre.yaml`, ou au lancement.
+
 ## La frise du livre
 
 `limalibri/frise.py` et la vue Plan → **frise** (`#plan/frise`) montrent où se place chaque chapitre dans le temps de
@@ -792,15 +868,18 @@ lien. Un chapitre pas encore daté le dit.
 `limalibri/public.py` génère un mini-site statique, en lecture seule et lisible sur mobile, pour suivre un livre et le
 lire. Le livre y est publié en l'état.
 
-**Ce que le site contient :**
-- la progression de chaque version, par étape ;
-- les objectifs en cours ;
-- les dernières avancées ;
-- le sommaire par partie, chaque chapitre avec son statut et sa jauge ;
+**Ce que le site contient** (l'accueil met le contenu d'abord, la progression ensuite) :
+- **Lire le récit** et **Lire l'essai** : le premier chapitre écrit de chaque version ;
+- le sommaire par partie, chaque chapitre avec ses liens de lecture et son statut ;
+- les PDF à télécharger, nommés d'après le livre, la version du texte et la version du livre (onglet
+  « révisions ») : `un-monde-recit-v2.pdf` quand le livre est tel que marqué, `un-monde-recit-v2-2026-10-17.pdf`
+  s'il a changé depuis (avec la date du PDF), `un-monde-recit-2026-10-17.pdf` sans version marquée ;
 - le récit et l'essai de chaque chapitre écrit, avec un sélecteur récit / essai et les chapitres précédent et
   suivant ;
 - les fiches que les chapitres citent ;
-- la bibliographie des œuvres citées.
+- la bibliographie des œuvres citées ;
+- en bas, **« Où en est le livre »** : la progression de chaque version, par étape, les objectifs en cours, les
+  dernières avancées, et le détail par chapitre (à déplier).
 
 **Sur le site :**
 - un sélecteur de thème (◐ auto, ☀ clair, ☾ sombre) et un bouton **Aa** pour la taille du texte (13 à 26 px) et la
@@ -824,7 +903,9 @@ les citations sont réécrits. Un lien vers une fiche non publiée devient du te
 **Depuis la vue Livre, onglet « site public » (`#livre/public`) :**
 - « générer l'aperçu » génère le site et l'ouvre sous `/apercu-public/` ;
 - « Publier » génère le site, puis le déploie sur Cloudflare Pages avec `wrangler pages deploy`. Le projet est créé
-  au premier déploiement. La dernière publication (date, URL, journal en cas d'échec) est affichée.
+  au premier déploiement. La dernière publication (date, URL, journal en cas d'échec) est affichée ;
+- en tête de l'onglet, « En ligne : » donne les liens du site : l'adresse publique déclarée (dès qu'elle est
+  réglée, même avant la première publication) et l'adresse `<projet>.pages.dev` une fois publié.
 
 **Réglages** (`livre.yaml`, facultatif ; ils se modifient aussi dans l'onglet, rubrique « Configuration ») :
 ```yaml

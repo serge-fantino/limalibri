@@ -99,7 +99,15 @@ function badgesAvancement(c) {
 // Chaque vue garde son état : la sélection (récit et storyboard partagent la leur,
 // l'essai a la sienne), le défilement, et pour la vue parallèle le DOM entier —
 // plans dépliés, panneau ouvert — qu'on remet tel quel en revenant.
+// Ouvrir un chapitre : au-delà d'un instant, une page d'attente (la plume) le temps que tout arrive.
 async function ouvre(slug) {
+  const c = etat.chapitres?.find((x) => x.slug === slug);
+  const fin = attente(c ? `${c.numero ? c.numero + ". " : ""}${c.title}` : slug, c?.periode,
+    { storyboard: "le storyboard", essai: "l'essai", recit: "le récit" }[etat.version] ?? "");
+  try { return await ouvreChapitre(slug); } finally { fin(); }
+}
+
+async function ouvreChapitre(slug) {
   if (slug !== etat.slug) {
     Object.assign(etat, { bloc: null, blocEssai: null, essai: null, garde: null, defil: {}, docs: {}, sectionChoisie: null,
       noteChoisie: null, noteFocus: null, sourceChoisie: null });
@@ -114,12 +122,15 @@ async function ouvre(slug) {
   barreOutils();
   const page = document.getElementById("page");
   const c = etat.chapitres.find((x) => x.slug === slug);
+  // ce qui ne dépend que du chapitre part en même temps
+  const pVal = c?.atelier ? api(`/chapitres/${slug}/validation`).catch(() => null) : null;
+  const pAnn = c?.atelier ? api(`/chapitres/${slug}/annotations`).catch(() => []) : null;
   etat.atelier = c?.atelier ? await api(`/chapitres/${slug}/atelier`).catch(() => null) : null;
-  if (etat.atelier) await chargeDocs(slug);
-  etat.validation = etat.atelier ? await api(`/chapitres/${slug}/validation`).catch(() => null) : null;
+  const frais = etat.atelier ? await chargeDocs(slug) : {};
+  etat.validation = etat.atelier ? await pVal : null;
   barreOutils();                          // les données du chapitre sont là : la barre complète
   colonnePlan();
-  etat.annots = etat.atelier ? await api(`/chapitres/${slug}/annotations`).catch(() => []) : [];
+  etat.annots = etat.atelier ? await pAnn : [];
   await chargeDemandes();
   if (etat.tiroirApres) { const id = etat.tiroirApres; etat.tiroirApres = null; setTimeout(() => tiroir(id), 0); }
   if (etat.annotApres) {
@@ -151,7 +162,7 @@ async function ouvre(slug) {
     marquesValidation();
   } else {
     try {
-      const t = await api(`/chapitres/${slug}/${vue}`);
+      const t = frais[vue] ?? await api(`/chapitres/${slug}/${vue}`);
       page.innerHTML = t.html;
       page.append(el("p", "origine", t.origine));
       document.body.dataset.numerotation = t.numerotation ?? "aucune";
@@ -420,7 +431,380 @@ function barreOutils() {
 // identifiant ne change ; chaque opération est au journal.
 const plisPlan = new Set();                   // les sections dont on montre les paragraphes
 
+// Les planches du chapitre (limalibri/planches.py) : sous le plan, la liste ; un clic ouvre la planche.
+async function colonnePlanches() {
+  const col = document.getElementById("planches-col");
+  if (!col) return;
+  if (etat.accueil || !etat.atelier || !etat.slug) { col.replaceChildren(); return; }
+  const slug = etat.slug;
+  const P = await api(`/planches/${slug}`).catch(() => null);
+  if (slug !== etat.slug) return;
+  if (!P) { col.replaceChildren(); return; }
+  col.replaceChildren(el("h4", null, "Planches"));
+  for (const p of P.planches) {
+    const r = el("div", "pl-ligne pl-planche");
+    r.append(el("span", "pl-num", p.numero), el("span", "pl-debut", p.titre));
+    if (p.etat !== "retenue") r.append(el("span", "pl-meta mut", p.etat));
+    r.title = "ouvrir la planche";
+    r.onclick = () => ouvrePlanche(slug, p);
+    const pp = el("a", "pl-pleine", "⤢");
+    pp.href = `#planche/${slug}/${p.id}`;
+    pp.title = "la page de la planche : son dessin en grand, sa fabrication, où le texte l'appelle, ses fiches";
+    pp.onclick = (e) => e.stopPropagation();
+    r.append(pp);
+    col.append(r);
+  }
+  for (const a of P.avertissements) col.append(el("p", "fiche-alerte petit", a));
+  const prop = el("button", "pan-lien", "✦ proposer des planches");
+  prop.title = "Claude lit le chapitre et ses fiches, et propose des planches (schémas, courbes) ; vous retenez celles à dessiner";
+  prop.onclick = () => formPlanche(slug, null);
+  col.append(prop);
+}
+
+// Proposer des planches (p = null) ou dessiner la planche p : une demande g- (limalibri/dessin.py)
+function formPlanche(slug, p) {
+  const f = el("div", "form-demande");
+  const cons = el("textarea", "annot-texte petit-texte");
+  cons.placeholder = p ? (p.existe ? "Ce qu'il faut changer : une étiquette qui chevauche, une valeur à sourcer, une autre disposition…"
+    : "Une précision (facultatif) : ce qu'il faut mettre en avant, ce qu'il faut éviter…")
+    : "Une piste (facultatif) : ce que vous aimeriez voir, ce qui serait inutile…";
+  const mod = choixModele("planche");
+  const go = el("button", "bouton", p ? (p.existe ? "✦ redessiner" : "✦ dessiner") : "✦ proposer");
+  const err = el("span", "err petit");
+  go.onclick = async () => {
+    go.disabled = true;
+    try {
+      const corps = { consigne: cons.value, modele: mod.valeur() };
+      const d = p ? await poste(`/planches/${slug}/${p.id}/dessiner`, corps) : await poste(`/planches/${slug}/proposer`, corps);
+      fermeModale();
+      f.remove(); tiroir(d.id);
+    } catch (e) { err.textContent = e; go.disabled = false; }
+  };
+  f.append(el("p", "mut petit", p
+    ? "Claude dessine la planche en SVG depuis son brief, et la regarde rendue (chevauchements, débordements) avant de la rendre. " +
+      "Tout ce qu'elle affiche est sourcé ; le reste est laissé en blanc. Retenir écrit le dessin (l'ancien est archivé)."
+    : "Claude lit l'essai, le récit et les fiches du chapitre, et propose une à quatre planches : ce que chacune montre, " +
+      "pourquoi, où le texte l'appellerait, ses sources. Vous retenez celles à dessiner."), cons, mod.noeud, el("div", "annot-actions"));
+  f.lastChild.append(go, err);
+  enModale(p ? `${p.existe ? "Redessiner" : "Dessiner"} la planche ${p.numero}` : "Proposer des planches", nomChapitre(slug), f);
+}
+
+// Le résultat : les propositions (à retenir), ou le dessin (à regarder, retenir ou rejeter)
+async function tiroirPlanche(t, d) {
+  t.replaceChildren(teteTiroir(d.titre ?? "Planche", () => tiroir(null)));
+  if (d.consigne) t.append(el("p", "annot-corps", "« " + d.consigne + " »"));
+  if (d.etat === "en_attente" || d.etat === "retiree") return t.append(blocAttente(d));
+  if (d.etat === "en_cours") { t.append(enDirect(d)); suivreDemande(d.id); return piedTiroir(t, d); }
+  if (d.etat === "erreur") { t.append(el("p", "annot-orph-titre", "Échec : " + d.erreur)); return piedTiroir(t, d); }
+  const R = d.resultat ?? {}, slug = d.cible.chapitre;
+  const envoie = async (corps) => { await poste(`/chapitres/_kb/demandes/${d.id}/decision`, corps).catch((e) => alert(e)); colonnePlanches(); tiroir(d.id); };
+  if (d.mode === "dessiner") {
+    if (d.decision) t.append(el("div", "dem-decision", d.decision.proposition
+      ? `Retenu${d.decision.d_office ? " d'office" : ""} : ${d.decision.fichier}${d.decision.archive ? " (l'ancien dans " + d.decision.archive + ")" : ""}` : "Rejeté"));
+    if (d.erreur_pose) t.append(el("p", "err", "Pas posé d'office : " + d.erreur_pose));
+    for (const x of R.defauts ?? []) t.append(el("p", "fiche-alerte petit", "Défaut : " + x));
+    if (R.svg) {
+      const img = el("img", "planche-tiroir");
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(R.svg);
+      img.alt = R.titre ?? "";
+      const a = el("a");
+      a.href = img.src; a.target = "_blank"; a.rel = "noopener"; a.title = "ouvrir en grand";
+      a.append(img);
+      t.append(a);
+    }
+    t.append(el("p", "petit", (R.titre ? R.titre + ". " : "") + (R.legende ?? "")));
+    t.append(el("p", "mut petit", `${R.regards ?? 0} regard(s) sur le rendu` + (R.taille ? ` · ${R.taille[0]} × ${R.taille[1]}` : "")));
+    for (const x of R.notes ?? []) t.append(el("p", "fiche-alerte petit", x));
+    if (R.elements?.length) {
+      t.append(el("h5", null, "Ce qu'elle affiche, et d'où"));
+      const ul = el("ul", "petit");
+      for (const e of R.elements) ul.append(el("li", null, `${e.quoi} — ${e.source}`));
+      t.append(ul);
+    }
+    if (R.blancs?.length) {
+      t.append(el("h5", null, "Laissé en blanc"));
+      const ul = el("ul", "petit mut");
+      for (const b of R.blancs) ul.append(el("li", null, b));
+      t.append(ul);
+    }
+    if (R.remarques) t.append(el("h5", null, "Remarques"), el("p", "mut petit", R.remarques));
+    if (d.etat === "prete" && !(R.defauts ?? []).length) {
+      const act = el("div", "annot-actions");
+      const ok = el("button", "bouton", "Retenir ce dessin");
+      ok.title = "écrit planches/" + d.cible.planche + ".svg (l'ancien dessin est archivé) ; la planche reste « en construction »";
+      const non = el("button", "pan-lien", "rejeter");
+      ok.onclick = () => envoie({ action: "retenir" });
+      non.onclick = () => envoie({ action: "rejeter" });
+      act.append(ok, non);
+      t.append(act);
+    }
+    return piedTiroir(t, d);
+  }
+  if (d.decision) t.append(el("div", "dem-decision", d.decision.planches?.length
+    ? "Retenues, à dessiner : " + d.decision.planches.join(", ") : "Aucune retenue"));
+  const coches = [];
+  (R.propositions ?? []).forEach((p, i) => {
+    const b = el("div", "plan-sb-tiroir");
+    const tete = el("label", "planche-prop");
+    const c = el("input");
+    c.type = "checkbox"; c.checked = true; c.hidden = d.etat !== "prete";
+    coches.push([i, c]);
+    tete.append(c, el("strong", null, ` ${p.titre}`), el("span", "mut petit", ` · ${p.genre === "courbe" ? "courbe" : "schéma"} · ${p.id}`));
+    b.append(tete, el("p", "petit", p.montre));
+    if (p.pourquoi) b.append(el("p", "mut petit", "Pourquoi : " + p.pourquoi));
+    if (p.ou) b.append(el("p", "mut petit", "Où : " + p.ou));
+    if (p.sources?.length) b.append(el("p", "mut petit", "Sources : " + p.sources.join(" ; ")));
+    if (p.manques) b.append(el("p", "fiche-alerte petit", "À sourcer d'abord : " + p.manques));
+    t.append(b);
+  });
+  if (R.remarques) t.append(el("h5", null, "Remarques"), el("p", "mut petit", R.remarques));
+  if (d.etat === "prete") {
+    const act = el("div", "annot-actions");
+    const ok = el("button", "bouton", "Retenir les planches cochées");
+    ok.title = "elles entrent dans planches.yaml, « à dessiner », avec leur brief ; le dessin se lance depuis la colonne Planches";
+    ok.onclick = () => envoie({ retenir: coches.filter(([, c]) => c.checked).map(([i]) => i) });
+    const non = el("button", "pan-lien", "n'en retenir aucune");
+    non.onclick = () => envoie({ retenir: [] });
+    act.append(ok, non);
+    t.append(act);
+  }
+  piedTiroir(t, d);
+}
+
+// « planche 5.1 » dans le texte : aller à la planche si la vue la montre (le texte), sinon l'ouvrir (le storyboard)
+// — jamais de navigation : l'adresse porte le chapitre et la vue
+document.addEventListener("click", async (e) => {
+  const a = e.target.closest?.("a.renvoi-planche");
+  if (!a || !a.dataset.planche) return;
+  e.preventDefault();
+  const fig = document.getElementById(a.getAttribute("href").slice(1));
+  if (fig && fig.offsetParent) { fig.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+  const P = await api(`/planches/${a.dataset.slug}`).catch(() => null);
+  const p = P?.planches.find((x) => x.id === a.dataset.planche);
+  if (p) ouvrePlanche(a.dataset.slug, p);
+});
+
+function ouvrePlanche(slug, p) {
+  const f = el("div", "planche-vue");
+  if (p.existe) {
+    const img = el("img");
+    img.src = `/api/planches/${slug}/${p.id}.svg?v=${Date.now()}`;
+    img.alt = p.titre;
+    f.append(img);
+  } else f.append(el("p", "fiche-alerte", "Pas encore de dessin : " + p.fichier));
+  if (p.legende) f.append(el("p", "petit", p.legende));
+  const B = p.brief ?? {};
+  if (B.montre) {
+    const br = el("details", "replie");
+    br.open = !p.existe;
+    br.append(el("summary", null, "Le brief"), el("p", "petit", B.montre));
+    if (B.pourquoi) br.append(el("p", "mut petit", "Pourquoi : " + B.pourquoi));
+    if (B.ou) br.append(el("p", "mut petit", "Où : " + B.ou));
+    if (B.sources?.length) br.append(el("p", "mut petit", "Sources : " + B.sources.join(" ; ")));
+    if (B.manques) br.append(el("p", "fiche-alerte petit", "À sourcer d'abord : " + B.manques));
+    f.append(br);
+  }
+  const et = el("select", "livre-select");
+  for (const x of ["à dessiner", "en construction", "retenue"]) et.append(new Option(x, x));
+  et.value = p.etat;
+  et.onchange = async () => {
+    await fetch(`/api/planches/${slug}/${p.id}/etat`, { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ etat: et.value }) }).catch(() => null);
+    colonnePlanches();
+  };
+  const ligne = el("p", "mut petit");
+  ligne.append("état : ", et, " · pour l'appeler dans le texte (récit ou essai), écrire dans un paragraphe : @planche/" + p.id);
+  f.append(ligne);
+  const des = el("button", "bouton", p.existe ? "✦ redessiner…" : "✦ dessiner");
+  des.title = "Claude dessine la planche en SVG depuis son brief, en la regardant rendue";
+  des.onclick = () => { fermeModale(); formPlanche(slug, p); };
+  f.append(des);
+  const ac = el("div", "annot-actions");
+  const cp = el("button", "pan-lien", "⧉ copier l'appel");
+  cp.onclick = () => copieRef("@planche/" + p.id);
+  const ouvrir = el("button", "pan-lien", "ouvrir le dessin");
+  ouvrir.onclick = () => fetch(`/api/ouvrir?chemin=${encodeURIComponent(p.fichier)}`, { method: "POST" });
+  const vs = el("a", "lien-ext", "VS Code ↗");
+  vs.href = "vscode://file" + (etat.livre.dossier ?? "") + "/" + p.fichier;
+  const pp = el("a", "pan-lien", "pleine page →");
+  pp.href = `#planche/${slug}/${p.id}`;
+  ac.append(pp, cp, ouvrir, vs);
+  f.append(ac);
+  enModale("Planche " + p.numero + " — " + p.titre, nomChapitre(slug), f);
+}
+
+// La page d'une planche (#planche/<chapitre>/<id>) : le dessin en grand, le brief, ce qu'il affiche et d'où ;
+// à droite, où le texte l'appelle, ses fiches, les demandes qui l'ont faite, ses dessins archivés.
+async function pagePlanche(slug, ident) {
+  const fin = attente("Planche", nomChapitre(slug), "le dessin");
+  try { return await pagePlanche_(slug, ident); } finally { fin(); }
+}
+
+async function pagePlanche_(slug, ident) {
+  document.body.dataset.vue = "planche";
+  delete document.body.dataset.panneau;
+  document.getElementById("volet-chapitre").hidden = true;
+  document.getElementById("outils").hidden = true;
+  sommaire();
+  const page = document.getElementById("page");
+  const droite = document.getElementById("fiche");
+  let p;
+  try { p = await api(`/planches/${slug}/${ident}/detail`); }
+  catch { page.replaceChildren(el("p", "mut", `Pas de planche « ${ident} » dans ce chapitre.`)); droite.replaceChildren(); return; }
+  const fil = el("p", "fil");
+  const ch = el("a", null, `${p.chapitre.numero ?? ""} · ${p.chapitre.titre ?? slug}`);
+  ch.href = `#${slug}/recit/texte`;
+  fil.append(ch, ` › planches › ${p.numero}`);
+  const h1 = el("h1", null, `Planche ${p.numero} — ${p.titre}`);
+  page.replaceChildren(fil, h1);
+  // l'état, et les actions
+  const barre = el("div", "annot-actions planche-barre");
+  const et = el("select", "livre-select");
+  for (const x of ["à dessiner", "en construction", "retenue"]) et.append(new Option(x, x));
+  et.value = p.etat;
+  et.onchange = async () => {
+    await fetch(`/api/planches/${slug}/${p.id}/etat`, { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ etat: et.value }) }).catch(() => null);
+    pagePlanche(slug, ident);
+  };
+  const des = el("button", "bouton", p.existe ? "✦ redessiner…" : "✦ dessiner");
+  des.title = "Claude dessine la planche en SVG depuis son brief, en la regardant rendue";
+  des.onclick = () => formPlanche(slug, p);
+  const cp = el("button", "pan-lien", "⧉ copier l'appel");
+  cp.title = "à écrire dans un paragraphe du récit ou de l'essai : @planche/" + p.id;
+  cp.onclick = () => copieRef("@planche/" + p.id);
+  const ouvrir = el("button", "pan-lien", "ouvrir le dessin");
+  ouvrir.onclick = () => fetch(`/api/ouvrir?chemin=${encodeURIComponent(p.fichier)}`, { method: "POST" });
+  const vs = el("a", "lien-ext", "VS Code ↗");
+  vs.href = "vscode://file" + (etat.livre.dossier ?? "") + "/" + p.fichier;
+  const lib = el("span", "mut petit", "état ");
+  lib.append(et);
+  barre.append(lib, des, cp, ouvrir, vs);
+  page.append(barre);
+  if (p.existe) {
+    const a = el("a", "planche-grande");
+    a.href = `/api/planches/${slug}/${p.id}.svg`; a.target = "_blank"; a.rel = "noopener"; a.title = "le dessin seul (pour zoomer)";
+    const img = el("img");
+    img.src = `/api/planches/${slug}/${p.id}.svg?v=${Date.now()}`;
+    img.alt = p.titre;
+    a.append(img);
+    page.append(a);
+  } else page.append(el("p", "fiche-alerte", "Pas encore de dessin : " + p.fichier));
+  if (p.legende) page.append(el("p", "planche-legende", p.legende));
+  // la fabrication du dessin en place
+  const F = p.fabrique;
+  const fab = el("p", "mut petit");
+  if (F) {
+    fab.append(`Dessinée par Claude${F.modele ? " (" + F.modele + ")" : ""}${F.date ? ", retenue le " + F.date.slice(0, 16).replace("T", " à ") : ""}` +
+      `${F.regards != null ? " · " + F.regards + " regard(s) sur le rendu" : ""}${F.cout_usd != null ? " · " + F.cout_usd.toFixed(2) + " $" : ""} · `);
+    const a = el("button", "pan-lien", "la demande " + F.demande);
+    a.onclick = () => tiroir(F.demande);
+    fab.append(a);
+  } else if (p.existe) fab.append("Dessin fait hors de LimaLibri (aucune demande ne l'a retenu).");
+  if (p.dessin) fab.append(` · fichier modifié le ${p.dessin.modifie.replace(" ", " à ")}, ${Math.round(p.dessin.octets / 1024)} Ko`);
+  if (fab.childNodes.length) page.append(fab);
+  if (F?.consigne) page.append(el("p", "mut petit", "Consigne : « " + F.consigne + " »"));
+  for (const x of F?.notes ?? []) page.append(el("p", "fiche-alerte petit", x));
+  if (F?.elements?.length) {
+    page.append(el("h3", null, "Ce qu'elle affiche, et d'où"));
+    const ul = el("ul", "petit");
+    for (const e of F.elements) ul.append(el("li", null, `${e.quoi} — ${e.source}`));
+    lieRefs(ul);
+    page.append(ul);
+  }
+  if (F?.blancs?.length) {
+    page.append(el("h3", null, "Laissé en blanc"));
+    const ul = el("ul", "petit mut");
+    for (const b of F.blancs) ul.append(el("li", null, b));
+    page.append(ul);
+  }
+  if (F?.remarques) page.append(el("h3", null, "Remarques de Claude"), el("p", "mut petit", F.remarques));
+  const B = p.brief ?? {};
+  if (B.montre) {
+    page.append(el("h3", null, "Le brief"));
+    const z = el("div", "petit");
+    z.append(el("p", null, B.montre));
+    if (B.pourquoi) z.append(el("p", "mut", "Pourquoi : " + B.pourquoi));
+    if (B.ou) z.append(el("p", "mut", "Où : " + B.ou));
+    if (B.manques) z.append(el("p", "fiche-alerte", "À sourcer d'abord : " + B.manques));
+    if (B.sources?.length) {
+      const ul = el("ul", "mut");
+      for (const x of B.sources) ul.append(el("li", null, x));
+      z.append(el("p", "mut", "Sources :"), ul);
+    }
+    lieRefs(z);
+    page.append(z);
+  }
+  // à droite : ce qui relie la planche au livre
+  droite.replaceChildren();
+  droite.append(el("h4", null, `Appelée par · ${p.appels.length}`));
+  if (!p.appels.length) droite.append(el("p", "mut petit", "Aucun paragraphe ne l'appelle encore : écrire @planche/" + p.id + " dans le récit ou l'essai."));
+  for (const x of p.appels) {
+    const a = el("a", "lien-fiche planche-appel");
+    a.href = "#";
+    a.append(el("span", "etiq", x.version === "recit" ? "récit" : "essai"), " " + x.extrait);
+    a.onclick = (e) => { e.preventDefault(); allerRef(`@chapitre/${slug}/${x.version}^${x.bloc}`); };
+    droite.append(a);
+  }
+  droite.append(el("h4", null, `Fiches · ${p.fiches.length}`));
+  if (!p.fiches.length) droite.append(el("p", "mut petit", "Aucune fiche liée : ses sources n'en citent pas, et elle n'en déclare pas."));
+  const declarees = p.fiches.filter((x) => x.lien === "déclarée").map((x) => x.slug);
+  const ecrit = async (L) => {
+    const r = await fetch(`/api/planches/${slug}/${p.id}/fiches`, { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fiches: L }) });
+    if (!r.ok) { alert((await r.json().catch(() => ({}))).detail ?? r.status); return; }
+    pagePlanche(slug, ident);
+  };
+  for (const x of p.fiches) {
+    const l = el("div", "planche-fiche");
+    const a = el("a", "lien-fiche", titreFiche(x.slug));
+    a.href = `#fiches/${x.slug}`;
+    a.title = x.slug;
+    l.append(a, el("span", "mut petit", x.lien === "déclarée" ? " déclarée" : " citée par ses sources"));
+    if (x.lien === "déclarée") {
+      const r = el("button", "pan-lien", "✕");
+      r.title = "ne plus la déclarer (les sources qui la citent restent)";
+      r.onclick = () => ecrit(declarees.filter((s) => s !== x.slug));
+      l.append(r);
+    }
+    droite.append(l);
+  }
+  const aj = el("div", "planche-ajout");
+  const inp = el("input", "petit");
+  inp.placeholder = "lier une fiche…";
+  inp.setAttribute("list", "planche-fiches-liste");
+  const dl = el("datalist");
+  dl.id = "planche-fiches-liste";
+  indexFiches().then((I) => { for (const f of I) dl.append(new Option(f.titre ?? f.slug, f.slug)); }).catch(() => {});
+  const ok = el("button", "pan-lien", "lier");
+  ok.title = "la fiche dont la planche tire ses données : Claude la lira en la dessinant, et la fiche montrera la planche";
+  ok.onclick = () => { const v = inp.value.trim(); if (v) ecrit([...declarees, v]); };
+  inp.onkeydown = (e) => { if (e.key === "Enter") ok.onclick(); };
+  aj.append(inp, dl, ok);
+  droite.append(aj);
+  droite.append(el("h4", null, `Fabrication · ${p.demandes.length}`));
+  if (!p.demandes.length) droite.append(el("p", "mut petit", "Aucune demande à Claude pour cette planche."));
+  for (const x of p.demandes.slice().reverse()) {
+    const a = el("button", "pan-lien planche-dem",
+      `${(x.cree ?? "").slice(0, 16).replace("T", " ")} · ${x.mode === "proposer" ? "proposée" : "dessin"} · ${x.mode === "proposer" && x.decision?.planches ? "retenue" : etiquetteDemande(x)}` +
+      `${x.modele ? " · " + x.modele.replace(/^claude-/, "") : ""}${x.cout_usd != null ? " · " + x.cout_usd.toFixed(2) + " $" : ""}`);
+    a.title = (x.consigne ? "« " + x.consigne + " »\n" : "") + x.id;
+    a.onclick = () => tiroir(x.id);
+    droite.append(a);
+  }
+  if (p.archives.length) {
+    droite.append(el("h4", null, `Dessins archivés · ${p.archives.length}`));
+    for (const x of p.archives) {
+      const a = el("a", "lien-fiche", x.date);
+      a.href = `/api/planches/${slug}/historique/${x.nom}`; a.target = "_blank"; a.rel = "noopener";
+      a.title = "le dessin remplacé (planches/historique/" + x.nom + ")";
+      droite.append(a);
+    }
+  }
+}
+
 async function colonnePlan() {
+  colonnePlanches();
   const col = document.getElementById("plan-col");
   const volet = document.getElementById("volet-chapitre");
   if (etat.accueil || !etat.atelier) { volet.hidden = true; return; }
@@ -588,6 +972,36 @@ function surPlan() {
   col.querySelectorAll(".pl-section").forEach((x) => x.classList.toggle("courante", x.dataset.id === courante));
 }
 // Le texte défile dans sa zone, sous la barre de la page (sur petit écran : la fenêtre).
+// La plume qui écrit sur le livre (le logo de LimaLibri, front/logo.svg), animée : la page d'attente.
+const PLUME = `<svg viewBox="0 0 64 64" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M32 50 C24 45 14 45 5 48 V20 C14 17 24 17 32 22 Z" fill="#f4ecdc" stroke="#6b6357" stroke-width="2"/>
+  <path d="M32 50 C40 45 50 45 59 48 V20 C50 17 40 17 32 22 Z" fill="#fffdf8" stroke="#6b6357" stroke-width="2"/>
+  <path d="M32 22 V50" stroke="#6b6357" stroke-width="2"/>
+  <path d="M10 27 C15 25.6 21 25.6 27 27 M10 32 C15 30.6 21 30.6 27 32 M10 37 C14 35.8 18 35.8 22 36.6" stroke="#b3a993" stroke-width="1.6"/>
+  <path class="ecrit" pathLength="100" d="M37 33 q2.2 -2.6 4.4 0 t4.4 0 t4.4 0 t4.4 0" stroke="#2d5f8a" stroke-width="1.8"/>
+  <g class="plume"><path d="M37 33 C40 24 48 12 61 3 C57 14 49 25 37 33 Z" fill="#c9893f" stroke="#8a5a2b" stroke-width="1.4"/>
+  <path d="M37 33 L55 10 M45 23.5 L48.5 23 M49 18 L52.5 17" stroke="#8a5a2b" stroke-width="1.1"/></g></svg>`;
+
+// Montre la page d'attente sur la colonne centrale si le chargement dure plus de 200 ms (rien ne clignote quand
+// il est rapide) ; rend la fonction qui la retire. Plusieurs chargements à la fois : elle reste jusqu'au dernier.
+function attente(titre, sous = "", quoi = "") {
+  const a = document.getElementById("attente");
+  if (!a) return () => {};
+  const jeton = (attente.n = (attente.n ?? 0) + 1);
+  const t = setTimeout(() => {
+    if (attente.n !== jeton) return;
+    const txt = el("div", "attente-texte");
+    txt.append(el("div", "attente-titre", titre ?? ""));
+    if (sous) txt.append(el("div", "attente-sous", sous));
+    txt.append(el("div", "attente-quoi", quoi ? quoi + "…" : "…"));
+    const dessin = el("div", "attente-plume");
+    dessin.innerHTML = PLUME;
+    a.replaceChildren(dessin, txt);
+    a.hidden = false;
+  }, 200);
+  return () => { clearTimeout(t); if (attente.n === jeton) a.hidden = true; };
+}
+
 function zone() {
   return matchMedia("(max-width:760px)").matches ? document.scrollingElement : document.getElementById("defile");
 }
@@ -1081,14 +1495,18 @@ async function storyboard(page) {
   grille.append(g0, el("div", "par-gout"), d0);
 
   const caps = await capsLivre();
-  for (const k of caps.filter((k) => k.primitive === "plan_de_tete" && !(br.beats ?? []).some((b) => b.id === k.plan))) {
+  const recitEcrit = Object.values(a.links.recit ?? {}).some((l) => l && !(br.beats ?? []).some((b) => b.sorte && b.id === l.plan));
+  for (const k of caps.filter((k) => k.primitive === "plan_de_tete" && !(k.sauf ?? []).includes(etat.slug)
+                                  && !(br.beats ?? []).some((b) => b.id === k.plan))) {
     const gp = el("div", "par-texte par-plan");
     const go = el("button", "pan-lien sb-ecrire", "✦ " + k.libelle);
-    go.title = k.quoi;
+    go.title = recitEcrit ? k.quoi : "s'écrit après le récit du chapitre : écrire d'abord le récit";
+    go.disabled = !recitEcrit;
     go.onclick = (e) => { e.stopPropagation(); formTete(etat.slug, k); };
     gp.append(el("span", "marge", k.titre), go);
     const dp = el("div", "par-sb par-plan");
-    dp.append(el("h2", null, k.titre), el("p", "sb-comptes", "à part, en tête du chapitre · pas encore écrit"));
+    dp.append(el("h2", null, k.titre), el("p", "sb-comptes", "à part, en tête du chapitre · " +
+      (recitEcrit ? "pas encore écrit" : "s'écrit après le récit")));
     grille.append(gp, el("div", "par-gout plan-debut"), dp);
   }
 
@@ -1655,14 +2073,18 @@ function ecart(x) {
 
 // Les deux textes rendus du chapitre, parsés une fois : les appuis y puisent leurs
 // phrases et leurs paragraphes sans refaire d'appel.
+// Les deux versions, en parallèle ; rend celles lues à l'instant ({version: texte}), qu'ouvre() reprend sans les relire.
 async function chargeDocs(slug) {
-  for (const v of ["recit", "essai"]) {
-    if (etat.docs[v]) continue;
+  const frais = {};
+  await Promise.all(["recit", "essai"].map(async (v) => {
+    if (etat.docs[v]) return;
     try {
       const t = await api(`/chapitres/${slug}/${v}`);
+      frais[v] = t;
       etat.docs[v] = new DOMParser().parseFromString(t.html, "text/html");
     } catch { /* une version absente : ses appuis n'auront que l'id */ }
-  }
+  }));
+  return frais;
 }
 
 // ------------------------------------------------------------------ appuis
@@ -2998,7 +3420,7 @@ function majCompteAnnotations() {
 let suivi = null;
 // Le « chapitre » d'une demande : les créations de fiche vivent dans kb/demandes (« _kb »).
 function slugDe(ident) {
-  return /^[fplrosekqbt]-/.test(String(ident ?? "")) ? "_kb" : etat.slug;
+  return /^[fplrosekqbtg]-/.test(String(ident ?? "")) ? "_kb" : etat.slug;
 }
 
 // Le tiroir ouvert est retenu (session du navigateur) : un rafraîchissement le rouvre.
@@ -3018,7 +3440,7 @@ async function tiroir(ident) {
   const t = document.getElementById("tiroir");
   t.hidden = false;
   document.body.dataset.tiroir = "1";
-  if ((!etat.slug || !etat.atelier) && !/^[fplrosekqbt]-/.test(String(ident ?? ""))) {
+  if ((!etat.slug || !etat.atelier) && !/^[fplrosekqbtg]-/.test(String(ident ?? ""))) {
     if (!ident) return historique(t, etat.wiki ? "fiches" : null);
     t.replaceChildren(teteTiroir("Réécritures"), el("p", "mut", "Ouvrir un chapitre de l'atelier."));
     return;
@@ -3102,6 +3524,7 @@ async function rendDemande(t, d) {
   if (d.type === "relecture") return tiroirRelecture(t, d);
   if (d.type === "storyboard") return tiroirStoryboard(t, d);
   if (d.type === "recit") return tiroirRecit(t, d);
+  if (d.type === "planche") return tiroirPlanche(t, d);
   t.replaceChildren(teteTiroir(`Réécriture · ${d.portee}${d.cible.plan ? " " + d.cible.plan : ""} · ${MODES_R[d.mode]}`, () => tiroir(null)));
   if (d.titre) t.append(el("p", "dem-titre", d.titre));
   const cible = el("div", "dem-cible");
@@ -4824,7 +5247,7 @@ function depuisAdresse() {
   etat.enSuivi = slug === "suivi";
   etat.enObjectif = slug === "objectif";
   etat.objectifId = etat.enObjectif ? vue : null;
-  etat.wiki = slug === "fiches" || slug === "biblio" || etat.enPlan || etat.enSuivi || etat.enObjectif || slug === "consommation" || slug === "parametrage" || slug === "capacites" || slug === "demandes";
+  etat.wiki = slug === "fiches" || slug === "biblio" || etat.enPlan || etat.enSuivi || etat.enObjectif || slug === "consommation" || slug === "parametrage" || slug === "capacites" || slug === "demandes" || slug === "planche";
   boutons();
   if (etat.enPlan) { etat.accueil = false; return vuePlan(vue, mode); }
   if (etat.enSuivi) { etat.accueil = false; return vueSuivi(vue); }
@@ -4833,6 +5256,7 @@ function depuisAdresse() {
   if (slug === "parametrage") { etat.accueil = false; return pageParametrage(); }
   if (slug === "capacites") { etat.accueil = false; return pageCapacites(); }
   if (slug === "demandes") { etat.accueil = false; return pageDemandes(); }
+  if (slug === "planche") { etat.accueil = false; return pagePlanche(vue, mode); }
   if (slug === "biblio") { etat.accueil = false; return vue ? pageOeuvre(vue) : vueBiblioLivre(); }
   if (etat.wiki) { etat.accueil = false; return vueFiches(vue, mode); }
   if (!slug || slug === "livre") {
@@ -7984,6 +8408,19 @@ function liensFiche(f) {
     a.href = `#${c.slug}/essai/texte`;
     d.append(a);
   }
+  // les planches qui en tirent leurs données (déclarées, ou citée par leurs sources)
+  const zp = el("div");
+  d.append(zp);
+  api(`/fiches/${f.slug}/planches`).then((P) => {
+    if (!P.length) return;
+    zp.append(el("h4", null, `Planches · ${P.length}`));
+    for (const x of P) {
+      const a = el("a", "lien-fiche", `${x.numero} · ${x.titre}`);
+      a.href = `#planche/${x.chapitre}/${x.id}`;
+      a.title = `${x.etat}${x.existe ? "" : " (pas encore de dessin)"} · ${x.lien === "déclarée" ? "elle déclare cette fiche" : "ses sources citent cette fiche"}`;
+      zp.append(a);
+    }
+  }).catch(() => {});
 
   const sortantes = f.liens.filter((l) => l.fiche);
   section("Cite", sortantes.length);
@@ -8312,6 +8749,7 @@ async function dialogue(ident = etat.conversation) {
     if (!question || envoi.disabled) return;
     envoi.disabled = true;
     const corps = { question, ici: coche.checked ? refIci() : null };
+    if (mod) corps.modele = mod.valeur();
     try {
       const r = ident ? await poste(`/conversations/${ident}`, corps) : await poste("/conversations", corps);
       etat.brouillonDialogue = "";
@@ -8321,7 +8759,9 @@ async function dialogue(ident = etat.conversation) {
   envoi.onclick = part;
   q.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); part(); } };
   const pied = el("div", "dia-pied");
-  pied.append(envoi, lieu, err);
+  // le modèle se choisit au début d'une conversation ; ensuite la session le garde (elle reprend son fil)
+  const mod = !c?.session_id ? choixModele("conversation", c?.modele_choisi ?? "") : null;
+  pied.append(envoi, lieu, ...(mod ? [mod.noeud] : [el("span", "mut petit", "modèle : " + nomModele(c?.modele_session))]), err);
   saisie.append(q, pied);
   z.replaceChildren(poigneeDialogue(z), tete, fil, saisie);
   fil.scrollTop = fil.scrollHeight;
@@ -8785,6 +9225,11 @@ const LIB_GROUPES = { brief: "Développer le brief", synopsis: "Écrire le synop
   annotations: "Traiter les annotations (réviser)", relecture: "Relectures critiques", statut: "Relire, puis valider", decider: "Demandes à décider", manques: "Manques signalés par les rédactions" };
 
 async function vueSuivi(version) {
+  const fin = attente("Le suivi", null, version === "essai" ? "l'essai, chapitre par chapitre" : "le récit, chapitre par chapitre");
+  try { return await vueSuivi_(version); } finally { fin(); }
+}
+
+async function vueSuivi_(version) {
   version = ["recit", "essai"].includes(version) ? version : versionSommaire();
   etat.suiviVersion = version;
   document.body.dataset.vue = "suivi";
@@ -8839,6 +9284,21 @@ function blocPublication(titre = true) {
     d.append(el("p", "mut petit", "Une image du livre en lecture seule, pour le suivre et le lire depuis un téléphone : la progression, " +
       "le récit et l'essai de chaque chapitre écrit (avec leur statut), les fiches citées, la bibliographie. Ni coûts, ni demandes, " +
       "ni annotations. Le travail reste ici ; le site ne change que quand on le publie."));
+    // où lire le site : l'adresse publique déclarée, et l'adresse Cloudflare une fois publié
+    const enLigne = [C.adresse && "https://" + C.adresse.replace(/^https?:\/\//, "").replace(/\/+$/, ""),
+      D?.ok && D.url].filter(Boolean);
+    if (enLigne.length) {
+      const l = el("p", "pub-adresse");
+      l.append(el("span", "mut", "En ligne : "));
+      enLigne.forEach((u, i) => {
+        const a = el("a", "pan-lien", u.replace("https://", "") + " ↗");
+        a.href = u; a.target = "_blank"; a.rel = "noopener";
+        if (i) l.append(el("span", "mut", " · "));
+        l.append(a);
+      });
+      if (!D?.ok) l.append(el("span", "mut petit", " — pas encore publié"));
+      d.append(l);
+    }
     // la configuration : livre.yaml, section « publication »
     const conf = el("div", "pub-config");
     const champ_ = (lib, valeur, aide, ph) => {
@@ -8880,11 +9340,6 @@ function blocPublication(titre = true) {
       const l = el("p", D.ok ? "verif-ok petit" : "fiche-alerte petit");
       l.append(`${D.ok ? "Publié" : "Échec"} le ${D.date.slice(0, 16).replace("T", " ")} · ${D.textes} textes · ${D.fiches} fiches` +
         (D.erreur ? ` — ${D.erreur}` : ""));
-      for (const u of [D.url, C.adresse && "https://" + C.adresse].filter(Boolean)) {
-        const a = el("a", "pan-lien", " " + u.replace("https://", "") + " ↗");
-        a.href = u; a.target = "_blank"; a.rel = "noopener";
-        l.append(a);
-      }
       d.append(l);
       if (!D.ok && D.journal) {
         const j = el("details", "replie");
@@ -11293,6 +11748,24 @@ function blocVersions(L) {
       l.append(x);
       b.append(l);
     }
+    if (k === "recit") {                   // les titres des plans, à l'export et sur le site public (livre.intertitres_recit)
+      const it = el("label", "champ-edit ed-court");
+      it.append(el("span", "nom", "intertitres"));
+      const sel = el("select", "livre-select");
+      for (const [val, lib] of [["aucun", "aucun (un séparateur entre les plans)"], ["titre", "le titre du plan"], ["numero", "le titre et son numéro"]]) {
+        sel.append(new Option(lib, val, false, (v.intertitres ?? "aucun") === val));
+      }
+      const nu = el("select", "livre-select");
+      for (const [val, lib] of [["chiffres", "en chiffres (4.2)"], ["lettres", "en lettres (B)"]]) {
+        nu.append(new Option(lib, val, false, (v.numeros ?? "chiffres") === val));
+      }
+      nu.hidden = sel.value !== "numero";
+      sel.onchange = () => { nu.hidden = sel.value !== "numero"; enregistre({ versions: { recit: { intertitres: sel.value } } }); };
+      nu.onchange = () => enregistre({ versions: { recit: { numeros: nu.value } } });
+      it.append(sel, nu);
+      b.append(it, el("p", "mut petit", "Les titres des plans du storyboard, à l'export (PDF, imprimable) et sur le site public ; " +
+        "dans LimaLibri, ils restent en marge. L'ouverture n'a pas d'intertitre ; le numéro suit la place du plan dans le storyboard."));
+    }
     if (k === "essai") {                   // calculée à l'affichage, jamais stockée dans le texte
       const nd = el("label", "champ-edit ed-court");
       nd.append(el("span", "nom", "numérotation"));
@@ -11926,6 +12399,11 @@ function dessineFrise(F, ech, items, { bandes = [], reperes = [], fleches = fals
 }
 
 async function pageFrise(id) {
+  const fin = attente("La frise", null, "le temps du livre");
+  try { return await pageFrise_(id); } finally { fin(); }
+}
+
+async function pageFrise_(id) {
   document.body.dataset.vue = "plan";
   const page = document.getElementById("page");
   barrePlan("frise", null, null);
