@@ -785,8 +785,11 @@ taille, à l'écran, dans le PDF et sur le site, et du texte qui se versionne av
   `planches.yaml` illisible s'y disent.
 - **La visionneuse :** un clic sur une planche (dans le texte, sur sa page, dans sa fenêtre, dans le tiroir d'un
   dessin, et sur le site public) l'ouvre par-dessus la page : zoomer à la molette, au pincement ou avec + et −
-  (autour du pointeur), glisser pour la parcourir, double-clic pour passer d'« ajuster » à ×2, **⛶ plein écran**,
-  ↗ le dessin seul dans un onglet, Échap pour fermer. Le dessin reste net à toutes les échelles. ⌘-clic ouvre
+  (autour du pointeur ou des doigts), glisser (souris ou un doigt) pour la parcourir, double-clic ou double-tap pour
+  passer d'« ajuster » au zoom, **⛶ plein écran**,
+  ↗ le dessin seul dans un onglet, Échap pour fermer. Le dessin reste net à toutes les échelles, il ne sort pas de
+  l'écran, et il se ré-ajuste quand l'écran tourne ; sur un téléphone, le zoom de la page est bloqué tant que la
+  visionneuse est ouverte. ⌘-clic ouvre
   toujours l'onglet. (`front/visionneuse.js`, un seul fichier partagé avec le site public.)
 - **Toutes les planches** (onglet « planches » des fiches, `#fiches/planches`) : les planches du livre, chapitre par
   chapitre, en vignettes ; la vignette ouvre la visionneuse, le titre mène à la page de la planche ; leurs fiches.
