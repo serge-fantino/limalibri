@@ -390,8 +390,10 @@ def pose_dessin(d):
     if R.get("defauts"):
         raise ValueError("le dessin a des défauts : " + " ; ".join(R["defauts"]))
     # les fiches que citent les sources de ses éléments : la planche leur est liée (planches.yaml, fiches)
-    fiches = planches.fiches_citees(e.get("source") for e in R.get("elements") or [])
-    return planches.ecrit_dessin(slug, ident, R["svg"], R.get("titre"), R.get("legende"), d["id"], fiches=fiches)
+    A = planches.ancres_citees(e.get("source") for e in R.get("elements") or [])
+    fiches = list(dict.fromkeys(f for f, _ in A))
+    ancres = ["%s#%s" % (f, s) for f, s in A if s]
+    return planches.ecrit_dessin(slug, ident, R["svg"], R.get("titre"), R.get("legende"), d["id"], fiches=fiches, ancres=ancres)
 
 
 def decide(ident, corps):

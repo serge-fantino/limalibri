@@ -10,6 +10,7 @@
         etat: en construction              # à dessiner, en construction, retenue
         brief: {montre: …, pourquoi: …, sources: [...]}   # ce que Claude a proposé (dessin.py), pour la dessiner
         fiches: [nucleosynthese-primordiale]               # facultatif : les fiches dont elle tire ses données
+        ancres: [nucleosynthese-primordiale#gel-neutrons-six]   # écrit à la retenue d'un dessin : les sections citées
 
 Une planche est liée aux fiches qu'elle déclare (« fiches » ; un dessin de Claude retenu y ajoute celles que citent
 les sources de ses éléments) et à celles que citent les sources de son brief ; la page de la fiche, dans LimaLibri
@@ -59,7 +60,9 @@ def _meta(slug):
         M[k] = {"titre": str(v.get("titre") or "").strip(), "legende": " ".join(str(v.get("legende") or "").split()),
                 "etat": etat, "brief": {kk: vv for kk, vv in brief.items() if vv},
                 "liees": [str(f).removeprefix("@fiche/").strip() for f in (v.get("fiches") or []) if str(f).strip()]
-                if isinstance(v.get("fiches"), list) else []}
+                if isinstance(v.get("fiches"), list) else [],
+                "ancres": [str(a).strip() for a in (v.get("ancres") or []) if str(a).strip()]
+                if isinstance(v.get("ancres"), list) else []}
     return M, A
 
 
@@ -73,7 +76,7 @@ def liste(slug):
     c = next((x for x in livre.chapitres_seuls() if x["slug"] == slug), {})
     L = []
     for i, k in enumerate(ids, 1):
-        m = M.get(k) or {"titre": "", "legende": "", "etat": "en construction", "brief": {}, "liees": []}
+        m = M.get(k) or {"titre": "", "legende": "", "etat": "en construction", "brief": {}, "liees": [], "ancres": []}
         existe = k in fichiers
         if not existe and m["etat"] != "à dessiner":
             A.append("%s : pas de dessin (planches/%s.svg)" % (k, k))
@@ -88,25 +91,60 @@ def fiches_connues():
     return {p.stem for p in d.glob("*.md")} if d.is_dir() else set()
 
 
-def fiches_citees(sources, connues=None):
-    """Les fiches que citent des sources, dans l'ordre : « @fiche/<slug> », ou « fiche <slug> » quand c'est une fiche
-    du livre (Claude écrit parfois ses sources en clair)."""
+# dans une source : « @fiche/<slug>#<section> », « fiche <slug> », ou « #<section> » (une section de la fiche nommée
+# avant, dans la même source — « fiche nucleosynthese-primordiale #gel-neutrons-six, #goulot… »)
+_ANCRE = re.compile(r"@fiche/([a-z0-9][a-z0-9-]*[a-z0-9]|[a-z0-9])(?:#([a-z0-9][\w-]*))?"
+                    r"|\bfiches?\s+«?\s*([a-z0-9][a-z0-9-]*[a-z0-9])|#([a-z0-9][\w-]*)")
+
+
+def ancres_citees(sources, connues=None):
+    """Les (fiche, section ou None) que citent des sources, dans l'ordre, sans doublon. Une fiche nommée en clair compte
+    si elle existe ; une section seule (« fiche #gel-… ») va à la fiche nommée avant dans la source, sinon à la seule
+    fiche que citent ces sources."""
     connues = fiches_connues() if connues is None else connues
-    out = []
+    out, orphelines = [], []
+
+    def ajoute(f, sec):
+        if (f, sec) not in out:
+            out.append((f, sec))
     for t in sources or []:
-        t = str(t or "")
-        for f in FICHE.findall(t) + [x for x in re.findall(r"\bfiches?\s+«?\s*([a-z0-9][a-z0-9-]*[a-z0-9])", t) if x in connues]:
-            if f not in out:
-                out.append(f)
+        t, courante = str(t or ""), None
+        for m in _ANCRE.finditer(t):
+            if m.group(1):
+                courante = m.group(1)
+                ajoute(courante, m.group(2))
+            elif m.group(3):
+                if m.group(3) in connues:
+                    courante = m.group(3)
+                    ajoute(courante, None)
+            elif m.group(4) and "fiche" in t[:m.start()]:
+                if courante:
+                    ajoute(courante, m.group(4))
+                else:
+                    orphelines.append(m.group(4))
+    seules = list(dict.fromkeys(f for f, _ in out))
+    if orphelines and len(seules) == 1:
+        for sec in orphelines:
+            ajoute(seules[0], sec)
     return out
 
 
+def fiches_citees(sources, connues=None):
+    """Les fiches que citent des sources, dans l'ordre (ancres_citees)."""
+    return list(dict.fromkeys(f for f, _ in ancres_citees(sources, connues)))
+
+
 def _fiches(m, connues=None):
-    """Les fiches d'une planche : [{slug, lien}] — « déclarée » (planches.yaml, fiches) ou « source » (son brief)."""
-    out = {f: "déclarée" for f in m.get("liees") or []}
-    for f in fiches_citees((m.get("brief") or {}).get("sources"), connues):
-        out.setdefault(f, "source")
-    return [{"slug": f, "lien": l} for f, l in out.items()]
+    """Les fiches d'une planche : [{slug, lien, sections}] — « déclarée » (planches.yaml, fiches) ou « source » (son
+    brief) ; sections : celles qu'elle illustre (les sources de son brief, et « ancres », écrit à la retenue d'un dessin)."""
+    out = {f: {"slug": f, "lien": "déclarée", "sections": []} for f in m.get("liees") or []}
+    A = ancres_citees((m.get("brief") or {}).get("sources"), connues) + ancres_citees(
+        ["@fiche/" + a for a in m.get("ancres") or []], connues)
+    for f, sec in A:
+        x = out.setdefault(f, {"slug": f, "lien": "source", "sections": []})
+        if sec and sec not in x["sections"]:
+            x["sections"].append(sec)
+    return list(out.values())
 
 
 def detail(slug, ident):
@@ -219,10 +257,11 @@ def de_fiche(fiche):
         if not ((d / FICHIER).exists() or (d / "planches").is_dir()):
             continue
         for p in liste(c["slug"])["planches"]:
-            l = next((x["lien"] for x in p["fiches"] if x["slug"] == fiche), None)
-            if l:
+            x = next((x for x in p["fiches"] if x["slug"] == fiche), None)
+            if x:
                 out.append({"chapitre": c["slug"], "numero": p["numero"], "id": p["id"], "titre": p["titre"],
-                            "etat": p["etat"], "existe": p["existe"], "lien": l})
+                            "legende": p["legende"], "etat": p["etat"], "existe": p["existe"], "lien": x["lien"],
+                            "sections": x["sections"]})
     return out
 
 
@@ -308,7 +347,7 @@ def ajoute_propositions(slug, props, demande):
     return ids
 
 
-def ecrit_dessin(slug, ident, svg, titre, legende, demande, fiches=()):
+def ecrit_dessin(slug, ident, svg, titre, legende, demande, fiches=(), ancres=()):
     """Retenir un dessin : planches/<id>.svg (l'ancien dans planches/historique/), le titre et la légende s'ils manquent
     ou si la planche était à dessiner ; « à dessiner » passe « en construction »."""
     if not ID.match(ident or ""):
@@ -340,6 +379,8 @@ def ecrit_dessin(slug, ident, svg, titre, legende, demande, fiches=()):
         F = [str(x) for x in (e.get("fiches") or [])]
         if any(f not in F for f in fiches):              # les fiches que cite le dessin : liées, sans doublon
             e["fiches"] = F + [f for f in fiches if f not in F]
+        if ancres:                                        # les sections qu'il illustre : celles du dernier dessin
+            e["ancres"] = list(ancres)
     _ecrit_meta(slug, change)
     return {"fichier": "chapters/%s/planches/%s.svg" % (slug, ident),
             "archive": str(archive.relative_to(livre.LIVRE)) if archive else None}

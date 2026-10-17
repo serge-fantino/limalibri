@@ -287,10 +287,13 @@ figure.planche figcaption{font-family:system-ui,sans-serif;font-size:.8rem;color
 figure.planche figcaption b{color:var(--texte);font-weight:600}
 .planche-etat{font-style:italic}
 a.renvoi-planche{font-family:system-ui,sans-serif;font-size:.85em}
-.planches-fiche{display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));gap:1rem;margin:.4rem 0 1.4rem}
-.planches-fiche a{display:flex;flex-direction:column;gap:.35rem;text-decoration:none;color:var(--texte);font-family:system-ui,sans-serif;font-size:.8rem;line-height:1.35}
-.planches-fiche img{width:100%;aspect-ratio:4/3;object-fit:contain;background:#fffdf8;border:1px solid var(--filet);border-radius:8px}
-.planches-fiche i{color:var(--mut)}
+.planches-tete{display:flex;gap:.8rem;overflow-x:auto;margin:.4rem 0 1.4rem;padding-bottom:.3rem}
+.planche-vignette-fiche{flex:0 0 11rem;display:flex;flex-direction:column;gap:.3rem;text-decoration:none;color:var(--texte);
+  font-family:system-ui,sans-serif;font-size:.75rem;line-height:1.3;cursor:zoom-in}
+.planche-vignette-fiche img{width:100%;aspect-ratio:4/3;object-fit:contain;background:#fffdf8;border:1px solid var(--filet);border-radius:6px}
+aside.planche-marge{margin:.3rem 0 1rem;max-width:18rem}
+aside.planche-marge .planche-vignette-fiche{flex:none}
+@media (min-width:84rem){aside.planche-marge{float:right;clear:right;width:15rem;margin:0 -18rem 1rem 0}}
 .planche-absente{color:#c0622f}
 .mini-frise{background:var(--carte);border:1px solid var(--filet);border-radius:10px;padding:.5rem .8rem .3rem;margin:.6rem 0 1.4rem}
 .mini-frise .sur{margin:0 0 .2rem}
@@ -352,7 +355,8 @@ def _page(titre, corps, base, barre="", description=""):
 """ % (html.escape(titre), '<meta name="description" content="%s">' % html.escape(description) if description else "", THEME,
        base, barre, corps, html.escape(livre.meta().get("titre") or ""), livre._maintenant()[:10], SCRIPT,
        # la visionneuse des planches (front/visionneuse.js, copiée à la racine du site), là où il y en a
-       '<script src="%svisionneuse.js" defer></script>' % base if 'class="planche-lien"' in corps else "")
+       '<script src="%svisionneuse.js" defer></script>' % base
+       if 'class="planche-lien"' in corps or "data-visionneuse=" in corps else "")
 
 
 # ------------------------------------------------------------------ le site
@@ -369,7 +373,6 @@ class Site:
         self.cites = set()
         self.cite_ou = {}                                   # clé -> {(libellé, adresse depuis la racine)}
         self.planches = set()                               # (chapitre, planche) appelées par les textes publiés
-        self.planche_ou = {}                                # (chapitre, planche) -> (libellé, page) où elle paraît
         # les textes publiés : chaque chapitre écrit, dans chaque version
         self.textes = {}
         for c in self.chapitres:
@@ -432,8 +435,7 @@ class Site:
         h = re.sub(r'<cite data-cle="([^"]+)">[^<]*</cite>', cite, h)
         h = re.sub(r'(src|href)="/api/planches/([\w-]+)/([\w-]+)\.svg"',
                    lambda m: (self.planches.add((m.group(2), m.group(3))),
-                              ou and self.planche_ou.setdefault((m.group(2), m.group(3)), ou),
-                              '%s="%splanches/%s/%s.svg"' % (m.group(1), base, m.group(2), m.group(3)))[2], h)
+                              '%s="%splanches/%s/%s.svg"' % (m.group(1), base, m.group(2), m.group(3)))[1], h)
         return re.sub(r'\sdata-(?:empreinte|block|num|section)="[^"]*"', "", h)
 
     # ---------------------------------------------------------------- les morceaux
@@ -625,17 +627,28 @@ class Site:
         if conf:
             corps.append('<div class="confiance">%s</div>' % "".join(
                 "<div><b>%s</b> %s</div>" % (html.escape(x.get("degre", "")), html.escape(x.get("sur", ""))) for x in conf))
-        corps.append('<article class="texte">%s</article>' % self.liens(f.get("html") or "", base, ("fiche · " + f["titre"], "fiches/%s.html" % s)))
-        # les planches tirées de cette fiche, là où un texte publié les montre
+        texte = self.liens(f.get("html") or "", base, ("fiche · " + f["titre"], "fiches/%s.html" % s))
+        # les planches tirées de cette fiche : en vignettes sous le titre (la visionneuse), et dans la marge, à hauteur
+        # des sections qu'elles illustrent
         from . import planches
-        P = [p for p in planches.de_fiche(s) if (p["chapitre"], p["id"]) in self.planche_ou]
+        P = [p for p in planches.de_fiche(s) if p["existe"]]
         if P:
-            corps.append('<p class="sur">Planches</p><div class="planches-fiche">%s</div>' % "".join(
-                '<a href="%s%s#planche-%s-%s"><img src="%splanches/%s/%s.svg" alt="%s" loading="lazy">'
-                '<span><b>Planche %s</b> — %s <i>· %s</i></span></a>' % (
-                    base, self.planche_ou[(p["chapitre"], p["id"])][1], p["chapitre"], p["id"], base, p["chapitre"], p["id"],
-                    html.escape(p["titre"], quote=True), p["numero"], html.escape(p["titre"]),
-                    html.escape(self.planche_ou[(p["chapitre"], p["id"])][0])) for p in P))
+            def vignette(p):
+                self.planches.add((p["chapitre"], p["id"]))       # son dessin est copié avec le site
+                src = "%splanches/%s/%s.svg" % (base, p["chapitre"], p["id"])
+                t = "Planche %s — %s" % (p["numero"], p["titre"])
+                return ('<a class="planche-vignette-fiche" href="%s" data-visionneuse="%s" data-titre="%s" data-legende="%s">'
+                        '<img src="%s" alt="%s" loading="lazy"><span>%s</span></a>') % (
+                            src, src, html.escape(t, quote=True), html.escape(p.get("legende") or "", quote=True), src,
+                            html.escape(p["titre"], quote=True), html.escape(t))
+            corps.insert(2 if len(corps) > 1 and corps[1].startswith('<p class="meta">') and "Sert" not in corps[1] else 1,
+                         '<div class="planches-tete">%s</div>' % "".join(vignette(p) for p in P))
+            for p in P:
+                for sec in p["sections"]:
+                    texte = re.sub(r'(<h[2-4] id="fs-%s"[^>]*>.*?</h[2-4]>)' % re.escape(sec),
+                                   lambda m: m.group(1) + '<aside class="planche-marge">%s</aside>' % vignette(p), texte,
+                                   count=1, flags=re.S)
+        corps.append('<article class="texte">%s</article>' % texte)
         vois = [x for x in [l.get("cible") if isinstance(l, dict) else l for l in f.get("liens") or []] + list(f.get("entrants") or [])
                 if x in self.inclus and x != s]
         if vois:
