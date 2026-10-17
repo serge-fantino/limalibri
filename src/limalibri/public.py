@@ -264,7 +264,7 @@ details[open].partie summary::before{content:"▾ ";}
 .frise-barre label[hidden]{display:none}
 .frise-zone{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--filet);border-radius:10px;background:var(--carte);
   padding:.4rem 0;margin:0 -16px;width:calc(100% + 32px)}
-@media (min-width:56rem){main:has(.frise-zone){max-width:min(96vw,80rem)}.frise-zone{margin:0;width:100%}}
+@media (min-width:56rem){main:has(#fr-zone){max-width:min(96vw,80rem)}.frise-zone{margin:0;width:100%}}
 .frise-svg{display:block;font-family:system-ui,-apple-system,sans-serif}
 .frise-svg .fr-axe line{stroke:var(--mut)}
 .frise-svg .fr-axe text,.frise-svg .fr-lib{fill:var(--mut);font-size:10.5px}
@@ -297,7 +297,7 @@ aside.planche-marge .planche-vignette-fiche{flex:none}
 .planche-absente{color:#c0622f}
 .mini-frise{background:var(--carte);border:1px solid var(--filet);border-radius:10px;padding:.5rem .8rem .3rem;margin:.6rem 0 1.4rem}
 .mini-frise .sur{margin:0 0 .2rem}
-.mini-frise .mini-tete{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.3rem .6rem;margin-bottom:.2rem}
+.mini-frise .mini-tete,.accueil-frise .mini-tete{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.3rem .6rem;margin-bottom:.2rem}
 .mini-frise .mini-tete .sur{margin:0}
 .mini-echelle{font:inherit;font-size:.75rem;background:var(--fond);color:var(--texte);border:1px solid var(--filet);border-radius:6px;
   padding:.1rem .3rem;max-width:100%}
@@ -307,6 +307,8 @@ aside.planche-marge .planche-vignette-fiche{flex:none}
 .mini-svg .mini-autre{stroke:var(--mut);opacity:.55}
 .mini-svg .mini-ici{fill:var(--acc)}
 .mini-svg .mini-lib{fill:var(--mut);font-size:10px;font-family:system-ui,sans-serif}
+.accueil-frise{margin:1.6rem 0 1.2rem}
+.accueil-frise .frise-zone{overflow-x:auto}
 .frise-legende i{display:inline-block;width:.7rem;height:.7rem;border-radius:2px;margin-right:.35rem;vertical-align:-1px}
 footer.site{font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mut);text-align:center;padding:2rem 16px}
 """
@@ -568,6 +570,7 @@ class Site:
                      'l\'essai s\'appuie. Un livre en cours d\'écriture, publié en l\'état : chaque chapitre dit où il en est '
                      '(brouillon, relu, validé) — <a href="#ou-en-est">où en est le livre</a>.</p>')
         corps.append(self.commencer())
+        corps.append(self.frise_accueil())
         corps.append(self.sommaire())
         if getattr(self, "pdf", None):
             corps.append('<p class="sur">À télécharger</p><div class="fiches-liste">%s</div>' % "".join(
@@ -732,6 +735,17 @@ class Site:
                 '<p class="meta mini-texte"></p><p class="meta"><a href="%sfrise.html?ch=%s">la frise du livre →</a>%s</p></div>'
                 '<script src="%sfrise-donnees.js"></script><script src="%sfrise.js"></script>') % (slug, base, base, slug, liens, base, base)
 
+    def frise_accueil(self):
+        """En tête du sommaire : le livre dans le temps, une frise compacte des chapitres (frise.js) ; un chapitre mène à
+        son texte."""
+        if not self.frise or not any(c.get("place") for c in self.frise.get("chapitres") or []):
+            return ""
+        return ('<div class="accueil-frise ui"><div class="mini-tete"><span class="sur">Le livre dans le temps</span>'
+                '<select id="acc-echelle" class="mini-echelle" title="l\'échelle de la frise"></select></div>'
+                '<div class="frise-zone" id="acc-zone"></div>'
+                '<p class="meta">Touchez un chapitre pour le lire · <a href="frise.html">la frise complète →</a></p></div>'
+                '<script src="frise-donnees.js"></script><script src="frise.js"></script>')
+
     def page_frise(self):
         """La frise du livre (frise.yaml) : la même que dans LimaLibri, dessinée par le même moteur."""
         barre = '<nav class="barre-haut"><a href="index.html">← %s</a></nav>' % html.escape(self.meta.get("titre") or "Sommaire")
@@ -824,6 +838,30 @@ function miniSvg(F, ech, c, W) {
     if (dernier) svg.append(svgEl("text", { x: G + L, y: 54, "text-anchor": "end", class: "mini-lib" }, dernier.texte || libelleT(dernier.t, F, E.variable)));
     return svg;
 }
+// en tête du sommaire : les chapitres dans le temps, sur l'échelle retenue ; un chapitre mène à son texte
+(function () {
+  var F = window.FRISE, zone = document.getElementById("acc-zone"), se = document.getElementById("acc-echelle");
+  if (!zone || !F) return;
+  var parties = Array.from(new Set(F.chapitres.map(function (c) { return c.partie; })));
+  if (F.echelles.length > 1) F.echelles.forEach(function (e) { var o = document.createElement("option"); o.value = e.id; o.textContent = e.titre; se.append(o); });
+  else se.hidden = true;
+  function dessine() {
+    var ech = echelleRetenue(F);
+    se.value = ech.id;
+    var items = F.chapitres.filter(function (c) { return c.place; }).map(function (c, i) {
+      return { debut: c.place.debut, fin: c.place.fin, ouvert_debut: c.place.ouvert_debut, ouvert_fin: c.place.ouvert_fin,
+        approx: c.place.approx, titre: ((c.numero || "") + " " + c.titre).trim(), sous: c.place.texte,
+        couleur: COULEURS_FRISE[parties.indexOf(c.partie) % COULEURS_FRISE.length], ordre: i, lien: c.lien };
+    });
+    var bandes = F.bandes.filter(function (b) { return !ech.bandes || ech.bandes.indexOf(b.id) >= 0; });
+    zone.replaceChildren(dessineFrise(F, ech, items, { bandes: bandes, reperes: F.reperes, fleches: false,
+      largeur: Math.max(zone.clientWidth - 4, 300) }));
+  }
+  se.onchange = function () { retientEchelle(se.value); dessine(); };
+  var m; window.addEventListener("resize", function () { clearTimeout(m); m = setTimeout(dessine, 150); });
+  dessine();
+})();
+
 if (!document.getElementById("fr-zone") && window.FRISE) {
   miniFrises();
   var m_; window.addEventListener("resize", function () { clearTimeout(m_); m_ = setTimeout(miniFrises, 150); });

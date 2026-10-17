@@ -885,6 +885,8 @@ lire. Le livre y est publié en l'état.
 
 **Ce que le site contient** (l'accueil met le contenu d'abord, la progression ensuite) :
 - **Lire le récit** et **Lire l'essai** : le premier chapitre écrit de chaque version ;
+- **le livre dans le temps** : en tête du sommaire, une frise compacte des chapitres (si le livre a une frise) ; un
+  chapitre mène à son texte, l'échelle se choisit, et un lien mène à la frise complète ;
 - le sommaire par partie, chaque chapitre avec ses liens de lecture et son statut ;
 - les PDF à télécharger, nommés d'après le livre, la version du texte et la version du livre (onglet
   « révisions ») : `un-monde-recit-v2.pdf` quand le livre est tel que marqué, `un-monde-recit-v2-2026-10-17.pdf`
