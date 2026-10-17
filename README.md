@@ -797,9 +797,11 @@ taille, à l'écran, dans le PDF et sur le site, et du texte qui se versionne av
   **fiches**, sa **fabrication** (toutes les demandes qui l'ont proposée ou dessinée ; un clic ouvre le tiroir) et
   ses **dessins archivés**.
 - **Ses fiches :** une planche reste une pièce du chapitre (son numéro, sa place dans le texte), mais elle est liée
-  aux fiches dont elle tire ses données : celles que citent les sources de son brief (`@fiche/…`), et celles qu'elle
-  déclare (`fiches` dans `planches.yaml` ; « lier une fiche… » sur sa page). Claude lit les fiches déclarées quand il
-  la dessine, et la page d'une fiche montre, en retour, les planches qui en sont tirées.
+  aux fiches dont elle tire ses données, **sans rien faire à la main** : celles que citent les sources de son brief
+  (`@fiche/…`), et, quand on retient un dessin de Claude, celles que citent les sources de ses éléments (elles
+  s'inscrivent dans `fiches`, dans `planches.yaml`). On peut en lier d'autres (« lier une fiche… » sur sa page) ou
+  en retirer. Claude lit ces fiches quand il la dessine. La page d'une fiche montre, en retour, les planches qui en
+  sont tirées : dans LimaLibri, et sur le site public (vignette, et lien vers le texte où elle paraît).
 - **L'appel, dans le texte** (récit ou essai) : écrire `@planche/<id>` dans un paragraphe. L'appel devient
   « planche 5.1 » (le numéro du chapitre, puis le rang de la planche), et la planche s'insère **après ce
   paragraphe**, la première fois qu'il l'appelle, avec sa légende (et « en construction » tant qu'elle n'est pas
