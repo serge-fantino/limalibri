@@ -5299,6 +5299,7 @@ function boutons() {
 
 function depuisAdresse() {
   fermeModale();
+  document.getElementById("page").classList.remove("avec-marge");   // la marge des planches d'une fiche
   quitte();
   const [slug, vue, mode] = decodeURIComponent(location.hash.slice(1)).split("/");
   if (slug.startsWith("fn")) return;
@@ -8397,12 +8398,44 @@ async function pageFiche(slug, section, I) {
     if (x.voisines?.length) { const b = boutonRenvois(f.slug, x.voisines); b.className = "b-versions"; sup.before(b); }
   }).catch(() => {});
   page.append(pastilles(f.confiance, true), barreConfiance(f, corps), actions, corps);
+  planchesFiche(f, page, corps);
   planFiche(f);
   liensFiche(f);
   if (section) {
     const h = document.getElementById("fs-" + section);
     if (h) { h.scrollIntoView({ block: "start" }); h.classList.add("eclair"); setTimeout(() => h.classList.remove("eclair"), 1600); }
   } else if (!deja) zone().scrollTo(0, 0);
+}
+
+// Les planches tirées de la fiche (planches.py, de_fiche) : en vignettes sous le titre, et dans la marge, à hauteur
+// des sections qu'elles illustrent (les sections que citent leurs sources). Une vignette s'ouvre dans la visionneuse.
+async function planchesFiche(f, page, corps) {
+  const P = (await api(`/fiches/${f.slug}/planches`).catch(() => [])).filter((p) => p.existe);
+  if (!P.length || etat.ficheCourante !== f.slug || !corps.isConnected) return;
+  const vignette = (p) => {
+    const src = `/api/planches/${p.chapitre}/${p.id}.svg`;
+    const a = el("a", "planche-vignette-fiche");
+    a.href = src;
+    a.title = "zoomer, plein écran (la visionneuse)";
+    Object.assign(a.dataset, { visionneuse: src, titre: `Planche ${p.numero} — ${p.titre}`, legende: p.legende ?? "" });
+    const img = el("img");
+    img.src = src; img.alt = p.titre; img.loading = "lazy";
+    a.append(img, el("span", null, `Planche ${p.numero} — ${p.titre}`));
+    return a;
+  };
+  const tete = el("div", "planches-tete");
+  for (const p of P) tete.append(vignette(p));
+  (page.querySelector(".fiche-sujet-page") ?? page.querySelector("h1"))?.after(tete);
+  let marge = false;
+  for (const p of P) for (const s of p.sections ?? []) {
+    const h = corps.querySelector(`#fs-${CSS.escape(s)}`);
+    if (!h) continue;
+    const m = el("aside", "planche-marge");
+    m.append(vignette(p));
+    h.after(m);
+    marge = true;
+  }
+  page.classList.toggle("avec-marge", marge);
 }
 
 // À gauche : le plan de la fiche ; un clic va à la section (l'adresse suit, sans recharger).

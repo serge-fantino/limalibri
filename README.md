@@ -803,8 +803,11 @@ taille, à l'écran, dans le PDF et sur le site, et du texte qui se versionne av
   aux fiches dont elle tire ses données, **sans rien faire à la main** : celles que citent les sources de son brief
   (`@fiche/…`), et, quand on retient un dessin de Claude, celles que citent les sources de ses éléments (elles
   s'inscrivent dans `fiches`, dans `planches.yaml`). On peut en lier d'autres (« lier une fiche… » sur sa page) ou
-  en retirer. Claude lit ces fiches quand il la dessine. La page d'une fiche montre, en retour, les planches qui en
-  sont tirées : dans LimaLibri, et sur le site public (vignette, et lien vers le texte où elle paraît).
+  en retirer. Claude lit ces fiches quand il la dessine.
+- **Sur la page d'une fiche** (dans LimaLibri et sur le site public) : ses planches en vignettes sous le titre, et
+  dans la marge, à hauteur des sections qu'elles illustrent — celles que citent leurs sources
+  (`@fiche/<slug>#<section>` ; à la retenue d'un dessin, elles s'inscrivent dans `ancres`). Sur un écran étroit, la
+  planche se met sous l'intertitre. Une vignette s'ouvre dans la visionneuse.
 - **L'appel, dans le texte** (récit ou essai) : écrire `@planche/<id>` dans un paragraphe. L'appel devient
   « planche 5.1 » (le numéro du chapitre, puis le rang de la planche), et la planche s'insère **après ce
   paragraphe**, la première fois qu'il l'appelle, avec sa légende (et « en construction » tant qu'elle n'est pas

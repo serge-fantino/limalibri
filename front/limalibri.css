@@ -1368,3 +1368,15 @@ body[data-vue="planche"] #page{max-width:60rem}
 .planche-carte-titre{color:var(--fg);text-decoration:none;font-weight:600}
 .planche-carte-titre:hover{color:var(--acc)}
 #page figure.planche a.planche-lien,.planche-vue a,.planche-grande{cursor:zoom-in}
+
+/* les planches d'une fiche : en vignettes sous le titre, et en marge des sections qu'elles illustrent */
+.planches-tete{display:flex;gap:.8rem;overflow-x:auto;margin:.4rem 0 1.2rem;padding-bottom:.3rem}
+.planche-vignette-fiche{flex:0 0 11rem;display:flex;flex-direction:column;gap:.3rem;text-decoration:none;color:var(--fg);
+  font-family:var(--ui);font-size:.75rem;line-height:1.3;cursor:zoom-in}
+.planche-vignette-fiche img{width:100%;aspect-ratio:4/3;object-fit:contain;background:#fffdf8;border:1px solid var(--rule);border-radius:4px}
+.planche-vignette-fiche:hover span{color:var(--acc)}
+aside.planche-marge{margin:.3rem 0 1rem;max-width:18rem}
+aside.planche-marge .planche-vignette-fiche{flex:none}
+@media(min-width:1300px){
+ body[data-vue="fiches"] #page.avec-marge{max-width:68rem;padding-right:20rem}
+ #page.avec-marge aside.planche-marge{float:right;clear:right;width:15rem;margin:0 -18rem 1rem 0}}
