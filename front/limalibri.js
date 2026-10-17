@@ -12387,7 +12387,7 @@ function dessineFrise(F, ech, items, { bandes = [], reperes = [], fleches = fals
     g.append(svgEl("text", { x: G - 8, y: y + 14, "text-anchor": "end", class: "fr-lib" }, b.titre));
     if (b.rendu === "gradient" && b.points?.length > 1) {
       const id = "gr-" + b.id;
-      const lg = svgEl("linearGradient", { id, x1: 0, x2: 1, y1: 0, y2: 0 });
+      const lg = svgEl("linearGradient", { id, gradientUnits: "userSpaceOnUse", x1: G, x2: G + L, y1: 0, y2: 0 });
       const P = [...b.points].sort((a, c) => a.t - c.t);
       const vs = P.map((p) => Math.log10(1 + Math.abs(p.v))), vmin = Math.min(...vs), vmax = Math.max(...vs);
       const [c0, c1] = b.couleurs;
@@ -12396,8 +12396,9 @@ function dessineFrise(F, ech, items, { bandes = [], reperes = [], fleches = fals
         lg.append(svgEl("stop", { offset: ((X(p.t) - G) / L * 100).toFixed(2) + "%", "stop-color": melange(c0, c1, f), "stop-opacity": 0.85 }));
       }
       defs.append(lg);
+      // la bande ne couvre que ses points : avant le premier (z ≈ 1100, le fond diffus), elle ne dit rien
       const x0 = X(P[0].t), x1 = X(P[P.length - 1].t);
-      g.append(svgEl("rect", { x: G, y, width: L, height: 18, fill: `url(#${id})`, rx: 3 }));
+      g.append(svgEl("rect", { x: x0, y, width: Math.max(x1 - x0, 1), height: 18, fill: `url(#${id})`, rx: 3 }));
       let d2 = -1e9;
       for (const p of P) {
         const px = X(p.t);
@@ -12406,7 +12407,6 @@ function dessineFrise(F, ech, items, { bandes = [], reperes = [], fleches = fals
           "text-anchor": px > G + L - 30 ? "end" : px < G + 30 ? "start" : "middle", class: "fr-val" }, b.format.replace("{v}", nombreFr(p.v, 1))));
         d2 = px;
       }
-      void x0; void x1;
     } else {
       for (const [i, s] of (b.segments ?? []).entries()) {
         const a = X(Math.min(s.debut, s.fin)), c = X(Math.max(s.debut, s.fin));
@@ -12575,7 +12575,8 @@ async function pageGrandeFrise_() {
         axe.append(z);
       });
       const pts = [...(b.points ?? [])].filter((x) => x.t != null).sort((a, b2) => a.t - b2.t);   // un dégradé entre des points
-      const col = (k) => melange(c0, c1, pts.length > 1 ? k / (pts.length - 1) : 0);
+      const lv = pts.map((p) => Math.log10(1 + Math.abs(p.v))), vmin = Math.min(...lv), vmax = Math.max(...lv);
+      const col = (k) => melange(c0, c1, vmax > vmin ? (lv[k] - vmin) / (vmax - vmin) : 0);   // la couleur suit la valeur
       pts.forEach((p, i) => {
         if (i < pts.length - 1) {
           const g = X(p.t), d = X(pts[i + 1].t);
