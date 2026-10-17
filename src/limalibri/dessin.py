@@ -111,7 +111,8 @@ le site public (jusque sur un téléphone).
    objet, une légende qui coupe un trait, un alignement raté, un texte trop petit. Corrige, et regarde de nouveau.
    Au moins deux regards ; au plus {regards}.
 3. Rends le SVG final (exactement celui que tu as regardé en dernier), son titre, une légende d'une ou deux phrases
-   (ce que le lecteur doit y voir), la liste des éléments affichés avec leur source, ce que tu as laissé en blanc
+   (ce que le lecteur doit y voir), la liste des éléments affichés avec leur source (en références :
+   @fiche/<slug>#<section>, @chapitre/<slug>/essai^xxxx — la planche est liée aux fiches citées), ce que tu as laissé en blanc
    (blancs), le nombre de regards, et tes remarques (ce que tu n'as pas pu faire, ce qu'il faudrait sourcer).
 Tout en français."""
 
@@ -388,7 +389,9 @@ def pose_dessin(d):
     slug, ident, R = d["cible"]["chapitre"], d["cible"]["planche"], d["resultat"]
     if R.get("defauts"):
         raise ValueError("le dessin a des défauts : " + " ; ".join(R["defauts"]))
-    return planches.ecrit_dessin(slug, ident, R["svg"], R.get("titre"), R.get("legende"), d["id"])
+    # les fiches que citent les sources de ses éléments : la planche leur est liée (planches.yaml, fiches)
+    fiches = planches.fiches_citees(e.get("source") for e in R.get("elements") or [])
+    return planches.ecrit_dessin(slug, ident, R["svg"], R.get("titre"), R.get("legende"), d["id"], fiches=fiches)
 
 
 def decide(ident, corps):

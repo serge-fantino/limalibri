@@ -11,8 +11,9 @@
         brief: {montre: …, pourquoi: …, sources: [...]}   # ce que Claude a proposé (dessin.py), pour la dessiner
         fiches: [nucleosynthese-primordiale]               # facultatif : les fiches dont elle tire ses données
 
-Une planche est liée aux fiches qu'elle déclare (« fiches ») et à celles que citent ses sources (« @fiche/x ») ;
-la page de la fiche les montre en retour. Elle reste une pièce du chapitre (son numéro, sa place dans le texte).
+Une planche est liée aux fiches qu'elle déclare (« fiches » ; un dessin de Claude retenu y ajoute celles que citent
+les sources de ses éléments) et à celles que citent les sources de son brief ; la page de la fiche, dans LimaLibri
+et sur le site public, les montre en retour. Elle reste une pièce du chapitre (son numéro, sa place dans le texte).
 
 Le texte (récit ou essai) appelle une planche par « @planche/<id> » dans un paragraphe : l'appel devient
 « planche 5.1 » (le numéro du chapitre, puis le rang de la planche), et la planche s'insère après ce paragraphe,
@@ -68,6 +69,7 @@ def liste(slug):
     M, A = _meta(slug)
     fichiers = sorted(p.stem for p in (d / "planches").glob("*.svg") if ID.match(p.stem)) if (d / "planches").is_dir() else []
     ids = list(M) + [x for x in fichiers if x not in M]
+    connues = fiches_connues()
     c = next((x for x in livre.chapitres_seuls() if x["slug"] == slug), {})
     L = []
     for i, k in enumerate(ids, 1):
@@ -77,16 +79,33 @@ def liste(slug):
             A.append("%s : pas de dessin (planches/%s.svg)" % (k, k))
         L.append(dict(m, id=k, titre=m["titre"] or k.replace("-", " ").capitalize(),
                       numero="%s.%d" % (c["numero"], i) if c.get("numero") else str(i),
-                      fichier="chapters/%s/planches/%s.svg" % (slug, k), existe=existe, fiches=_fiches(m)))
+                      fichier="chapters/%s/planches/%s.svg" % (slug, k), existe=existe, fiches=_fiches(m, connues)))
     return {"planches": L, "avertissements": A}
 
 
-def _fiches(m):
-    """Les fiches d'une planche : [{slug, lien}] — « déclarée » (planches.yaml, fiches) ou « source » (@fiche/x du brief)."""
+def fiches_connues():
+    d = livre.LIVRE / "kb" / "fiches"
+    return {p.stem for p in d.glob("*.md")} if d.is_dir() else set()
+
+
+def fiches_citees(sources, connues=None):
+    """Les fiches que citent des sources, dans l'ordre : « @fiche/<slug> », ou « fiche <slug> » quand c'est une fiche
+    du livre (Claude écrit parfois ses sources en clair)."""
+    connues = fiches_connues() if connues is None else connues
+    out = []
+    for t in sources or []:
+        t = str(t or "")
+        for f in FICHE.findall(t) + [x for x in re.findall(r"\bfiches?\s+«?\s*([a-z0-9][a-z0-9-]*[a-z0-9])", t) if x in connues]:
+            if f not in out:
+                out.append(f)
+    return out
+
+
+def _fiches(m, connues=None):
+    """Les fiches d'une planche : [{slug, lien}] — « déclarée » (planches.yaml, fiches) ou « source » (son brief)."""
     out = {f: "déclarée" for f in m.get("liees") or []}
-    for x in (m.get("brief") or {}).get("sources") or []:
-        for f in FICHE.findall(str(x)):
-            out.setdefault(f, "source")
+    for f in fiches_citees((m.get("brief") or {}).get("sources"), connues):
+        out.setdefault(f, "source")
     return [{"slug": f, "lien": l} for f, l in out.items()]
 
 
@@ -289,7 +308,7 @@ def ajoute_propositions(slug, props, demande):
     return ids
 
 
-def ecrit_dessin(slug, ident, svg, titre, legende, demande):
+def ecrit_dessin(slug, ident, svg, titre, legende, demande, fiches=()):
     """Retenir un dessin : planches/<id>.svg (l'ancien dans planches/historique/), le titre et la légende s'ils manquent
     ou si la planche était à dessiner ; « à dessiner » passe « en construction »."""
     if not ID.match(ident or ""):
@@ -318,6 +337,9 @@ def ecrit_dessin(slug, ident, svg, titre, legende, demande):
             e["legende"] = legende
         if neuve:
             e["etat"] = "en construction"
+        F = [str(x) for x in (e.get("fiches") or [])]
+        if any(f not in F for f in fiches):              # les fiches que cite le dessin : liées, sans doublon
+            e["fiches"] = F + [f for f in fiches if f not in F]
     _ecrit_meta(slug, change)
     return {"fichier": "chapters/%s/planches/%s.svg" % (slug, ident),
             "archive": str(archive.relative_to(livre.LIVRE)) if archive else None}
