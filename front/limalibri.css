@@ -1426,4 +1426,8 @@ body[data-vue="grande-frise"] #page > h1,.gf-barre{margin-left:2rem;margin-right
 .gf-planche img{aspect-ratio:4/3}
 .gf-repere{position:absolute;top:0;bottom:0;border-left:1px dashed var(--acc);opacity:.55;pointer-events:none;z-index:0}
 .gf-repere span{position:absolute;left:3px;font-size:.66rem;color:var(--acc);white-space:nowrap;background:var(--bg);padding:0 .2rem}
+.gf-plein{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column;padding:.6rem 0 0;margin:0 !important;max-width:none !important}
+.gf-plein > :not(.gf-barre):not(.gf-defile){display:none}
+.gf-plein .gf-defile{flex:1;max-height:none;margin-top:.4rem}
+html.gf-plein-ouvert{overflow:hidden}
 /* grande frise : fin */

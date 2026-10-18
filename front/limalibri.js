@@ -12529,6 +12529,7 @@ async function pageGrandeFrise_() {
 // Le moteur de la grande frise, partagé avec le site public (public.script_frise) : dans `hote`, la barre (échelle, zoom)
 // et la toile qui défile. D = {F (la frise), fiches: [{slug, titre, chapitres: [slug]}], planches: [{chapitre, id, numero,
 // titre, legende}], liens: {chapitre(c), texte(c, version), fiche(f), planche(p)}} ; un lien null : pas de lien.
+// D.plein : ouvrir en plein écran ; D.sort : appelé quand on quitte ce plein écran-là (le site revient à la petite frise).
 // Rend de quoi détacher les écouteurs de la fenêtre.
 function grandeFrise(hote, D) {
   const { F, liens } = D, I = D.fiches, PL = D.planches;
@@ -12541,7 +12542,8 @@ function grandeFrise(hote, D) {
   for (const e of echs) se.append(new Option(`échelle : ${e.titre}`, e.id, false, e.id === GF.echelle));
   const moins = el("button", "pan-lien", "−"), plus = el("button", "pan-lien", "+"), niv = el("span", "mut petit");
   moins.title = "dézoomer (ctrl + molette)"; plus.title = "zoomer (ctrl + molette)";
-  barre.append(se, el("span", "mut petit", "zoom"), moins, niv, plus,
+  const plein = el("button", "pan-lien gf-plein-bouton");
+  barre.append(se, el("span", "mut petit", "zoom"), moins, niv, plus, plein,
     el("span", "mut petit gf-aide", "glisser : se déplacer · molette sur la frise : avancer dans le temps · ctrl + molette : zoomer · un nom de couloir : le masquer"));
   const defile = el("div", "gf-defile");
   hote.append(barre, defile);
@@ -12765,8 +12767,26 @@ function grandeFrise(hote, D) {
   const lache = () => { prise = null; defile.classList.remove("gf-prise"); };
   window.addEventListener("mousemove", bouge);
   window.addEventListener("mouseup", lache);
-  dessine();
-  return () => { window.removeEventListener("mousemove", bouge); window.removeEventListener("mouseup", lache); };
+  // le plein écran : la frise couvre la fenêtre (Échap ou ✕ pour sortir)
+  const pleinEcran = (oui) => {
+    const r = defile.scrollLeft / (defile.scrollWidth || 1);
+    hote.classList.toggle("gf-plein", oui);
+    document.documentElement.classList.toggle("gf-plein-ouvert", oui);
+    plein.textContent = oui ? "✕ quitter le plein écran" : "⛶ plein écran";
+    plein.title = oui ? "revenir à la page (Échap)" : "la frise sur tout l'écran";
+    dessine((W) => r * W);
+  };
+  plein.onclick = () => {
+    const oui = !hote.classList.contains("gf-plein");
+    if (!oui && D.sort) return D.sort();
+    pleinEcran(oui);
+  };
+  const echap = (e) => { if (e.key === "Escape" && hote.classList.contains("gf-plein") && !document.querySelector(".vis")) plein.onclick(); };
+  window.addEventListener("keydown", echap, true);           // avant la visionneuse, qui se ferme sur la même touche
+  if (D.plein) pleinEcran(true);
+  else { plein.textContent = "⛶ plein écran"; plein.title = "la frise sur tout l'écran"; dessine(); }
+  return () => { window.removeEventListener("mousemove", bouge); window.removeEventListener("mouseup", lache);
+    window.removeEventListener("keydown", echap, true); document.documentElement.classList.remove("gf-plein-ouvert"); };
 }
 
 async function pageFrise(id) {

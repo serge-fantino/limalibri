@@ -850,7 +850,8 @@ niveau), les **fiches** (au premier chapitre qui s'appuie sur elles, un pointill
 pour se déplacer dans les deux sens ; la molette descend dans les couloirs, et avance dans le temps sur la frise du
 haut ; ctrl + molette (ou le pincement du trackpad) zoome autour du pointeur ; l'échelle se choisit (par défaut, celle qui donne la même place à chaque date
 connue, pour que la fin du livre ne soit pas écrasée). Un chapitre pas encore daté est placé d'après ses voisins dans
-l'ordre du livre, en pointillé : « date à poser ».
+l'ordre du livre, en pointillé : « date à poser ». Le bouton **⛶ plein écran** lui donne toute la fenêtre (✕ ou Échap
+pour revenir).
 
 Tout vient de **`frise.yaml`**, à la racine du livre. Ce fichier s'édite à la main ; LimaLibri le lit et le
 dessine. Un bouton « Amorcer » le crée à partir des périodes des chapitres, et ne remplace jamais un fichier
@@ -898,6 +899,7 @@ lire. Le livre y est publié en l'état.
 - **Lire le récit** et **Lire l'essai** : le premier chapitre écrit de chaque version ;
 - **le livre dans le temps** : en tête du sommaire, une frise compacte des chapitres (si le livre a une frise) ; un
   chapitre mène à son texte, l'échelle se choisit, et des liens mènent à la frise complète et à la grande frise ;
+  **⛶ agrandir** ouvre la grande frise en plein écran, et en sortir (✕ ou Échap) ramène à la petite ;
 - le sommaire par partie, chaque chapitre avec ses liens de lecture et son statut ;
 - les PDF à télécharger, nommés d'après le livre, la version du texte et la version du livre (onglet
   « révisions ») : `un-monde-recit-v2.pdf` quand le livre est tel que marqué, `un-monde-recit-v2-2026-10-17.pdf`
@@ -923,7 +925,8 @@ lire. Le livre y est publié en l'état.
   moteur (`grandeFrise`, extrait avec la frise), sur la palette du site. Les couloirs n'y montrent que ce qui est publié :
   les chapitres (des liens vers leur récit et leur essai en ligne), les fiches du site, et les planches déjà sur le site
   (appelées par un texte ou une fiche), qui s'ouvrent dans la visionneuse. Ses données propres sont dans
-  `grande-frise-donnees.js` ; au téléphone, on la fait défiler au doigt et les boutons zooment ;
+  `grande-frise-donnees.js` ; au téléphone, on la fait défiler au doigt et les boutons zooment. Elle a son bouton
+  ⛶ plein écran ; la page de la frise a aussi son bouton **⛶ agrandir** (`grande-frise.html?plein`) ;
 - sur chaque page de chapitre, le bandeau **« Dans le temps »** : une mini-frise où le chapitre est en évidence
   parmi les autres, sur la première échelle. Elle donne sa période, un lien vers la frise du livre et vers ses
   frises internes.
