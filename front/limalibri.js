@@ -8792,11 +8792,28 @@ async function dialogue(ident = etat.conversation) {
   etat.conversation = ident ?? null;
   try { sessionStorage.setItem("limalibri-conversation", ident ?? ""); } catch { /* sans stockage */ }
   const tete = el("div", "dia-tete");
-  const liste = el("select", "dia-liste");
   const L = await api("/conversations").catch(() => []);
-  liste.append(new Option("— nouvelle conversation —", ""));
-  for (const x of L) liste.append(new Option(`${(x.titre ?? "sans titre").slice(0, 60)} · ${x.tours} · ${(x.modifie ?? "").slice(0, 10)}`, x.id, false, x.id === ident));
-  liste.onchange = () => dialogue(liste.value || null);
+  const ici = L.find((x) => x.id === ident);
+  // la liste des conversations : un volet à gauche (ouvert d'office en plein écran, sur demande dans le panneau)
+  let ouvert = false;
+  try { ouvert = z.classList.contains("plein") ? localStorage.getItem("limalibri-dia-convs") !== "0" : !!etat.convsOuvert; } catch { /* */ }
+  const volet = listeConversations(L, ident);
+  const bListe = el("button", "dia-bouton dia-b-liste", `☰ ${L.length}`);
+  bListe.title = "les conversations";
+  const montre = (oui) => {
+    ouvert = oui;
+    z.classList.toggle("avec-convs", oui);
+    bListe.classList.toggle("actif", oui);
+    if (z.classList.contains("plein")) { try { localStorage.setItem("limalibri-dia-convs", oui ? "1" : "0"); } catch { /* */ } }
+    else etat.convsOuvert = oui;
+    if (oui) volet.querySelector(".dia-convs-cherche")?.focus();
+  };
+  bListe.onclick = () => montre(!z.classList.contains("avec-convs"));
+  const nouvelle = el("button", "dia-bouton dia-nouvelle", "＋");
+  nouvelle.append(el("span", "dia-nouvelle-mot", " Nouvelle conversation"));
+  nouvelle.title = "commencer une nouvelle conversation";
+  nouvelle.disabled = !ident;
+  nouvelle.onclick = () => { etat.convsOuvert = false; dialogue(null); };
   const sup = el("button", "pan-lien", "🗑");
   sup.title = "supprimer cette conversation";
   sup.hidden = !ident;
@@ -8810,7 +8827,9 @@ async function dialogue(ident = etat.conversation) {
   const plein = el("button", "pan-lien dia-plein", z.classList.contains("plein") ? "⤡" : "⤢");
   plein.title = z.classList.contains("plein") ? "revenir au panneau (Échap)" : "plein écran";
   plein.onclick = () => pleinEcranDialogue(!z.classList.contains("plein"));
-  tete.append(el("h4", null, "✦ Claude"), liste, sup, plein, x);
+  const titre = el("span", "dia-titre", ident ? titreConversation(ici?.titre) : "nouvelle conversation");
+  titre.title = ici?.titre ?? "";
+  tete.append(bListe, el("h4", null, "✦ Claude"), titre, nouvelle, sup, plein, x);
   const fil = el("div", "dia-fil");
   let c = null;
   if (ident) {
@@ -8859,10 +8878,81 @@ async function dialogue(ident = etat.conversation) {
   const mod = !c?.session_id ? choixModele("conversation", c?.modele_choisi ?? "") : null;
   pied.append(envoi, lieu, ...(mod ? [mod.noeud] : [el("span", "mut petit", "modèle : " + nomModele(c?.modele_session))]), err);
   saisie.append(q, pied);
-  z.replaceChildren(poigneeDialogue(z), tete, fil, saisie);
+  const corps = el("div", "dia-corps"), principal = el("div", "dia-principal");
+  principal.append(fil, saisie);
+  principal.addEventListener("click", () => { if (!z.classList.contains("plein") && z.classList.contains("avec-convs")) montre(false); });
+  corps.append(volet, principal);
+  z.replaceChildren(poigneeDialogue(z), tete, corps);
+  montre(ouvert);
   fil.scrollTop = fil.scrollHeight;
   if (!occupe) q.focus();
   if (occupe) suivreConversation(ident);
+}
+
+// Les conversations, en cartes rangées par date (aujourd'hui, hier, cette semaine…) : le titre, l'heure ou la date, le
+// nombre de tours, Claude qui répond ; une recherche sur les titres. La conversation ouverte est marquée.
+// Un titre de conversation lisible : « ch. 5 » pour @chapitre/…, le titre de la fiche pour @fiche/… (le titre peut être
+// coupé au milieu d'une référence : un début de slug suffit).
+function titreConversation(t) {
+  if (!t) return "sans titre";
+  return t.replace(new RegExp(MOTIF_REF.source, "g"), (m, type) => {
+    const slug = m.slice(type.length + 2).split(/[/#^:]/)[0];
+    if (type === "chapitre") {
+      const c = etat.chapitres?.find((x) => x.slug === slug) ?? etat.chapitres?.find((x) => slug.length > 8 && x.slug.startsWith(slug));
+      return c ? `ch. ${c.numero ?? c.slug}` : m;
+    }
+    if (type === "fiche") {
+      const f = etat.fichesIndex?.find((x) => x.slug === slug);
+      return f ? `« ${f.titre} »` : m;
+    }
+    return m;
+  });
+}
+
+function listeConversations(L, ident) {
+  const v = el("aside", "dia-convs");
+  const nouvelle = el("button", "dia-convs-nouvelle", "＋ Nouvelle conversation");
+  nouvelle.onclick = () => { etat.convsOuvert = false; dialogue(null); };
+  const cherche = el("input", "dia-convs-cherche");
+  cherche.type = "search"; cherche.placeholder = "chercher une conversation…";
+  const corps = el("div", "dia-convs-liste");
+  v.append(nouvelle, cherche, corps);
+  const jour = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  const auj = jour(Date.now()), J = 86400000;
+  const groupe = (m) => {
+    if (!m) return "Sans date";
+    const d = jour(m);
+    return d >= auj ? "Aujourd'hui" : d >= auj - J ? "Hier" : d >= auj - 6 * J ? "Cette semaine" : d >= auj - 30 * J ? "Ce mois-ci" : "Plus ancien";
+  };
+  const quand = (m) => {
+    if (!m) return "";
+    const d = new Date(m);
+    return jour(m) >= auj - J ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  };
+  const dessine = () => {
+    const f = cherche.value.trim().toLowerCase();
+    const M = L.filter((x) => !f || `${x.titre ?? ""} ${titreConversation(x.titre)}`.toLowerCase().includes(f));
+    corps.replaceChildren();
+    if (!M.length) corps.append(el("p", "mut petit dia-convs-vide", L.length ? "Aucune conversation ne correspond." : "Pas encore de conversation."));
+    let g0 = null;
+    for (const x of M) {
+      const g = groupe(x.modifie);
+      if (g !== g0) { corps.append(el("p", "dia-convs-groupe", g)); g0 = g; }
+      const k = el("button", "dia-conv" + (x.id === ident ? " ici" : "") + (x.etat === "en_cours" ? " en-cours" : ""));
+      k.append(el("span", "dia-conv-titre", titreConversation(x.titre)));
+      const m = el("span", "dia-conv-meta");
+      if (x.etat === "en_cours") m.append(el("span", "dia-conv-vit", "Claude répond…"));
+      m.append(el("span", null, `${x.tours} tour${x.tours > 1 ? "s" : ""}`), el("span", null, quand(x.modifie)));
+      k.append(m);
+      k.title = x.titre ?? "";                               // le titre d'origine, références comprises
+      k.onclick = () => { if (!document.getElementById("dialogue").classList.contains("plein")) etat.convsOuvert = false; dialogue(x.id); };
+      corps.append(k);
+    }
+  };
+  cherche.oninput = dessine;
+  dessine();
+  return v;
 }
 
 async function rafraichitDialogue(ident) {
@@ -11708,6 +11798,11 @@ function poigneeDialogue(z) {
 function pleinEcranDialogue(oui) {
   const z = document.getElementById("dialogue");
   z.classList.toggle("plein", oui);
+  let liste = false;                                         // la liste des conversations : retenue en plein écran, repliée dans le panneau
+  try { liste = oui && localStorage.getItem("limalibri-dia-convs") !== "0"; } catch { /* */ }
+  z.classList.toggle("avec-convs", liste);
+  z.querySelector(".dia-b-liste")?.classList.toggle("actif", liste);
+  etat.convsOuvert = false;
   const b = z.querySelector(".dia-plein");
   if (b) { b.textContent = oui ? "⤡" : "⤢"; b.title = oui ? "revenir au panneau (Échap)" : "plein écran"; }
   try { localStorage.setItem("limalibri-dialogue-plein", oui ? "1" : ""); } catch { /* */ }

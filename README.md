@@ -692,6 +692,13 @@ Une conversation se poursuit dans la même session : Claude garde ce qu'il a lu.
 du livre (`claude.conversation` : 30 tours, 4 recherches, 6 pages par question). Le modèle se choisit aussi
 au début d'une conversation (le menu à côté de « envoyer ») ; ensuite la session garde le sien, affiché à sa place.
 
+En tête de la fenêtre : le titre de la conversation ouverte, et **＋ Nouvelle conversation** pour en commencer une.
+**☰** ouvre la **liste des conversations** : des cartes rangées par date (aujourd'hui, hier, cette semaine, ce mois-ci,
+plus ancien), avec le titre (les références y deviennent « ch. 5 » ou le titre de la fiche), le nombre de tours,
+l'heure ou la date, « Claude répond… » pour celle en cours, et une recherche sur les titres. Dans le panneau, la liste
+glisse par-dessus et se referme quand on choisit ; en plein écran (⤢), elle reste ouverte à gauche (☰ la masque, et
+le choix est retenu).
+
 La **consommation** de Claude est journalisée dans `consommation.jsonl`, à la racine du livre : une
 ligne JSON par exécution (demande, reprise, « chercher encore », tour de conversation, lecture de
 confiance), écrite en fin d'exécution et jamais réécrite, avec ses propres chiffres — date et durée,
