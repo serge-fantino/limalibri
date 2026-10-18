@@ -1386,6 +1386,7 @@ body[data-vue="grande-frise"] #cadre{grid-template-columns:var(--gauche-l, 16rem
 body[data-vue="grande-frise"] #droite{display:none}
 body[data-vue="grande-frise"] #page{max-width:none;padding:1.4rem 0 2rem}
 body[data-vue="grande-frise"] #page > h1,.gf-barre{margin-left:2rem;margin-right:2rem}
+/* grande frise : début (repris par le site public, public.css_grande_frise) */
 .gf-barre{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
 .gf-aide{margin-left:auto}
 .gf-defile{overflow:auto;max-height:calc(100vh - 13rem);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-top:.6rem}
@@ -1425,3 +1426,4 @@ body[data-vue="grande-frise"] #page > h1,.gf-barre{margin-left:2rem;margin-right
 .gf-planche img{aspect-ratio:4/3}
 .gf-repere{position:absolute;top:0;bottom:0;border-left:1px dashed var(--acc);opacity:.55;pointer-events:none;z-index:0}
 .gf-repere span{position:absolute;left:3px;font-size:.66rem;color:var(--acc);white-space:nowrap;background:var(--bg);padding:0 .2rem}
+/* grande frise : fin */

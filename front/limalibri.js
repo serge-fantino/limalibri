@@ -12515,6 +12515,24 @@ async function pageGrandeFrise_() {
     api("/planches").catch(() => [])]);
   page.replaceChildren(el("h1", null, "La grande frise"));
   if (F.erreur || !F.existe) return page.append(el("p", "mut", F.erreur ?? "Le livre n'a pas encore de frise : l'amorcer depuis l'onglet « frise »."));
+  const nettoie = grandeFrise(page, {
+    F,
+    fiches: I.map((f) => ({ slug: f.slug, titre: f.titre ?? f.slug, chapitres: (f.chapitres ?? []).map((c) => c.slug ?? c) })),
+    planches: PL.flatMap((c) => c.planches.filter((p) => p.existe).map((p) => ({ ...p, chapitre: c.chapitre }))),
+    liens: { chapitre: (c) => `#plan/c/${c.slug}`, texte: (c, v) => `#${c.slug}/${v}/texte`, fiche: (f) => `#fiches/${f.slug}`,
+      planche: (p) => `/api/planches/${p.chapitre}/${p.id}.svg` },
+  });
+  const fin = () => { nettoie(); window.removeEventListener("hashchange", fin); };
+  window.addEventListener("hashchange", fin);
+}
+
+// Le moteur de la grande frise, partagé avec le site public (public.script_frise) : dans `hote`, la barre (échelle, zoom)
+// et la toile qui défile. D = {F (la frise), fiches: [{slug, titre, chapitres: [slug]}], planches: [{chapitre, id, numero,
+// titre, legende}], liens: {chapitre(c), texte(c, version), fiche(f), planche(p)}} ; un lien null : pas de lien.
+// Rend de quoi détacher les écouteurs de la fenêtre.
+function grandeFrise(hote, D) {
+  const { F, liens } = D, I = D.fiches, PL = D.planches;
+  const retiens = () => { try { localStorage.setItem("limalibri-grande-frise", JSON.stringify(GF)); } catch { /* */ } };
   const echs = F.echelles.filter((e) => e.variable === "depuis_origine");
   if (!echs.some((e) => e.type === "fixe")) echs.unshift({ id: "fixe", titre: "les dates connues à intervalles réguliers", type: "fixe", variable: "depuis_origine" });
   if (!echs.some((e) => e.id === GF.echelle)) GF.echelle = (echs.find((e) => e.type === "fixe") ?? echs[0]).id;
@@ -12526,7 +12544,7 @@ async function pageGrandeFrise_() {
   barre.append(se, el("span", "mut petit", "zoom"), moins, niv, plus,
     el("span", "mut petit gf-aide", "glisser : se déplacer · molette sur la frise : avancer dans le temps · ctrl + molette : zoomer · un nom de couloir : le masquer"));
   const defile = el("div", "gf-defile");
-  page.append(barre, defile);
+  hote.append(barre, defile);
 
   const temps = (c) => [c.place?.debut, c.place?.fin].filter((x) => x != null && isFinite(x));
   // les dates connues (l'échelle « fixe » leur donne la même place) : les chapitres, les repères, et les deux bouts des
@@ -12538,7 +12556,7 @@ async function pageGrandeFrise_() {
   const dessine = (garde) => {
     const ech = echs.find((e) => e.id === GF.echelle) ?? echs[0];
     const E = echelleFrise(ech, F, tsConnus);
-    const vue = defile.clientWidth || page.clientWidth || 1000;
+    const vue = defile.clientWidth || hote.clientWidth || 1000;
     const W = Math.round(vue * GF.zoom), pad = 90, X = (t) => pad + E.x(t) * (W - 2 * pad);
     niv.textContent = "×" + GF.zoom;
     const toile = el("div", "gf-toile");
@@ -12616,7 +12634,7 @@ async function pageGrandeFrise_() {
       e.title = masque ? "montrer" : "masquer";
       e.onclick = () => {
         GF.masques = { ...(GF.masques ?? {}), [cle]: !masque };
-        try { localStorage.setItem("limalibri-grande-frise", JSON.stringify(GF)); } catch { /* */ }
+        retiens();
         const sl = defile.scrollLeft;
         dessine(() => sl);
       };
@@ -12638,13 +12656,15 @@ async function pageGrandeFrise_() {
       const k = el("div", "gf-carte" + (x.estime ? " gf-estime" : ""));
       k.style.left = x.g0 + "px"; k.style.top = (30 + x.couloir * (HC + 10)) + "px"; k.style.width = LC + "px";
       k.style.borderTopColor = couleur(c);
-      const t = el("a", "gf-titre", `${c.numero ?? ""} · ${c.titre}`);
-      t.href = `#plan/c/${c.slug}`;
+      const lc = liens.chapitre(c), t = el(lc ? "a" : "span", "gf-titre", `${c.numero ?? ""} · ${c.titre}`);
+      if (lc) t.href = lc;
       t.title = [c.place?.texte, c.note, x.estime ? "position estimée : pas encore daté (frise.yaml)" : ""].filter(Boolean).join("\n");
       const l = el("div", "gf-liens");
       for (const v of ["recit", "essai"]) {
+        const h = liens.texte(c, v);
+        if (!h) continue;
         const a = el("a", null, v === "recit" ? "récit" : "essai");
-        a.href = `#${c.slug}/${v}/texte`;
+        a.href = h;
         a.title = c.niveau?.[v] ?? "";
         a.append(el("span", "gf-niv gf-niv-" + (c.niveau?.[v] ?? "aucun")));
         l.append(a);
@@ -12655,8 +12675,8 @@ async function pageGrandeFrise_() {
     const xChap = Object.fromEntries(C.map((x) => [x.c.slug, (x.g + x.d) / 2]));
     // les fiches : au premier chapitre qui s'appuie sur elles ; un pointillé court jusqu'au dernier
     const LF = 140, HF = 34;
-    const itF = I.filter((f) => (f.chapitres ?? []).some((c) => xChap[c.slug ?? c] != null)).map((f) => {
-      const xs = f.chapitres.map((c) => xChap[c.slug ?? c]).filter((v) => v != null);
+    const itF = I.filter((f) => f.chapitres.some((c) => xChap[c] != null)).map((f) => {
+      const xs = f.chapitres.map((c) => xChap[c]).filter((v) => v != null);
       const m = Math.min(...xs);
       return { f, xs, g: m, d: m + LF };
     }).sort((a, b) => a.g - b.g);
@@ -12670,19 +12690,19 @@ async function pageGrandeFrise_() {
         zf.append(s);
       }
       const a = el("a", "gf-fiche", x.f.titre ?? x.f.slug);
-      a.href = `#fiches/${x.f.slug}`;
+      a.href = liens.fiche(x.f);
       a.title = `${x.f.titre ?? x.f.slug}\n${x.xs.length} chapitre(s)`;
       a.style.left = x.g + "px"; a.style.top = top + "px"; a.style.width = LF + "px";
       zf.append(a);
     }
     // les planches : sous leur chapitre
     const LP = 130;
-    const itP = PL.flatMap((c) => c.planches.filter((p) => p.existe).map((p) => ({ c, p, g: (xChap[c.chapitre] ?? pad) - LP / 2, d: (xChap[c.chapitre] ?? pad) + LP / 2 })))
+    const itP = PL.map((p) => ({ p, g: (xChap[p.chapitre] ?? pad) - LP / 2, d: (xChap[p.chapitre] ?? pad) + LP / 2 }))
       .sort((a, b) => a.g - b.g);
     const nP = couloirs(itP, 8);
     const zp = couloir("planches", `Planches · ${itP.length}`, 30 + Math.max(1, nP) * 128);
     for (const x of itP) {
-      const src = `/api/planches/${x.c.chapitre}/${x.p.id}.svg`;
+      const src = liens.planche(x.p);
       const a = el("a", "planche-vignette-fiche gf-planche");
       a.href = src;
       Object.assign(a.dataset, { visionneuse: src, titre: `Planche ${x.p.numero} — ${x.p.titre}`, legende: x.p.legende ?? "" });
@@ -12709,14 +12729,14 @@ async function pageGrandeFrise_() {
     if (z === GF.zoom) return;
     const W0 = defile.scrollWidth, mx = px ?? defile.clientWidth / 2, r = (defile.scrollLeft + mx) / W0;
     GF.zoom = z;
-    try { localStorage.setItem("limalibri-grande-frise", JSON.stringify(GF)); } catch { /* */ }
+    retiens();
     dessine((W) => r * W - mx);
   };
   moins.onclick = () => zoome(1 / 1.5);
   plus.onclick = () => zoome(1.5);
   se.onchange = () => {
     GF.echelle = se.value;
-    try { localStorage.setItem("limalibri-grande-frise", JSON.stringify(GF)); } catch { /* */ }
+    retiens();
     const r = defile.scrollLeft / (defile.scrollWidth || 1);
     dessine((W) => r * W);
   };
@@ -12745,10 +12765,8 @@ async function pageGrandeFrise_() {
   const lache = () => { prise = null; defile.classList.remove("gf-prise"); };
   window.addEventListener("mousemove", bouge);
   window.addEventListener("mouseup", lache);
-  const nettoie = () => { window.removeEventListener("mousemove", bouge); window.removeEventListener("mouseup", lache);
-    window.removeEventListener("hashchange", nettoie); };
-  window.addEventListener("hashchange", nettoie);
   dessine();
+  return () => { window.removeEventListener("mousemove", bouge); window.removeEventListener("mouseup", lache); };
 }
 
 async function pageFrise(id) {

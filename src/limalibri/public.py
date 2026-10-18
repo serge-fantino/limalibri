@@ -580,7 +580,8 @@ class Site:
                 for p in self.pdf))
         corps.append('<p class="sur">Et aussi</p><p class="ui">%s<a href="fiches/index.html">Les fiches (%d)</a> · '
                      '<a href="bibliographie.html">La bibliographie</a></p>' % (
-                         '<a href="frise.html">La frise</a> · ' if self.frise else "", len(self.inclus)))
+                         '<a href="frise.html">La frise</a> · <a href="grande-frise.html">La grande frise</a> · '
+                         if self.frise else "", len(self.inclus)))
         corps.append(self.bloc_suivi())
         return _page(m.get("titre") or "Livre", "".join(corps), "", description=str(m.get("synopsis") or "")[:200])
 
@@ -722,6 +723,7 @@ class Site:
         for c in F["chapitres"]:
             v = "recit" if (c["slug"], "recit") in self.textes else "essai" if (c["slug"], "essai") in self.textes else None
             c["lien"] = "chapitres/%s/%s.html" % (c["slug"], v) if v else None
+            c["publie"] = [x for x in livre.VERSIONS if (c["slug"], x) in self.textes]
         F.pop("fichier", None)
         return "window.FRISE = %s;\n" % json.dumps(F, ensure_ascii=False)
 
@@ -743,7 +745,8 @@ class Site:
         return ('<div class="accueil-frise ui"><div class="mini-tete"><span class="sur">Le livre dans le temps</span>'
                 '<select id="acc-echelle" class="mini-echelle" title="l\'échelle de la frise"></select></div>'
                 '<div class="frise-zone" id="acc-zone"></div>'
-                '<p class="meta">Touchez un chapitre pour le lire · <a href="frise.html">la frise complète →</a></p></div>'
+                '<p class="meta">Touchez un chapitre pour le lire · <a href="frise.html">la frise complète →</a> · '
+                '<a href="grande-frise.html">la grande frise →</a></p></div>'
                 '<script src="frise-donnees.js"></script><script src="frise.js"></script>')
 
     def page_frise(self):
@@ -759,6 +762,34 @@ class Site:
                  '<script src="frise-donnees.js"></script><script src="frise.js"></script>']
         return _page("La frise — %s" % (self.meta.get("titre") or ""), "".join(corps), "", barre)
 
+    def page_grande_frise(self):
+        """La grande frise : le livre dans le temps sur une page qui défile de côté ; dessous, les chapitres publiés, les
+        fiches et les planches du site (le moteur de l'atelier, grandeFrise)."""
+        barre = '<nav class="barre-haut"><a href="index.html">← %s</a><a href="frise.html">La frise</a></nav>' % html.escape(
+            self.meta.get("titre") or "Sommaire")
+        corps = ('<h1>La grande frise</h1><p class="meta">Le livre dans le temps : la frise en haut, et dessous, alignés sur '
+                 'elle, les chapitres, les fiches sur lesquelles ils s\'appuient et les planches. Faites défiler de côté ; '
+                 'les boutons zooment ; un nom de couloir le masque.</p><div class="gf-public ui" id="gf-hote"></div>'
+                 '<script src="frise-donnees.js"></script><script src="grande-frise-donnees.js"></script>'
+                 '<script src="frise.js"></script><script src="visionneuse.js" defer></script>')
+        return _page("La grande frise — %s" % (self.meta.get("titre") or ""), corps, "", barre)
+
+    def donnees_grande_frise(self):
+        """window.GRANDE_FRISE : les fiches du site (et les chapitres qui s'appuient sur elles), les planches du site."""
+        de = {}
+        for ch, L in self.fiches_de.items():
+            for x in L:
+                de.setdefault(x, []).append(ch)
+        fiches = [{"slug": x, "titre": self.fiches[x].get("titre") or x, "chapitres": de.get(x, [])} for x in sorted(self.inclus)]
+        from . import planches
+        P = []
+        for c in planches.toutes():
+            for q in c["planches"]:
+                if q.get("existe") and (c["chapitre"], q["id"]) in self.planches:
+                    P.append({"chapitre": c["chapitre"], "id": q["id"], "numero": q.get("numero"), "titre": q.get("titre") or "",
+                              "legende": q.get("legende") or ""})
+        return "window.GRANDE_FRISE = %s;\n" % json.dumps({"fiches": fiches, "planches": P}, ensure_ascii=False)
+
     def etat(self):
         return {"titre": self.meta.get("titre"), "genere": livre._maintenant(),
                 "versions": {v: {"score": self.suivi[v]["score"], "repartition": self.suivi[v]["repartition"]} for v in livre.VERSIONS},
@@ -766,6 +797,25 @@ class Site:
                                "niveaux": {v: avancement.niveau(c, v) for v in livre.VERSIONS},
                                "publie": [v for v in livre.VERSIONS if (c["slug"], v) in self.textes]} for c in self.chapitres],
                 "fiches": len(self.inclus)}
+
+
+def css_grande_frise():
+    """Les règles de la grande frise de l'atelier (front/limalibri.css, entre ses deux marques), sur la palette du site."""
+    css = (pathlib.Path(__file__).resolve().parents[2] / "front" / "limalibri.css").read_text(encoding="utf-8")
+    try:
+        a = css.index("/* grande frise : début")
+        b = css.index("/* grande frise : fin */")
+    except ValueError:
+        return ""
+    return (".gf-public{--bg:var(--fond);--fg:var(--texte);--rule:var(--filet);--bar:var(--barre);--pan:var(--carte);--ui:inherit}\n"
+            "main:has(#gf-hote){max-width:none;padding-left:0;padding-right:0}main:has(#gf-hote)>h1,main:has(#gf-hote)>p{padding:0 1rem;"
+            "max-width:46rem;margin-left:auto;margin-right:auto}\n"
+            ".gf-public .gf-barre{padding:0 1rem;font-size:.85rem}.gf-public .mut{color:var(--mut)}.gf-public .petit{font-size:.78rem}\n"
+            ".gf-public .pan-lien{font:inherit;background:none;border:1px solid var(--filet);border-radius:6px;color:var(--acc);"
+            "cursor:pointer;padding:.05rem .55rem}\n"
+            ".gf-public .livre-select{font:inherit;background:var(--carte);color:var(--texte);border:1px solid var(--filet);"
+            "border-radius:6px;padding:.2rem .4rem;max-width:100%}\n"
+            "@media (max-width:40rem){.gf-public .gf-aide{display:none}}\n" + css[a:b])
 
 
 def script_frise():
@@ -862,7 +912,24 @@ function miniSvg(F, ech, c, W) {
   dessine();
 })();
 
-if (!document.getElementById("fr-zone") && window.FRISE) {
+// la grande frise (grande-frise.html) : le moteur de l'atelier, sur les pages du site
+function el(tag, cls, texte) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (texte != null) e.textContent = texte;
+  return e;
+}
+(function () {
+  var hote = document.getElementById("gf-hote"), D = window.GRANDE_FRISE;
+  if (!hote || !window.FRISE || !D) return;
+  grandeFrise(hote, { F: window.FRISE, fiches: D.fiches, planches: D.planches, liens: {
+    chapitre: function (c) { return c.lien; },
+    texte: function (c, v) { return (c.publie || []).indexOf(v) >= 0 ? "chapitres/" + c.slug + "/" + v + ".html" : null; },
+    fiche: function (f) { return "fiches/" + f.slug + ".html"; },
+    planche: function (p) { return "planches/" + p.chapitre + "/" + p.id + ".svg"; } } });
+})();
+
+if (!document.getElementById("fr-zone") && !document.getElementById("gf-hote") && window.FRISE) {
   miniFrises();
   var m_; window.addEventListener("resize", function () { clearTimeout(m_); m_ = setTimeout(miniFrises, 150); });
 }
@@ -939,7 +1006,7 @@ def genere(avec_pdf=True):
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True)
     ecrit = lambda chemin, texte: ((tmp / chemin).parent.mkdir(parents=True, exist_ok=True), (tmp / chemin).write_text(texte, encoding="utf-8"))
-    ecrit("style.css", CSS)
+    ecrit("style.css", CSS + css_grande_frise())
     shutil.copy2(pathlib.Path(__file__).resolve().parents[2] / "front" / "visionneuse.js", tmp / "visionneuse.js")
     ordre = [c["slug"] for c in S.chapitres]
     for (slug, v) in S.textes:
@@ -952,6 +1019,8 @@ def genere(avec_pdf=True):
     if S.frise:
         ecrit("frise.html", S.page_frise())
         ecrit("frise-donnees.js", S.donnees_frise())
+        ecrit("grande-frise.html", S.page_grande_frise())
+        ecrit("grande-frise-donnees.js", S.donnees_grande_frise())
         ecrit("frise.js", script_frise())
     ecrit("etat.json", json.dumps(S.etat(), ensure_ascii=False, indent=1))
     from . import planches
