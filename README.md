@@ -897,7 +897,7 @@ lire. Le livre y est publié en l'état.
 **Ce que le site contient** (l'accueil met le contenu d'abord, la progression ensuite) :
 - **Lire le récit** et **Lire l'essai** : le premier chapitre écrit de chaque version ;
 - **le livre dans le temps** : en tête du sommaire, une frise compacte des chapitres (si le livre a une frise) ; un
-  chapitre mène à son texte, l'échelle se choisit, et un lien mène à la frise complète ;
+  chapitre mène à son texte, l'échelle se choisit, et des liens mènent à la frise complète et à la grande frise ;
 - le sommaire par partie, chaque chapitre avec ses liens de lecture et son statut ;
 - les PDF à télécharger, nommés d'après le livre, la version du texte et la version du livre (onglet
   « révisions ») : `un-monde-recit-v2.pdf` quand le livre est tel que marqué, `un-monde-recit-v2-2026-10-17.pdf`
@@ -919,6 +919,11 @@ lire. Le livre y est publié en l'état.
   extrait de `front/limalibri.js` à la génération. Ses données sont dans `frise-donnees.js`, partagé par toutes
   les pages. Elle a les mêmes réglages : la frise (globale ou interne), l'échelle, les bandes, les repères,
   les flèches. `?ch=<slug>` met un chapitre en avant, `?frise=<id>` ouvre une frise interne ;
+- **la grande frise** (`grande-frise.html`, liée depuis l'accueil et la frise) : celle de l'atelier, dessinée par le même
+  moteur (`grandeFrise`, extrait avec la frise), sur la palette du site. Les couloirs n'y montrent que ce qui est publié :
+  les chapitres (des liens vers leur récit et leur essai en ligne), les fiches du site, et les planches déjà sur le site
+  (appelées par un texte ou une fiche), qui s'ouvrent dans la visionneuse. Ses données propres sont dans
+  `grande-frise-donnees.js` ; au téléphone, on la fait défiler au doigt et les boutons zooment ;
 - sur chaque page de chapitre, le bandeau **« Dans le temps »** : une mini-frise où le chapitre est en évidence
   parmi les autres, sur la première échelle. Elle donne sa période, un lien vers la frise du livre et vers ses
   frises internes.
