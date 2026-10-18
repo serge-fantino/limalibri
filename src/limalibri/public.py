@@ -743,7 +743,8 @@ class Site:
         if not self.frise or not any(c.get("place") for c in self.frise.get("chapitres") or []):
             return ""
         return ('<div class="accueil-frise ui"><div class="mini-tete"><span class="sur">Le livre dans le temps</span>'
-                '<select id="acc-echelle" class="mini-echelle" title="l\'échelle de la frise"></select></div>'
+                '<span class="gf-bascule"><select id="acc-echelle" class="mini-echelle" title="l\'échelle de la frise"></select>'
+                '<a class="gf-agrandir" href="grande-frise.html?plein" title="la grande frise, en plein écran">⛶ agrandir</a></span></div>'
                 '<div class="frise-zone" id="acc-zone"></div>'
                 '<p class="meta">Touchez un chapitre pour le lire · <a href="frise.html">la frise complète →</a> · '
                 '<a href="grande-frise.html">la grande frise →</a></p></div>'
@@ -757,7 +758,8 @@ class Site:
                  '<div class="frise-barre ui"><select id="fr-frise"></select><select id="fr-echelle"></select>'
                  '<label><input type="checkbox" id="fr-bandes" checked> bandes</label>'
                  '<label><input type="checkbox" id="fr-reperes" checked> repères</label>'
-                 '<label><input type="checkbox" id="fr-fleches"> flèches</label></div>',
+                 '<label><input type="checkbox" id="fr-fleches"> flèches</label>'
+                 '<a class="gf-agrandir" href="grande-frise.html?plein" title="la grande frise, en plein écran">⛶ agrandir</a></div>',
                  '<div class="frise-zone" id="fr-zone"></div><div class="frise-notes ui" id="fr-notes"></div>',
                  '<script src="frise-donnees.js"></script><script src="frise.js"></script>']
         return _page("La frise — %s" % (self.meta.get("titre") or ""), "".join(corps), "", barre)
@@ -815,7 +817,11 @@ def css_grande_frise():
             "cursor:pointer;padding:.05rem .55rem}\n"
             ".gf-public .livre-select{font:inherit;background:var(--carte);color:var(--texte);border:1px solid var(--filet);"
             "border-radius:6px;padding:.2rem .4rem;max-width:100%}\n"
-            "@media (max-width:40rem){.gf-public .gf-aide{display:none}}\n" + css[a:b])
+            "@media (max-width:40rem){.gf-public .gf-aide{display:none}}\n"
+            ".gf-bascule{display:flex;align-items:center;gap:.6rem;max-width:100%;min-width:0}.gf-bascule select{min-width:0;flex:0 1 auto}"
+            ".gf-agrandir{font-size:.8rem;color:var(--acc);text-decoration:none;"
+            "border:1px solid var(--filet);border-radius:6px;padding:.1rem .5rem;white-space:nowrap}.gf-agrandir:hover{border-color:var(--acc)}\n"
+            ".frise-barre .gf-agrandir{margin-left:auto}\n" + css[a:b])
 
 
 def script_frise():
@@ -922,7 +928,11 @@ function el(tag, cls, texte) {
 (function () {
   var hote = document.getElementById("gf-hote"), D = window.GRANDE_FRISE;
   if (!hote || !window.FRISE || !D) return;
-  grandeFrise(hote, { F: window.FRISE, fiches: D.fiches, planches: D.planches, liens: {
+  // ?plein (le bouton « agrandir » d'une petite frise) : en plein écran ; en sortir ramène à la page d'où l'on vient
+  var plein = new URLSearchParams(location.search).has("plein");
+  var vient = plein && document.referrer.indexOf(location.origin) === 0 && history.length > 1;
+  grandeFrise(hote, { F: window.FRISE, fiches: D.fiches, planches: D.planches, plein: plein,
+    sort: plein ? function () { if (vient) history.back(); else location.replace("grande-frise.html"); } : null, liens: {
     chapitre: function (c) { return c.lien; },
     texte: function (c, v) { return (c.publie || []).indexOf(v) >= 0 ? "chapitres/" + c.slug + "/" + v + ".html" : null; },
     fiche: function (f) { return "fiches/" + f.slug + ".html"; },
