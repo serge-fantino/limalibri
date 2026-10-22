@@ -320,6 +320,61 @@ GABARIT = """# La frise du livre — à éditer à la main ; LimaLibri la dessin
 """
 
 
+def place_de(periode, T):
+    """La place que donne la période d'un chapitre (une entrée de frise.yaml) ; illisible : « à dater »."""
+    r = lit_periode(periode or "", T)
+    if not r:
+        return {"non_date": True, "note": ("à dater — période : %s" % periode) if periode else "à dater"}
+    x = {k: v for k, v in (("debut", r[0]), ("fin", r[1])) if v is not None}
+    if "~" in periode or "≈" in periode:
+        x["approx"] = True
+    x["note"] = "d'après la période : %s" % periode
+    return x
+
+
+def place_chapitre(slug, ecrire=False, forcer=False):
+    """Un chapitre sur la frise : sa place dans frise.yaml, celle que donne sa période, et si elle a été posée à la main
+    (une note qui ne commence pas par « d'après la période » ni « à dater »). ecrire : la place d'après la période
+    remplace la sienne, pour ce chapitre seul (le reste du fichier, commentaires compris, ne bouge pas) ; une place
+    posée à la main n'est remplacée qu'avec forcer."""
+    p = fichier()
+    if not p.exists():
+        raise FileNotFoundError(str(p))
+    B = _brut()
+    T = Temps(B.get("temps"))
+    C = _chapitres_du_livre()
+    c = next((x for x in C if x["slug"] == slug), None)
+    if c is None:
+        raise KeyError(slug)
+    actuelle = (B.get("chapitres") or {}).get(slug)
+    proposee = place_de(c["periode"], T)
+    norm = lambda x: {k: (str(v) if not isinstance(v, bool) else v) for k, v in (x or {}).items()}
+    main = actuelle is not None and not str((actuelle or {}).get("note") or "").startswith(("d'après la période", "à dater"))
+    out = {"slug": slug, "periode": c["periode"], "actuelle": actuelle, "proposee": proposee, "main": main,
+           "change": norm(actuelle) != norm(proposee), "ecrit": False}
+    if ecrire and out["change"]:
+        if main and not forcer:
+            raise PermissionError("la place de ce chapitre a été posée à la main")
+        from ruamel.yaml.comments import CommentedMap
+        y = livre.yaml_rt()
+        y.width = 100000                                     # ne replier aucune ligne : le reste du fichier ne bouge pas
+        doc = y.load(p.read_text(encoding="utf-8"))
+        ch = doc.get("chapitres")
+        if not isinstance(ch, dict):
+            doc["chapitres"] = ch = CommentedMap()
+        val = CommentedMap(proposee)
+        if slug in ch:
+            ch[slug] = val
+        else:                                                # à sa place dans l'ordre du livre
+            ordre = [x["slug"] for x in C]
+            avant = set(ordre[:ordre.index(slug)])
+            pos = max((i + 1 for i, k in enumerate(ch) if k in avant), default=0)
+            ch.insert(pos, slug, val)
+        p.write_text(livre.rt_texte(y, doc), encoding="utf-8")
+        out.update(actuelle=proposee, change=False, main=False, ecrit=True)
+    return out
+
+
 def amorce(ecraser=False):
     """Écrit un premier frise.yaml : le temps du livre, trois échelles, chaque chapitre placé d'après sa période
     (ou marqué « à dater »). Ne remplace jamais un fichier existant, sauf ecraser."""
@@ -332,18 +387,8 @@ def amorce(ecraser=False):
         and "⁻" not in textes
     lecture = "avant_present" if avant else "depuis_origine"
     T = Temps({"lecture": lecture, "age": "13,8 Ga" if lecture == "depuis_origine" else "4,57 Ga"})
-    places, n = {}, 0
-    for c in C:
-        r = lit_periode(c["periode"], T)
-        if r:
-            d, f = r
-            places[c["slug"]] = {k: v for k, v in (("debut", d), ("fin", f)) if v is not None}
-            if "~" in c["periode"] or "≈" in c["periode"]:
-                places[c["slug"]]["approx"] = True
-            places[c["slug"]]["note"] = "d'après la période : %s" % c["periode"]
-            n += 1
-        else:
-            places[c["slug"]] = {"non_date": True, "note": ("à dater — période : %s" % c["periode"]) if c["periode"] else "à dater"}
+    places = {c["slug"]: place_de(c["periode"], T) for c in C}
+    n = sum(1 for x in places.values() if not x.get("non_date"))
     doc = {"titre": "Frise — %s" % (livre.meta().get("titre") or ""),
            "temps": {"origine": "le Big Bang" if lecture == "depuis_origine" else "la formation de la Terre",
                      "age": "13,8 Ga" if lecture == "depuis_origine" else "4,57 Ga", "lecture": lecture,

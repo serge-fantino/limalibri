@@ -759,6 +759,33 @@ def frise_livre():
     return frise.lit()
 
 
+@app.get("/api/frise/chapitre/{slug}")
+def frise_chapitre(slug: str):
+    """Un chapitre sur la frise : sa place dans frise.yaml et celle que donne sa période."""
+    from . import frise
+    try:
+        return frise.place_chapitre(slug)
+    except FileNotFoundError:
+        raise HTTPException(409, "pas encore de frise.yaml : l'amorcer depuis l'onglet « frise »")
+    except KeyError:
+        raise HTTPException(404, "chapitre inconnu : %s" % slug)
+
+
+@app.post("/api/frise/chapitre/{slug}")
+async def frise_place_chapitre(slug: str, request: Request):
+    """Place ce chapitre d'après sa période, lui seul ; {forcer: true} pour remplacer une place posée à la main."""
+    from . import frise
+    c = await request.json() if await request.body() else {}
+    try:
+        return frise.place_chapitre(slug, ecrire=True, forcer=bool(c.get("forcer")))
+    except FileNotFoundError:
+        raise HTTPException(409, "pas encore de frise.yaml : l'amorcer depuis l'onglet « frise »")
+    except KeyError:
+        raise HTTPException(404, "chapitre inconnu : %s" % slug)
+    except PermissionError as e:
+        raise HTTPException(409, str(e))
+
+
 @app.post("/api/frise/amorcer")
 def frise_amorcer():
     """Écrit un premier frise.yaml depuis les périodes des chapitres ; jamais par-dessus un fichier existant."""

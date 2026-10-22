@@ -1462,3 +1462,8 @@ body[data-vue="grande-frise"] #page > h1,.gf-barre{margin-left:2rem;margin-right
 .gf-plein .gf-defile{flex:1;max-height:none;margin-top:.4rem}
 html.gf-plein-ouvert{overflow:hidden}
 /* grande frise : fin */
+/* la place d'un chapitre sur la frise, sous sa période (Plan → chapitre) */
+.frise-chapitre{display:flex;flex-wrap:wrap;align-items:baseline;gap:.4rem .6rem;margin:-.2rem 0 .9rem;font-family:var(--ui);font-size:.8rem}
+.frise-chapitre .nom{color:var(--mut);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+.frise-chapitre-ici,.frise-chapitre-prop{font-weight:600}
+.frise-chapitre-prop{color:var(--acc)}
