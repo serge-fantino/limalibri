@@ -220,15 +220,23 @@ def decide(ident, corps):
         plan.modifie_livre(ch)
         faits.append("livre : " + ", ".join(ch))
     # les parties et leurs chapitres, dans l'ordre de la proposition
+    touchees, precedente = [], None                          # les parties retenues, dans l'ordre de la proposition
     for i, p in enumerate(R.get("parties") or []):
         champs = corps.get("parties", {}).get(str(i))
         retenus = [j for j, _ in enumerate(p.get("chapitres") or []) if corps.get("chapitres", {}).get("%d.%d" % (i, j))]
         if champs is None and not retenus:
+            precedente = p.get("id") or precedente
             continue
         pid = p.get("id")
         vals = {"title" if k == "titre" else k: p.get(k) for k in (champs or []) if p.get(k)}
         if not pid:
-            pid = plan.ajoute_partie(p["titre"], champs={k: v for k, v in vals.items() if k != "title"})
+            # une partie nouvelle : à sa place dans la proposition, après la partie qui la précède
+            try:
+                pid = plan.ajoute_partie(p["titre"], apres=precedente, champs={k: v for k, v in vals.items() if k != "title"})
+            except KeyError:                                 # la précédente n'existe pas (encore) : à la fin
+                pid = plan.ajoute_partie(p["titre"], champs={k: v for k, v in vals.items() if k != "title"})
+            if precedente is None:                           # la première de la proposition : en tête du livre
+                en_tete(pid)
             faits.append("partie %s créée" % pid)
         elif vals:
             plan.modifie_partie(pid, vals)
@@ -247,6 +255,10 @@ def decide(ident, corps):
                 ordre.append(s)
                 faits.append("chapitre %s créé" % s)
         ordonne(pid, ordre)
+        touchees.append(pid)
+        precedente = pid
+    if ordonne_parties(touchees):
+        faits.append("parties rangées dans l'ordre de la proposition")
     # un chapitre
     C = R.get("chapitre") or {}
     slug = d["cible"].get("chapitre")
@@ -279,6 +291,36 @@ def ordonne(pid, ordre):
     p["chapters"].clear()
     p["chapters"].extend(chs)
     plan._ecrit_structure(y, doc)
+
+
+def en_tete(pid):
+    """Une partie en tête du livre."""
+    y, doc = plan._lit_structure()
+    i, p = plan._partie(doc, pid)
+    if i:
+        doc["parts"].pop(i)
+        doc["parts"].insert(0, p)
+        plan._ecrit_structure(y, doc)
+
+
+def ordonne_parties(pids):
+    """Les parties retenues, dans l'ordre de la proposition : elles échangent leurs places entre elles, les autres ne
+    bougent pas. Rend True si l'ordre a changé."""
+    y, doc = plan._lit_structure()
+    parts = list(doc["parts"])
+    ids = [str(p.get("id")) for p in parts]
+    pids = [x for x in dict.fromkeys(pids) if x in ids]
+    places = sorted(ids.index(x) for x in pids)
+    par_id = {str(p.get("id")): p for p in parts}
+    for k, x in zip(places, pids):
+        parts[k] = par_id[x]
+    if [str(p.get("id")) for p in parts] == ids:
+        return False
+    doc["parts"].clear()
+    doc["parts"].extend(parts)
+    plan._ecrit_structure(y, doc)
+    plan.journal({"type": "parties_rangees", "ordre": [str(p.get("id")) for p in parts]})
+    return True
 
 
 # ------------------------------------------------------------------ amorcer l'essai
