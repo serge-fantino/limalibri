@@ -332,7 +332,10 @@ existe dès son synopsis, avant tout texte). À chaque niveau, **✦ une proposi
 (lecture du plan et des fiches, sans web) : la structure du livre (idée, arc, parties, chapitres
 avec synopsis et fiches, sujets sans fiche), le développement d'une partie, celui d'un chapitre
 (synopsis, question, fiches lues, déroulé de l'essai, assertions). On retient élément par élément ;
-une partie ou un chapitre existant garde son identifiant. Pour un chapitre, **amorcer l'essai**
+une partie ou un chapitre existant garde son identifiant. Les parties retenues prennent l'ordre de la
+proposition : une partie nouvelle se place après celle qui la précède (en tête si elle est la première), et
+les parties retenues échangent leurs places pour suivre la proposition (celles qu'on ne retient pas ne bougent
+pas). Pour un chapitre, **amorcer l'essai**
 écrit le squelette de l'essai (une section par étape du déroulé) et un premier verrou (les
 assertions, chacune avec sa fiche) : de quoi commencer la rédaction.
 
