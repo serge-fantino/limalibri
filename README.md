@@ -857,6 +857,14 @@ Tout vient de **`frise.yaml`**, à la racine du livre. Ce fichier s'édite à la
 dessine. Un bouton « Amorcer » le crée à partir des périodes des chapitres, et ne remplace jamais un fichier
 existant.
 
+**Un chapitre à la fois** : sur la page d'un chapitre (Plan → chapitre), sous sa période, la ligne **« sur la
+frise »** dit sa place dans `frise.yaml` (ou « pas encore sur la frise », « à dater ») et, si sa période en donne
+une autre, la propose : « l'ajouter à la frise », « placer d'après la période », ou « à dater » quand la période ne
+se lit pas (« de l'aube à aujourd'hui »). Le bouton n'écrit que l'entrée de ce chapitre, à sa place dans l'ordre du
+livre ; le reste du fichier, commentaires compris, ne bouge pas. Une place posée à la main (une note qui ne commence
+ni par « d'après la période » ni par « à dater ») n'est remplacée qu'après confirmation. Utile après un plan qui
+ajoute des chapitres, ou quand une période change (`GET`/`POST /api/frise/chapitre/<slug>`).
+
 - **Le temps du livre.** Il n'y a qu'une seule variable : t, en années depuis l'origine de l'histoire.
   - `temps.age` donne le présent.
   - `temps.lecture` dit comment lire une durée seule : `depuis_origine` (Un Monde) ou `avant_present` (Une Vie).

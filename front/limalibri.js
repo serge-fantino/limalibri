@@ -6167,9 +6167,11 @@ async function pageChapitrePlan(slug) {
   ligne.append(el("span", "mut petit", "partie"), partie, el("span", "mut petit", "statut"), statut);
   const fiches = el("div", "pastilles");
   fiches.append(...c.fiches.map((x) => puceFiche(x)));
+  const surFrise = blocFriseChapitre(slug);
   page.replaceChildren(voisins, el("h1", null, `${i + 1}. ${c.title}`), await demandesPlan("chapitre", slug), zone_, ligne,
     champPlanSyn("titre", c.title, (v) => opSynopsis({ op: "chapitre", slug, champs: { title: v } })),
-    champPlanSyn("période", c.periode, (v) => opSynopsis({ op: "chapitre", slug, champs: { periode: v } }), { aide: "facultatif : 13,8 Ga → 380 000 ans…" }),
+    champPlanSyn("période", c.periode, (v) => opSynopsis({ op: "chapitre", slug, champs: { periode: v } }).then((X) => { surFrise.maj(); return X; }),
+      { aide: "facultatif : 13,8 Ga → 380 000 ans…" }), surFrise,
     champPlanSyn("question", c.question, (v) => opSynopsis({ op: "chapitre", slug, champs: { question: v } }), { aide: "la question à laquelle il répond, et qui ouvre la suivante" }),
     champPlanSyn("synopsis", c.synopsis, (v) => opSynopsis({ op: "chapitre", slug, champs: { synopsis: v } }), { long: true, aide: "ce qui arrive, dans l'ordre" }),
     el("h2", "oeuvre-section", `Fiches · ${c.fiches.length}`), fiches,
@@ -6179,6 +6181,37 @@ async function pageChapitrePlan(slug) {
   document.getElementById("fiche").replaceChildren(el("h4", null, "Chapitre"), el("p", "mut petit",
     "Son synopsis, sa question, ses fiches. Il existe dès cette étape (chapters/" + slug + "/brief.yaml), avant tout texte."));
   zone().scrollTo(0, 0);
+}
+
+// Sous la période d'un chapitre : sa place sur la frise (frise.yaml), et, si sa période en donne une autre, de quoi le
+// placer d'après elle — ce chapitre seul. Une place posée à la main n'est remplacée qu'après confirmation.
+function blocFriseChapitre(slug) {
+  const b = el("div", "frise-chapitre");
+  const lib = (x) => !x ? "pas encore sur la frise" : x.non_date ? "à dater" : `${x.debut ?? "…"} → ${x.fin ?? "…"}${x.approx ? " (approx.)" : ""}`;
+  b.maj = async () => {
+    const r = await api(`/frise/chapitre/${slug}`).catch((e) => ({ erreur: String(e) }));
+    b.replaceChildren(el("span", "nom", "sur la frise"));
+    if (r.erreur) return b.append(el("span", "mut petit", r.erreur.includes("409") ? "le livre n'a pas encore de frise (Plan → frise)" : r.erreur));
+    const ici = el("span", "frise-chapitre-ici", lib(r.actuelle));
+    if (r.actuelle?.note) ici.title = r.actuelle.note;
+    b.append(ici);
+    if (r.main) b.append(el("span", "mut petit", "posée à la main"));
+    if (!r.change) return b.append(el("span", "mut petit", r.actuelle ? "· conforme à la période" : ""));
+    const p = r.proposee;
+    b.append(el("span", "mut petit", "· d'après la période :"), el("span", "frise-chapitre-prop", lib(p)));
+    const bt = el("button", "pan-lien", p.non_date ? (r.actuelle ? "marquer « à dater »" : "l'ajouter, « à dater »")
+      : r.actuelle ? "placer d'après la période" : "l'ajouter à la frise");
+    bt.title = "écrit dans frise.yaml, pour ce chapitre seulement";
+    bt.onclick = async () => {
+      if (r.main && !confirm(`La place de ce chapitre a été posée à la main (${lib(r.actuelle)}). La remplacer par ${lib(p)} ?`)) return;
+      bt.disabled = true;
+      try { await poste(`/frise/chapitre/${slug}`, { forcer: r.main }); b.maj(); }
+      catch (e) { bt.disabled = false; b.append(el("span", "err petit", String(e))); }
+    };
+    b.append(bt);
+  };
+  b.maj();
+  return b;
 }
 
 // Le tiroir d'une proposition de plan : on retient élément par élément.
